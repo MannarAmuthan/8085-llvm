@@ -83,6 +83,7 @@ StringRef Triple::getArchTypeName(ArchType Kind) {
   case x86:            return "i386";
   case x86_64:         return "x86_64";
   case xcore:          return "xcore";
+  case i8085:          return "i8085";
   }
 
   llvm_unreachable("Invalid ArchType!");
@@ -172,6 +173,8 @@ StringRef Triple::getArchTypePrefix(ArchType Kind) {
   case loongarch64: return "loongarch";
   
   case dxil:        return "dx";
+
+  case i8085:        return "i8085";
   }
 }
 
@@ -362,6 +365,7 @@ Triple::ArchType Triple::getArchTypeForLLVMName(StringRef Name) {
     .Case("loongarch32", loongarch32)
     .Case("loongarch64", loongarch64)
     .Case("dxil", dxil)
+    .Case("i8085", i8085)
     .Default(UnknownArch);
 }
 
@@ -500,6 +504,7 @@ static Triple::ArchType parseArch(StringRef ArchName) {
     .Case("loongarch32", Triple::loongarch32)
     .Case("loongarch64", Triple::loongarch64)
     .Case("dxil", Triple::dxil)
+    .Case("i8085", Triple::i8085)
     .Default(Triple::UnknownArch);
 
   // Some architectures require special parsing logic just to compute the
@@ -794,6 +799,7 @@ static Triple::ObjectFormatType getDefaultFormat(const Triple &T) {
   case Triple::tcele:
   case Triple::thumbeb:
   case Triple::ve:
+  case Triple::i8085:
   case Triple::xcore:
     return Triple::ELF;
 
@@ -1335,6 +1341,7 @@ static unsigned getArchPointerBitWidth(llvm::Triple::ArchType Arch) {
     return 0;
 
   case llvm::Triple::avr:
+  case llvm::Triple::i8085:
   case llvm::Triple::msp430:
     return 16;
 
@@ -1420,6 +1427,7 @@ Triple Triple::get32BitArchVariant() const {
   case Triple::UnknownArch:
   case Triple::amdgcn:
   case Triple::avr:
+  case Triple::i8085:
   case Triple::bpfeb:
   case Triple::bpfel:
   case Triple::msp430:
@@ -1497,6 +1505,7 @@ Triple Triple::get64BitArchVariant() const {
   case Triple::UnknownArch:
   case Triple::arc:
   case Triple::avr:
+  case Triple::i8085:
   case Triple::csky:
   case Triple::dxil:
   case Triple::hexagon:
@@ -1579,6 +1588,7 @@ Triple Triple::getBigEndianArchVariant() const {
   case Triple::amdil64:
   case Triple::amdil:
   case Triple::avr:
+  case Triple::i8085:
   case Triple::dxil:
   case Triple::hexagon:
   case Triple::hsail64:
@@ -1680,6 +1690,7 @@ bool Triple::isLittleEndian() const {
   case Triple::amdil:
   case Triple::arm:
   case Triple::avr:
+  case Triple::i8085:
   case Triple::bpfel:
   case Triple::csky:
   case Triple::dxil:

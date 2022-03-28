@@ -319,7 +319,8 @@ enum {
   EM_BPF = 247,           // Linux kernel bpf virtual machine
   EM_VE = 251,            // NEC SX-Aurora VE
   EM_CSKY = 252,          // C-SKY 32-bit processor
-  EM_LOONGARCH = 258,     // LoongArch
+  EM_LOONGARCH = 258,     // LoongArch,
+  EM_I8085 = 259
 };
 
 // Object file classes.
@@ -501,6 +502,41 @@ enum : unsigned {
 enum {
 #include "ELFRelocs/AVR.def"
 };
+
+// i8085 Specific e_flags
+
+enum : unsigned {
+  EF_I8085_ARCH_I80851 = 1,
+  EF_I8085_ARCH_I80852 = 2,
+  EF_I8085_ARCH_I808525 = 25,
+  EF_I8085_ARCH_I80853 = 3,
+  EF_I8085_ARCH_I808531 = 31,
+  EF_I8085_ARCH_I808535 = 35,
+  EF_I8085_ARCH_I80854 = 4,
+  EF_I8085_ARCH_I80855 = 5,
+  EF_I8085_ARCH_I808551 = 51,
+  EF_I8085_ARCH_I80856 = 6,
+  EF_I8085_ARCH_I8085TINY = 100,
+  EF_I8085_ARCH_XMEGA1 = 101,
+  EF_I8085_ARCH_XMEGA2 = 102,
+  EF_I8085_ARCH_XMEGA3 = 103,
+  EF_I8085_ARCH_XMEGA4 = 104,
+  EF_I8085_ARCH_XMEGA5 = 105,
+  EF_I8085_ARCH_XMEGA6 = 106,
+  EF_I8085_ARCH_XMEGA7 = 107,
+
+  EF_I8085_ARCH_MASK = 0x7f, // EF_I8085_ARCH_xxx selection mask
+
+  EF_I8085_LINKRELAX_PREPARED = 0x80, // The file is prepared for linker
+                                    // relaxation to be applied
+};
+
+// i8085 relocations.
+
+enum {
+#include "ELFRelocs/I8085.def"
+};
+
 
 // Mips Specific e_flags
 enum : unsigned {

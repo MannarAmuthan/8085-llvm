@@ -80,6 +80,15 @@ StringRef llvm::object::getELFRelocationTypeName(uint32_t Machine,
       break;
     }
     break;
+
+  case ELF::EM_I8085:
+    switch (Type) {
+#include "llvm/BinaryFormat/ELFRelocs/I8085.def"
+    default:
+      break;
+    }
+    break;  
+
   case ELF::EM_HEXAGON:
     switch (Type) {
 #include "llvm/BinaryFormat/ELFRelocs/Hexagon.def"

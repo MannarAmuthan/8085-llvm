@@ -198,6 +198,16 @@ namespace CallingConv {
     /// which have an "optimized" convention to preserve registers.
     AVR_BUILTIN = 86,
 
+
+    I8085_INTR = 84,
+
+    /// Calling convention used for AVR signal routines.
+    I8085_SIGNAL = 85,
+
+    /// Calling convention used for special AVR rtlib functions
+    /// which have an "optimized" convention to preserve registers.
+    I8085_BUILTIN = 86,
+
     /// Calling convention used for Mesa vertex shaders, or AMDPAL last shader
     /// stage before rasterization (vertex shader if tessellation and geometry
     /// are not in use, or otherwise copy shader if one is needed).

@@ -14,6 +14,8 @@
 #include <vector>
 using namespace llvm;
 
+#include <iostream>
+
 // Clients are responsible for avoid race conditions in registration.
 static Target *FirstTarget = nullptr;
 
