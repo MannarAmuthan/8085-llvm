@@ -246,37 +246,37 @@ void I8085AsmPrinter::emitStartOfAsmFile(Module &M) {
   if (!SubTM)
     return;
 
-  // Emit __tmp_reg__.
-  OutStreamer->emitAssignment(
-      MMI->getContext().getOrCreateSymbol(StringRef("__tmp_reg__")),
-      MCConstantExpr::create(SubTM->getRegTmpIndex(), MMI->getContext()));
-  // Emit __zero_reg__.
-  OutStreamer->emitAssignment(
-      MMI->getContext().getOrCreateSymbol(StringRef("__zero_reg__")),
-      MCConstantExpr::create(SubTM->getRegZeroIndex(), MMI->getContext()));
-  // Emit __SREG__.
-  OutStreamer->emitAssignment(
-      MMI->getContext().getOrCreateSymbol(StringRef("__SREG__")),
-      MCConstantExpr::create(SubTM->getIORegSREG(), MMI->getContext()));
-  // Emit __SP_H__ if available.
-  if (!SubTM->hasSmallStack())
-    OutStreamer->emitAssignment(
-        MMI->getContext().getOrCreateSymbol(StringRef("__SP_H__")),
-        MCConstantExpr::create(SubTM->getIORegSPH(), MMI->getContext()));
-  // Emit __SP_L__.
-  OutStreamer->emitAssignment(
-      MMI->getContext().getOrCreateSymbol(StringRef("__SP_L__")),
-      MCConstantExpr::create(SubTM->getIORegSPL(), MMI->getContext()));
-  // Emit __EIND__ if available.
-  if (SubTM->hasEIJMPCALL())
-    OutStreamer->emitAssignment(
-        MMI->getContext().getOrCreateSymbol(StringRef("__EIND__")),
-        MCConstantExpr::create(SubTM->getIORegEIND(), MMI->getContext()));
-  // Emit __RAMPZ__ if available.
-  if (SubTM->hasELPM())
-    OutStreamer->emitAssignment(
-        MMI->getContext().getOrCreateSymbol(StringRef("__RAMPZ__")),
-        MCConstantExpr::create(SubTM->getIORegRAMPZ(), MMI->getContext()));
+  // // Emit __tmp_reg__.
+  // OutStreamer->emitAssignment(
+  //     MMI->getContext().getOrCreateSymbol(StringRef("__tmp_reg__")),
+  //     MCConstantExpr::create(SubTM->getRegTmpIndex(), MMI->getContext()));
+  // // Emit __zero_reg__.
+  // OutStreamer->emitAssignment(
+  //     MMI->getContext().getOrCreateSymbol(StringRef("__zero_reg__")),
+  //     MCConstantExpr::create(SubTM->getRegZeroIndex(), MMI->getContext()));
+  // // Emit __SREG__.
+  // OutStreamer->emitAssignment(
+  //     MMI->getContext().getOrCreateSymbol(StringRef("__SREG__")),
+  //     MCConstantExpr::create(SubTM->getIORegSREG(), MMI->getContext()));
+  // // Emit __SP_H__ if available.
+  // if (!SubTM->hasSmallStack())
+  //   OutStreamer->emitAssignment(
+  //       MMI->getContext().getOrCreateSymbol(StringRef("__SP_H__")),
+  //       MCConstantExpr::create(SubTM->getIORegSPH(), MMI->getContext()));
+  // // Emit __SP_L__.
+  // OutStreamer->emitAssignment(
+  //     MMI->getContext().getOrCreateSymbol(StringRef("__SP_L__")),
+  //     MCConstantExpr::create(SubTM->getIORegSPL(), MMI->getContext()));
+  // // Emit __EIND__ if available.
+  // if (SubTM->hasEIJMPCALL())
+  //   OutStreamer->emitAssignment(
+  //       MMI->getContext().getOrCreateSymbol(StringRef("__EIND__")),
+  //       MCConstantExpr::create(SubTM->getIORegEIND(), MMI->getContext()));
+  // // Emit __RAMPZ__ if available.
+  // if (SubTM->hasELPM())
+  //   OutStreamer->emitAssignment(
+  //       MMI->getContext().getOrCreateSymbol(StringRef("__RAMPZ__")),
+  //       MCConstantExpr::create(SubTM->getIORegRAMPZ(), MMI->getContext()));
 }
 
 } // end of namespace llvm
