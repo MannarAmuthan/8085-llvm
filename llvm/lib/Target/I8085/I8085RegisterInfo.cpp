@@ -75,8 +75,9 @@ BitVector I8085RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
       Reserved.set(Reg);
   }
 
-  Reserved.set(I8085::D);
-  Reserved.set(I8085::E);
+  Reserved.set(I8085::A);
+  Reserved.set(I8085::H);
+  Reserved.set(I8085::L);
 
   return Reserved;
 }
@@ -85,13 +86,15 @@ const TargetRegisterClass *
 I8085RegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC,
                                            const MachineFunction &MF) const {
   const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
+
+
   if (TRI->isTypeLegalForClass(*RC, MVT::i16)) {
-    return &I8085::GR16;
+    return &I8085::DREGSRegClass;
   }
 
-  // if (TRI->isTypeLegalForClass(*RC, MVT::i8)) {
-  //   return &I8085::GPR8RegClass;
-  // }
+  if (TRI->isTypeLegalForClass(*RC, MVT::i8)) {
+    return &I8085::GPR8RegClass;
+  }
 
   if (TRI->isTypeLegalForClass(*RC, MVT::i8)) {
     return &I8085::GR8RegClass;
@@ -167,7 +170,7 @@ void I8085RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
     // We need to materialize the offset via an add instruction.
     unsigned Opcode;
     Register DstReg = MI.getOperand(0).getReg();
-    assert(DstReg != I8085::D && "Dest reg cannot be the frame pointer");
+    assert(DstReg != I8085::L && "Dest reg cannot be the frame pointer");
 
     II++; // Skip over the FRMIDX (and now MOVW) instruction.
 
@@ -231,8 +234,8 @@ void I8085RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
     BuildMI(MBB, II, dl, TII.get(I8085::INRdA), I8085::R0)
         .addImm(STI.getIORegSREG());
 
-    MachineInstr *New = BuildMI(MBB, II, dl, TII.get(AddOpc), I8085::D)
-                            .addReg(I8085::D, RegState::Kill)
+    MachineInstr *New = BuildMI(MBB, II, dl, TII.get(AddOpc), I8085::L)
+                            .addReg(I8085::L, RegState::Kill)
                             .addImm(AddOffset);
     New->getOperand(3).setIsDead();
 
@@ -243,14 +246,14 @@ void I8085RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
 
     // No need to set SREG as dead here otherwise if the next instruction is a
     // cond branch it will be using a dead register.
-    BuildMI(MBB, std::next(II), dl, TII.get(SubOpc), I8085::D)
-        .addReg(I8085::D, RegState::Kill)
+    BuildMI(MBB, std::next(II), dl, TII.get(SubOpc), I8085::L)
+        .addReg(I8085::L, RegState::Kill)
         .addImm(Offset - 63 + 1);
 
     Offset = 62;
   }
 
-  MI.getOperand(FIOperandNum).ChangeToRegister(I8085::D, false);
+  MI.getOperand(FIOperandNum).ChangeToRegister(I8085::L, false);
   assert(isUInt<6>(Offset) && "Offset is out of range");
   MI.getOperand(FIOperandNum + 1).ChangeToImmediate(Offset);
 }
@@ -259,7 +262,7 @@ Register I8085RegisterInfo::getFrameRegister(const MachineFunction &MF) const {
   const TargetFrameLowering *TFI = MF.getSubtarget().getFrameLowering();
   if (TFI->hasFP(MF)) {
     // The Y pointer register
-    return I8085::D;
+    return I8085::L;
   }
 
   return I8085::SP;

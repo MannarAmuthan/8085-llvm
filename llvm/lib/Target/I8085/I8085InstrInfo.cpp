@@ -79,8 +79,6 @@ void I8085InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
       Opc = I8085::MOV;
     }
 
-     
-
     BuildMI(MBB, MI, DL, get(Opc), DestReg)
         .addReg(SrcReg, getKillRegState(KillSrc));
   }

@@ -72,35 +72,57 @@ void I8085FrameLowering::emitPrologue(MachineFunction &MF,
       (MBBI->getOpcode() == I8085::PUSHRr || MBBI->getOpcode() == I8085::PUSHWRr)) {
     ++MBBI;
   }
+  
+  /*Prologue sequence for 8085 processor */ 
+  
+  /* saving current stack address */
 
-  // Update Y with the new base value.
-  BuildMI(MBB, MBBI, DL, TII.get(I8085::SPREAD), I8085::R29R28)
-      .addReg(I8085::SP)
-      .setMIFlag(MachineInstr::FrameSetup);
+  unsigned lastStackAddress = 65530;
+  BuildMI(MBB, MBBI, DL, TII.get(I8085::LXI))
+      .addReg(I8085::H)
+      .addImm(0);
 
-  // Mark the FramePtr as live-in in every block except the entry.
-  for (MachineBasicBlock &MBBJ : llvm::drop_begin(MF)) {
-    MBBJ.addLiveIn(I8085::D);
-  }
+  BuildMI(MBB, MBBI, DL, TII.get(I8085::DAD));
 
-  if (!FrameSize) {
-    return;
-  }
+  BuildMI(MBB, MBBI, DL, TII.get(I8085::SHLD))
+      .addImm(lastStackAddress);
 
-  // Reserve the necessary frame memory by doing FP -= <size>.
-  // unsigned Opcode = (isUInt<6>(FrameSize)) ? I8085::SBIWRdK : I8085::SUBIWRdK;
-  unsigned Opcode = I8085::SUB_I8;
+  /* Update stack pointer -> [current stack pointer - framesize]  */ 
+  
+  BuildMI(MBB, MBBI, DL, TII.get(I8085::MOV))
+      .addReg(I8085::A)
+      .addReg(I8085::L);
 
-  MachineInstr *MI = BuildMI(MBB, MBBI, DL, TII.get(Opcode), I8085::D)
-                         .addReg(I8085::D, RegState::Kill)
-                         .addImm(FrameSize);
-  // The SREG implicit def is dead.
-  // MI->getOperand(3).setIsDead();
+  
+  BuildMI(MBB, MBBI, DL, TII.get(I8085::MVI))
+      .addReg(I8085::L)
+      .addImm(FrameSize);
 
-  // // Write back R29R28 to SP and temporarily disable interrupts.
-  // BuildMI(MBB, MBBI, DL, TII.get(I8085::SPWRITE), I8085::SP)
-  //     .addReg(I8085::D)
-  //     .setMIFlag(MachineInstr::FrameSetup);
+  BuildMI(MBB, MBBI, DL, TII.get(I8085::SUB))
+      .addReg(I8085::L);
+
+  BuildMI(MBB, MBBI, DL, TII.get(I8085::MOV))
+      .addReg(I8085::L)
+      .addReg(I8085::A);
+
+  BuildMI(MBB, MBBI, DL, TII.get(I8085::MOV))
+      .addReg(I8085::A)
+      .addReg(I8085::H);
+
+  BuildMI(MBB, MBBI, DL, TII.get(I8085::MVI))
+      .addReg(I8085::H)
+      .addImm(0);    
+
+  BuildMI(MBB, MBBI, DL, TII.get(I8085::SBB))
+      .addReg(I8085::H);
+
+  BuildMI(MBB, MBBI, DL, TII.get(I8085::MOV))
+      .addReg(I8085::H)
+      .addReg(I8085::A);       
+
+  BuildMI(MBB, MBBI, DL, TII.get(I8085::SPHL));
+
+
 }
 
 static void restoreStatusRegister(MachineFunction &MF, MachineBasicBlock &MBB) {
@@ -162,9 +184,17 @@ void I8085FrameLowering::emitEpilogue(MachineFunction &MF,
   }
 
   if (FrameSize) {
-    unsigned Opcode;
 
-    Opcode = I8085::ADD_I8;
+    unsigned lastStackAddress = 65530;
+    BuildMI(MBB, MBBI, DL, TII.get(I8085::LHLD))
+      .addImm(lastStackAddress);
+
+    BuildMI(MBB, MBBI, DL, TII.get(I8085::SPHL));  
+   
+
+    // unsigned Opcode;
+
+    // Opcode = I8085::ADD_I8;
 
     // Select the optimal opcode depending on how big it is.
     // if (isUInt<6>(FrameSize)) {
@@ -176,9 +206,9 @@ void I8085FrameLowering::emitEpilogue(MachineFunction &MF,
 
     // Restore the frame pointer by doing FP += <size>.
 
-    MachineInstr *MI = BuildMI(MBB, MBBI, DL, TII.get(Opcode), I8085::D)
-                          .addReg(I8085::D, RegState::Kill)
-                          .addImm(FrameSize);
+    // MachineInstr *MI = BuildMI(MBB, MBBI, DL, TII.get(Opcode), I8085::D)
+    //                       .addReg(I8085::D, RegState::Kill)
+    //                       .addImm(FrameSize);
                           
     // The SREG implicit def is dead.
     // MI->getOperand(3).setIsDead();

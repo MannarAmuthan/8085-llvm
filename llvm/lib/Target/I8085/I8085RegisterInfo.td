@@ -237,14 +237,13 @@ def H : I8085Reg<115, "H">, DwarfRegNum<[115]>;
 def L : I8085Reg<116, "L">, DwarfRegNum<[116]>;
 
 
-def DE : I8085Reg<117, "E:D", [E, D]>, DwarfRegNum<[117]>;
 
 def GR8 : RegisterClass<"I8085", [i8], 8,
                         (
                             // Return value and arguments.
                             add A,B,C,D,E,H,L
                             // Scratch registers.
-                            )>;         
+                            )>; 
 
 
 // def PTR_REGS : RegisterClass<"I8085", [i16], 8, (add DE), ptr>;                            

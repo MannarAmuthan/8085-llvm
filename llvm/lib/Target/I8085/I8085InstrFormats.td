@@ -576,3 +576,9 @@ class MV_F<bits<4> opcode, dag outs, dag ins, string asmstr, list<dag> pattern>
 
   let isAsCheapAsAMove = 1;
 }
+
+
+class I8085Pseudo<dag outs, dag ins, string asmstr, list<dag> pattern>
+    : Pseudo<outs, ins, asmstr, pattern> {
+  let Defs = [SP];
+}

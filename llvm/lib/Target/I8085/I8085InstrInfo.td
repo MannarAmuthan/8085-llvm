@@ -2223,13 +2223,13 @@ let Defs = [SREG],
 
 // This pseudo is either converted to a regular store or a push which clobbers
 // SP.
-def STDSPQRr : StorePseudo<(outs),
-                           (ins memspi
-                            : $dst, GPR8
-                            : $src),
-                           "stdstk\t$dst, $src", [(store i8
-                                                   : $src, addr
-                                                   : $dst)]>;
+// def STDSPQRr : StorePseudo<(outs),
+//                            (ins memspi
+//                             : $dst, GPR8
+//                             : $src),
+//                            "stdstk\t$dst, $src", [(store i8
+//                                                    : $src, addr
+//                                                    : $dst)]>;
 
 // This pseudo is either converted to a regular store or a push which clobbers
 // SP.
@@ -2550,10 +2550,60 @@ let Uses = [A] in def ADD_I8
             (ins GR8: $src, i8imm: $k),
             "ADD\t$rd, $k",
             [(set i8: $rd, (sub i8: $src, imm: $k))]>;    
-              
-// def LDIRdK : FRdK<0b1110,
-//                     (outs LD8
-//                      : $rd),
-//                     (ins imm_ldi8
-//                      : $k),
-//                     "ldi\t$rd, $k", []>;
+
+
+def mspi : Operand<iPTR> { 
+  let MIOperandInfo = (ops GPRSP, i16imm); 
+  let PrintMethod = "printMemri";
+  let EncoderMethod = "encodeMemri";
+}
+
+
+def STDSPQRr : I8085Pseudo<(outs),
+                           (ins mspi: $dst, GR8: $src),
+                           "PS_STORE\t$dst, $src", [(store i8: $src, addr: $dst)]>;
+
+
+def LXI : I8085Pseudo<(outs GR8: $rd),
+                    (ins i16imm: $k),
+                    "LXI $rd, $k", []>;                  
+
+def DAD : I8085Pseudo<(outs),
+                    (ins),
+                    "DAD\tSP", []>;
+
+def SPHL : I8085Pseudo<(outs),
+                    (ins),
+                    "SPHL", []>;                          
+
+def SHLD : I8085Pseudo<(outs),
+                    (ins i16imm: $k),
+                    "SHLD $k", []>;   
+
+def LHLD : I8085Pseudo<(outs),
+                    (ins i16imm: $k),
+                    "LHLD $k", []>;                      
+
+def SUB
+    : I8085Pseudo<(outs),
+            (ins GR8: $rs),
+            "SUB $rs",
+            []>;
+
+def SBB
+    : I8085Pseudo<(outs),
+            (ins GR8: $rs),
+            "SBB $rs",
+            []>;
+
+def SUB_M
+    : I8085Pseudo<(outs),
+            (ins),
+            "SUB M",
+            []>;           
+
+def MOV_M 
+    : I8085Pseudo<(outs),
+            (ins GR8: $rs),
+            "MOV M, $rs",
+            []>;                                    

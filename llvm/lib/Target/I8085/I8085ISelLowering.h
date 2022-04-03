@@ -134,9 +134,9 @@ public:
 
   unsigned getInlineAsmMemConstraint(StringRef ConstraintCode) const override;
 
-  void LowerAsmOperandForConstraint(SDValue Op, std::string &Constraint,
-                                    std::vector<SDValue> &Ops,
-                                    SelectionDAG &DAG) const override;
+  // void LowerAsmOperandForConstraint(SDValue Op, std::string &Constraint,
+  //                                   std::vector<SDValue> &Ops,
+  //                                   SelectionDAG &DAG) const override;
 
   Register getRegisterByName(const char *RegName, LLT VT,
                              const MachineFunction &MF) const override;
