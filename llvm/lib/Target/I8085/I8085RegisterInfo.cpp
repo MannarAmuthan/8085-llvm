@@ -26,6 +26,9 @@
 #include "I8085TargetMachine.h"
 #include "MCTargetDesc/I8085MCTargetDesc.h"
 
+
+#include <iostream>
+
 #define GET_REGINFO_TARGET_DESC
 #include "I8085GenRegisterInfo.inc"
 
@@ -37,19 +40,14 @@ const uint16_t *
 I8085RegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
   const I8085MachineFunctionInfo *AFI = MF->getInfo<I8085MachineFunctionInfo>();
   const I8085Subtarget &STI = MF->getSubtarget<I8085Subtarget>();
-  if (STI.hasTinyEncoding())
-    return AFI->isInterruptOrSignalHandler() ? CSR_InterruptsTiny_SaveList
-                                             : CSR_NormalTiny_SaveList;
-  else
-    return AFI->isInterruptOrSignalHandler() ? CSR_Interrupts_SaveList
-                                             : CSR_Normal_SaveList;
+    return CSR_Normal_SaveList;
 }
 
 const uint32_t *
 I8085RegisterInfo::getCallPreservedMask(const MachineFunction &MF,
                                       CallingConv::ID CC) const {
   const I8085Subtarget &STI = MF.getSubtarget<I8085Subtarget>();
-  return STI.hasTinyEncoding() ? CSR_NormalTiny_RegMask : CSR_Normal_RegMask;
+  return CSR_Normal_RegMask;
 }
 
 BitVector I8085RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
@@ -77,18 +75,8 @@ BitVector I8085RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
       Reserved.set(Reg);
   }
 
-  // We tenatively reserve the frame pointer register r29:r28 because the
-  // function may require one, but we cannot tell until register allocation
-  // is complete, which can be too late.
-  //
-  // Instead we just unconditionally reserve the Y register.
-  //
-  // TODO: Write a pass to enumerate functions which reserved the Y register
-  //       but didn't end up needing a frame pointer. In these, we can
-  //       convert one or two of the spills inside to use the Y register.
-  Reserved.set(I8085::R28);
-  Reserved.set(I8085::R29);
-  Reserved.set(I8085::R29R28);
+  Reserved.set(I8085::D);
+  Reserved.set(I8085::E);
 
   return Reserved;
 }
@@ -98,11 +86,15 @@ I8085RegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC,
                                            const MachineFunction &MF) const {
   const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
   if (TRI->isTypeLegalForClass(*RC, MVT::i16)) {
-    return &I8085::DREGSRegClass;
+    return &I8085::GR16;
   }
 
+  // if (TRI->isTypeLegalForClass(*RC, MVT::i8)) {
+  //   return &I8085::GPR8RegClass;
+  // }
+
   if (TRI->isTypeLegalForClass(*RC, MVT::i8)) {
-    return &I8085::GPR8RegClass;
+    return &I8085::GR8RegClass;
   }
 
   llvm_unreachable("Invalid register size");
@@ -142,7 +134,7 @@ static void foldFrameOffset(MachineBasicBlock::iterator &II, int &Offset,
 
 void I8085RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
                                           int SPAdj, unsigned FIOperandNum,
-                                          RegScavenger *RS) const {
+                                          RegScavenger *RS) const {                                      
   assert(SPAdj == 0 && "Unexpected SPAdj value");
 
   MachineInstr &MI = *II;
@@ -167,7 +159,7 @@ void I8085RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   // expand it into move + add.
   if (MI.getOpcode() == I8085::FRMIDX) {
     MI.setDesc(TII.get(I8085::MOVWRdRr));
-    MI.getOperand(FIOperandNum).ChangeToRegister(I8085::R29R28, false);
+    MI.getOperand(FIOperandNum).ChangeToRegister(I8085::D, false);
     MI.removeOperand(2);
 
     assert(Offset > 0 && "Invalid offset");
@@ -175,7 +167,7 @@ void I8085RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
     // We need to materialize the offset via an add instruction.
     unsigned Opcode;
     Register DstReg = MI.getOperand(0).getReg();
-    assert(DstReg != I8085::R29R28 && "Dest reg cannot be the frame pointer");
+    assert(DstReg != I8085::D && "Dest reg cannot be the frame pointer");
 
     II++; // Skip over the FRMIDX (and now MOVW) instruction.
 
@@ -239,8 +231,8 @@ void I8085RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
     BuildMI(MBB, II, dl, TII.get(I8085::INRdA), I8085::R0)
         .addImm(STI.getIORegSREG());
 
-    MachineInstr *New = BuildMI(MBB, II, dl, TII.get(AddOpc), I8085::R29R28)
-                            .addReg(I8085::R29R28, RegState::Kill)
+    MachineInstr *New = BuildMI(MBB, II, dl, TII.get(AddOpc), I8085::D)
+                            .addReg(I8085::D, RegState::Kill)
                             .addImm(AddOffset);
     New->getOperand(3).setIsDead();
 
@@ -251,14 +243,14 @@ void I8085RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
 
     // No need to set SREG as dead here otherwise if the next instruction is a
     // cond branch it will be using a dead register.
-    BuildMI(MBB, std::next(II), dl, TII.get(SubOpc), I8085::R29R28)
-        .addReg(I8085::R29R28, RegState::Kill)
+    BuildMI(MBB, std::next(II), dl, TII.get(SubOpc), I8085::D)
+        .addReg(I8085::D, RegState::Kill)
         .addImm(Offset - 63 + 1);
 
     Offset = 62;
   }
 
-  MI.getOperand(FIOperandNum).ChangeToRegister(I8085::R29R28, false);
+  MI.getOperand(FIOperandNum).ChangeToRegister(I8085::D, false);
   assert(isUInt<6>(Offset) && "Offset is out of range");
   MI.getOperand(FIOperandNum + 1).ChangeToImmediate(Offset);
 }
@@ -267,7 +259,7 @@ Register I8085RegisterInfo::getFrameRegister(const MachineFunction &MF) const {
   const TargetFrameLowering *TFI = MF.getSubtarget().getFrameLowering();
   if (TFI->hasFP(MF)) {
     // The Y pointer register
-    return I8085::R28;
+    return I8085::D;
   }
 
   return I8085::SP;

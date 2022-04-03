@@ -57,6 +57,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeI8085Disassembler() {
 }
 
 static const uint16_t GPRDecoderTable[] = {
+    I8085::A,  I8085::B,  I8085::C,  I8085::D,  I8085::E,  I8085::H,  I8085::L,
     I8085::R0,  I8085::R1,  I8085::R2,  I8085::R3,  I8085::R4,  I8085::R5,  I8085::R6,
     I8085::R7,  I8085::R8,  I8085::R9,  I8085::R10, I8085::R11, I8085::R12, I8085::R13,
     I8085::R14, I8085::R15, I8085::R16, I8085::R17, I8085::R18, I8085::R19, I8085::R20,
@@ -293,41 +294,41 @@ DecodeStatus I8085Disassembler::getInstruction(MCInst &Instr, uint64_t &Size,
                                              ArrayRef<uint8_t> Bytes,
                                              uint64_t Address,
                                              raw_ostream &CStream) const {
-  uint32_t Insn;
+  // uint32_t Insn;
 
-  DecodeStatus Result;
+  // DecodeStatus Result;
 
-  // Try decode a 16-bit instruction.
-  {
-    Result = readInstruction16(Bytes, Address, Size, Insn);
+  // // Try decode a 16-bit instruction.
+  // {
+  //   Result = readInstruction16(Bytes, Address, Size, Insn);
 
-    if (Result == MCDisassembler::Fail)
-      return MCDisassembler::Fail;
+  //   if (Result == MCDisassembler::Fail)
+  //     return MCDisassembler::Fail;
 
-    // Try to auto-decode a 16-bit instruction.
-    Result = decodeInstruction(getDecoderTable(Size), Instr, Insn, Address,
-                               this, STI);
+  //   // Try to auto-decode a 16-bit instruction.
+  //   Result = decodeInstruction(getDecoderTable(Size), Instr, Insn, Address,
+  //                              this, STI);
 
-    if (Result != MCDisassembler::Fail)
-      return Result;
-  }
+  //   if (Result != MCDisassembler::Fail)
+  //     return Result;
+  // }
 
-  // Try decode a 32-bit instruction.
-  {
-    Result = readInstruction32(Bytes, Address, Size, Insn);
+  // // Try decode a 32-bit instruction.
+  // {
+  //   Result = readInstruction32(Bytes, Address, Size, Insn);
 
-    if (Result == MCDisassembler::Fail)
-      return MCDisassembler::Fail;
+  //   if (Result == MCDisassembler::Fail)
+  //     return MCDisassembler::Fail;
 
-    Result = decodeInstruction(getDecoderTable(Size), Instr, Insn, Address,
-                               this, STI);
+  //   Result = decodeInstruction(getDecoderTable(Size), Instr, Insn, Address,
+  //                              this, STI);
 
-    if (Result != MCDisassembler::Fail) {
-      return Result;
-    }
+  //   if (Result != MCDisassembler::Fail) {
+  //     return Result;
+  //   }
 
     return MCDisassembler::Fail;
-  }
+  
 }
 
 typedef DecodeStatus (*DecodeFunc)(MCInst &MI, unsigned insn, uint64_t Address,

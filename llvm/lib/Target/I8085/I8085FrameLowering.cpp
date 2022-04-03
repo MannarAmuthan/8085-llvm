@@ -58,33 +58,6 @@ void I8085FrameLowering::emitPrologue(MachineFunction &MF,
   const I8085MachineFunctionInfo *AFI = MF.getInfo<I8085MachineFunctionInfo>();
   bool HasFP = hasFP(MF);
 
-  // Interrupt handlers re-enable interrupts in function entry.
-  if (AFI->isInterruptHandler()) {
-    BuildMI(MBB, MBBI, DL, TII.get(I8085::BSETs))
-        .addImm(0x07)
-        .setMIFlag(MachineInstr::FrameSetup);
-  }
-
-  // Emit special prologue code to save R1, R0 and SREG in interrupt/signal
-  // handlers before saving any other registers.
-  if (AFI->isInterruptOrSignalHandler()) {
-    BuildMI(MBB, MBBI, DL, TII.get(I8085::PUSHWRr))
-        .addReg(I8085::R1R0, RegState::Kill)
-        .setMIFlag(MachineInstr::FrameSetup);
-
-    BuildMI(MBB, MBBI, DL, TII.get(I8085::INRdA), I8085::R0)
-        .addImm(STI.getIORegSREG())
-        .setMIFlag(MachineInstr::FrameSetup);
-    BuildMI(MBB, MBBI, DL, TII.get(I8085::PUSHRr))
-        .addReg(I8085::R0, RegState::Kill)
-        .setMIFlag(MachineInstr::FrameSetup);
-    BuildMI(MBB, MBBI, DL, TII.get(I8085::EORRdRr))
-        .addReg(I8085::R1, RegState::Define)
-        .addReg(I8085::R1, RegState::Kill)
-        .addReg(I8085::R1, RegState::Kill)
-        .setMIFlag(MachineInstr::FrameSetup);
-  }
-
   // Early exit if the frame pointer is not needed in this function.
   if (!HasFP) {
     return;
@@ -107,7 +80,7 @@ void I8085FrameLowering::emitPrologue(MachineFunction &MF,
 
   // Mark the FramePtr as live-in in every block except the entry.
   for (MachineBasicBlock &MBBJ : llvm::drop_begin(MF)) {
-    MBBJ.addLiveIn(I8085::R29R28);
+    MBBJ.addLiveIn(I8085::D);
   }
 
   if (!FrameSize) {
@@ -115,19 +88,19 @@ void I8085FrameLowering::emitPrologue(MachineFunction &MF,
   }
 
   // Reserve the necessary frame memory by doing FP -= <size>.
-  unsigned Opcode = (isUInt<6>(FrameSize)) ? I8085::SBIWRdK : I8085::SUBIWRdK;
+  // unsigned Opcode = (isUInt<6>(FrameSize)) ? I8085::SBIWRdK : I8085::SUBIWRdK;
+  unsigned Opcode = I8085::SUB_I8;
 
-  MachineInstr *MI = BuildMI(MBB, MBBI, DL, TII.get(Opcode), I8085::R29R28)
-                         .addReg(I8085::R29R28, RegState::Kill)
-                         .addImm(FrameSize)
-                         .setMIFlag(MachineInstr::FrameSetup);
+  MachineInstr *MI = BuildMI(MBB, MBBI, DL, TII.get(Opcode), I8085::D)
+                         .addReg(I8085::D, RegState::Kill)
+                         .addImm(FrameSize);
   // The SREG implicit def is dead.
-  MI->getOperand(3).setIsDead();
+  // MI->getOperand(3).setIsDead();
 
-  // Write back R29R28 to SP and temporarily disable interrupts.
-  BuildMI(MBB, MBBI, DL, TII.get(I8085::SPWRITE), I8085::SP)
-      .addReg(I8085::R29R28)
-      .setMIFlag(MachineInstr::FrameSetup);
+  // // Write back R29R28 to SP and temporarily disable interrupts.
+  // BuildMI(MBB, MBBI, DL, TII.get(I8085::SPWRITE), I8085::SP)
+  //     .addReg(I8085::D)
+  //     .setMIFlag(MachineInstr::FrameSetup);
 }
 
 static void restoreStatusRegister(MachineFunction &MF, MachineBasicBlock &MBB) {
@@ -191,25 +164,29 @@ void I8085FrameLowering::emitEpilogue(MachineFunction &MF,
   if (FrameSize) {
     unsigned Opcode;
 
+    Opcode = I8085::ADD_I8;
+
     // Select the optimal opcode depending on how big it is.
-    if (isUInt<6>(FrameSize)) {
-      Opcode = I8085::ADIWRdK;
-    } else {
-      Opcode = I8085::SUBIWRdK;
-      FrameSize = -FrameSize;
-    }
+    // if (isUInt<6>(FrameSize)) {
+    //   Opcode = I8085::ADD_I8;
+    // } else {
+    //   Opcode = I8085::SUBIWRdK;
+    //   FrameSize = -FrameSize;
+    // }
 
     // Restore the frame pointer by doing FP += <size>.
-    MachineInstr *MI = BuildMI(MBB, MBBI, DL, TII.get(Opcode), I8085::R29R28)
-                          .addReg(I8085::R29R28, RegState::Kill)
+
+    MachineInstr *MI = BuildMI(MBB, MBBI, DL, TII.get(Opcode), I8085::D)
+                          .addReg(I8085::D, RegState::Kill)
                           .addImm(FrameSize);
+                          
     // The SREG implicit def is dead.
-    MI->getOperand(3).setIsDead();
+    // MI->getOperand(3).setIsDead();
   }
 
   // Write back R29R28 to SP and temporarily disable interrupts.
-  BuildMI(MBB, MBBI, DL, TII.get(I8085::SPWRITE), I8085::SP)
-      .addReg(I8085::R29R28, RegState::Kill);
+  // BuildMI(MBB, MBBI, DL, TII.get(I8085::SPWRITE), I8085::SP)
+  //     .addReg(I8085::D, RegState::Kill);
 
   restoreStatusRegister(MF, MBB);
 }

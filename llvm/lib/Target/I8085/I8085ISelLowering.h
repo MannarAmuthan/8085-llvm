@@ -29,6 +29,8 @@ enum NodeType {
   RET_FLAG,
   /// Return from ISR.
   RETI_FLAG,
+
+  ADD_I8,
   /// Represents an abstract call instruction,
   /// which includes a bunch of information.
   CALL,
@@ -153,6 +155,10 @@ private:
   SDValue LowerDivRem(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerBlockAddress(SDValue Op, SelectionDAG &DAG) const;
+
+  SDValue LowerStore(SDValue Op, SelectionDAG &DAG) const;
+  
+
   SDValue LowerBR_CC(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerINLINEASM(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const;

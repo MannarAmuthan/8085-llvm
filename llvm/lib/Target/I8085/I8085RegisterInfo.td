@@ -223,3 +223,28 @@ def SREG : I8085Reg<14, "FLAGS">, DwarfRegNum<[88]>;
 def CCR : RegisterClass<"I8085", [i8], 8, (add SREG)> {
   let CopyCost = -1; // Don't allow copying of status registers
 }
+
+
+
+// ------------------------------- NEW ----------------------------------
+
+def A : I8085Reg<110, "A">, DwarfRegNum<[110]>;
+def B : I8085Reg<111, "B">, DwarfRegNum<[111]>;
+def C : I8085Reg<112, "C">, DwarfRegNum<[112]>;
+def D : I8085Reg<113, "D">, DwarfRegNum<[113]>;
+def E : I8085Reg<114, "E">, DwarfRegNum<[114]>;
+def H : I8085Reg<115, "H">, DwarfRegNum<[115]>;
+def L : I8085Reg<116, "L">, DwarfRegNum<[116]>;
+
+
+def DE : I8085Reg<117, "E:D", [E, D]>, DwarfRegNum<[117]>;
+
+def GR8 : RegisterClass<"I8085", [i8], 8,
+                        (
+                            // Return value and arguments.
+                            add A,B,C,D,E,H,L
+                            // Scratch registers.
+                            )>;         
+
+
+// def PTR_REGS : RegisterClass<"I8085", [i16], 8, (add DE), ptr>;                            

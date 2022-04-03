@@ -202,40 +202,40 @@ const MCExpr *I8085AsmPrinter::lowerConstant(const Constant *CV) {
 }
 
 void I8085AsmPrinter::emitXXStructor(const DataLayout &DL, const Constant *CV) {
-  if (!EmittedStructorSymbolAttrs) {
-    OutStreamer->emitRawComment(
-        " Emitting these undefined symbol references causes us to link the"
-        " libgcc code that runs our constructors/destructors");
-    OutStreamer->emitRawComment(" This matches GCC's behavior");
+  // if (!EmittedStructorSymbolAttrs) {
+  //   OutStreamer->emitRawComment(
+  //       " Emitting these undefined symbol references causes us to link the"
+  //       " libgcc code that runs our constructors/destructors");
+  //   OutStreamer->emitRawComment(" This matches GCC's behavior");
 
-    MCSymbol *CtorsSym = OutContext.getOrCreateSymbol("__do_global_ctors");
-    OutStreamer->emitSymbolAttribute(CtorsSym, MCSA_Global);
+  //   MCSymbol *CtorsSym = OutContext.getOrCreateSymbol("__do_global_ctors");
+  //   OutStreamer->emitSymbolAttribute(CtorsSym, MCSA_Global);
 
-    MCSymbol *DtorsSym = OutContext.getOrCreateSymbol("__do_global_dtors");
-    OutStreamer->emitSymbolAttribute(DtorsSym, MCSA_Global);
+  //   MCSymbol *DtorsSym = OutContext.getOrCreateSymbol("__do_global_dtors");
+  //   OutStreamer->emitSymbolAttribute(DtorsSym, MCSA_Global);
 
-    EmittedStructorSymbolAttrs = true;
-  }
+  //   EmittedStructorSymbolAttrs = true;
+  // }
 
   AsmPrinter::emitXXStructor(DL, CV);
 }
 
 bool I8085AsmPrinter::doFinalization(Module &M) {
-  MCSymbol *DoCopyData = OutContext.getOrCreateSymbol("__do_copy_data");
-  MCSymbol *DoClearBss = OutContext.getOrCreateSymbol("__do_clear_bss");
+  // MCSymbol *DoCopyData = OutContext.getOrCreateSymbol("__do_copy_data");
+  // MCSymbol *DoClearBss = OutContext.getOrCreateSymbol("__do_clear_bss");
 
-  // FIXME: We can disable __do_copy_data if there are no static RAM variables.
+  // // FIXME: We can disable __do_copy_data if there are no static RAM variables.
 
-  OutStreamer->emitRawComment(
-      " Declaring this symbol tells the CRT that it should");
-  OutStreamer->emitRawComment(
-      "copy all variables from program memory to RAM on startup");
-  OutStreamer->emitSymbolAttribute(DoCopyData, MCSA_Global);
+  // OutStreamer->emitRawComment(
+  //     " Declaring this symbol tells the CRT that it should");
+  // OutStreamer->emitRawComment(
+  //     "copy all variables from program memory to RAM on startup");
+  // OutStreamer->emitSymbolAttribute(DoCopyData, MCSA_Global);
 
-  OutStreamer->emitRawComment(
-      " Declaring this symbol tells the CRT that it should");
-  OutStreamer->emitRawComment("clear the zeroed data section on startup");
-  OutStreamer->emitSymbolAttribute(DoClearBss, MCSA_Global);
+  // OutStreamer->emitRawComment(
+  //     " Declaring this symbol tells the CRT that it should");
+  // OutStreamer->emitRawComment("clear the zeroed data section on startup");
+  // OutStreamer->emitSymbolAttribute(DoClearBss, MCSA_Global);
 
   return AsmPrinter::doFinalization(M);
 }

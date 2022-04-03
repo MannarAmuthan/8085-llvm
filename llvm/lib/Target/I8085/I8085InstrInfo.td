@@ -103,6 +103,7 @@ def imm0_63_neg : PatLeaf<(imm), [{
 
 def uimm6 : PatLeaf<(imm), [{ return isUInt<6>(N->getZExtValue()); }]>;
 
+
 // imm_com8_XFORM - Return the complement of a imm_com8 value
 def imm_com8_XFORM
     : SDNodeXForm<imm, [{
@@ -1255,9 +1256,7 @@ let isReMaterializable = 1 in {
                      : $rd),
                     (ins imm_ldi8
                      : $k),
-                    "ldi\t$rd, $k", [(set i8
-                                      : $rd, imm
-                                      : $k)]>;
+                    "ldi\t$rd, $k", []>;
 
   // LDIW Rd+1:Rd, K+1:K
   //
@@ -2521,3 +2520,40 @@ def : Pat<(I8085tst i8 : $rd), (ANDRdRr GPR8 : $rd, GPR8 : $rd)>;
 // Lowering of 'lsl' node to 'LSL' instruction.
 // LSL is an alias of 'ADD Rd, Rd'
 def : Pat<(I8085lsl i8 : $rd), (ADDRdRr GPR8 : $rd, GPR8 : $rd)>;
+
+
+// ------------------------------------- NEW ---------------------------------------
+
+ def MVI : MV_F<0b1111,
+                    (outs GR8: $rd),
+                    (ins i8imm: $k),
+                    "MVI\t$rd, $k", [(set i8: $rd, imm: $k)]>;
+
+
+ def MOV : MV_F<0b0000,
+                    (outs GR8: $rd),
+                    (ins GR8: $rs),
+                    "MOV\t$rd, $rs", [(set i8: $rd, i8: $rs)]>;
+
+
+def SUB_I8
+    : FWRdK<0b1,
+            (outs GR8: $rd),
+            (ins GR8: $src, i8imm: $k),
+            "SUB\t$rd, $k",
+            [(set i8: $rd, (sub i8: $src, imm: $k))]>;
+
+
+let Uses = [A] in def ADD_I8
+    : FWRdK<0b1,
+            (outs GR8: $rd),
+            (ins GR8: $src, i8imm: $k),
+            "ADD\t$rd, $k",
+            [(set i8: $rd, (sub i8: $src, imm: $k))]>;    
+              
+// def LDIRdK : FRdK<0b1110,
+//                     (outs LD8
+//                      : $rd),
+//                     (ins imm_ldi8
+//                      : $k),
+//                     "ldi\t$rd, $k", []>;

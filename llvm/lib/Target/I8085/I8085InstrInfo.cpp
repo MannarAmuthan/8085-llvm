@@ -30,6 +30,8 @@
 #include "I8085TargetMachine.h"
 #include "MCTargetDesc/I8085MCTargetDesc.h"
 
+#include <iostream>
+
 #define GET_INSTRINFO_CTOR_DTOR
 #include "I8085GenInstrInfo.inc"
 
@@ -47,7 +49,7 @@ void I8085InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
   unsigned Opc;
 
   // Not all I8085 devices support the 16-bit `MOVW` instruction.
-  if (I8085::DREGSRegClass.contains(DestReg, SrcReg)) {
+  if (I8085::GR8RegClass.contains(DestReg, SrcReg)) {
     if (STI.hasMOVW() && I8085::DREGSMOVWRegClass.contains(DestReg, SrcReg)) {
       BuildMI(MBB, MI, DL, get(I8085::MOVWRdRr), DestReg)
           .addReg(SrcReg, getKillRegState(KillSrc));
@@ -58,21 +60,26 @@ void I8085InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
       TRI.splitReg(SrcReg, SrcLo, SrcHi);
 
       // Copy each individual register with the `MOV` instruction.
-      BuildMI(MBB, MI, DL, get(I8085::MOVRdRr), DestLo)
+      BuildMI(MBB, MI, DL, get(I8085::MOV), DestLo)
           .addReg(SrcLo, getKillRegState(KillSrc));
-      BuildMI(MBB, MI, DL, get(I8085::MOVRdRr), DestHi)
+      BuildMI(MBB, MI, DL, get(I8085::MOV), DestHi)
           .addReg(SrcHi, getKillRegState(KillSrc));
     }
   } else {
-    if (I8085::GPR8RegClass.contains(DestReg, SrcReg)) {
-      Opc = I8085::MOVRdRr;
-    } else if (SrcReg == I8085::SP && I8085::DREGSRegClass.contains(DestReg)) {
+    if (I8085::GR8RegClass.contains(DestReg, SrcReg)) {
+      Opc = I8085::MOV;
+    } else if (SrcReg == I8085::SP && I8085::GR8RegClass.contains(DestReg)) {
       Opc = I8085::SPREAD;
-    } else if (DestReg == I8085::SP && I8085::DREGSRegClass.contains(SrcReg)) {
+    } else if (DestReg == I8085::SP && I8085::GR8RegClass.contains(SrcReg)) {
       Opc = I8085::SPWRITE;
     } else {
-      llvm_unreachable("Impossible reg-to-reg copy");
+      // std::cout << SrcReg << "\n";
+      // std::cout <<  DestReg << "\n";
+      // llvm_unreachable("Impossible reg-to-reg copy");
+      Opc = I8085::MOV;
     }
+
+     
 
     BuildMI(MBB, MI, DL, get(Opc), DestReg)
         .addReg(SrcReg, getKillRegState(KillSrc));

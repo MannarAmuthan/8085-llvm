@@ -41,6 +41,7 @@ public:
 
   bool runOnMachineFunction(MachineFunction &MF) override;
 
+
   StringRef getPassName() const override { return I8085_EXPAND_PSEUDO_NAME; }
 
 private:
@@ -52,6 +53,17 @@ private:
 
   bool expandMBB(Block &MBB);
   bool expandMI(Block &MBB, BlockIt MBBI);
+
+  template <unsigned OP> bool expand(Block &MBB, BlockIt MBBI);
+
+  MachineInstrBuilder buildMI(Block &MBB, BlockIt MBBI, unsigned Opcode) {
+    return BuildMI(MBB, MBBI, MBBI->getDebugLoc(), TII->get(Opcode));
+  }
+
+  MachineInstrBuilder buildMI(Block &MBB, BlockIt MBBI, unsigned Opcode,
+                              Register DstReg) {
+    return BuildMI(MBB, MBBI, MBBI->getDebugLoc(), TII->get(Opcode), DstReg);
+  }
   
 };
 
@@ -86,7 +98,7 @@ bool I8085ExpandPseudo::runOnMachineFunction(MachineFunction &MF) {
 
     // Continue expanding the block until all pseudos are expanded.
     do {
-      assert(ExpandCount < 10 && "pseudo expand limit reached");
+      assert(ExpandCount < 100 && "pseudo expand limit reached");
 
       bool BlockModified = expandMBB(MBB);
       Modified |= BlockModified;
@@ -100,9 +112,41 @@ bool I8085ExpandPseudo::runOnMachineFunction(MachineFunction &MF) {
 }
 
 
+template <>
+bool I8085ExpandPseudo::expand<I8085::SPREAD>(Block &MBB, BlockIt MBBI) {
+  MachineInstr &MI = *MBBI;
+  Register DstReg = MI.getOperand(0).getReg();
+  bool DstIsDead = MI.getOperand(0).isDead();
+  unsigned Flags = MI.getFlags();
+  unsigned OpLo = I8085::INRdA;
+  unsigned OpHi = I8085::INRdA;
+
+  // Low part
+  // buildMI(MBB, MBBI, OpLo)
+  //     .addReg(DstReg, RegState::Define | getDeadRegState(DstIsDead))
+  //     .addImm(0x3d)
+  //     .setMIFlags(Flags);
+
+  MI.eraseFromParent();
+  return true;
+}
+
+
 bool I8085ExpandPseudo::expandMI(Block &MBB, BlockIt MBBI) {
+MachineInstr &MI = *MBBI;
+int Opcode = MBBI->getOpcode();
+
+#define EXPAND(Op)                                                             \
+  case Op:                                                                     \
+    return expand<Op>(MBB, MI)
+
+  switch (Opcode) {
+    EXPAND(I8085::SPREAD);
+  }
+#undef EXPAND
   return false;
 }
+
 
 } // end of anonymous namespace
 

@@ -31,7 +31,7 @@ static const char *I8085DataLayout =
 /// Processes a CPU name.
 static StringRef getCPU(StringRef CPU) {
   if (CPU.empty() || CPU == "generic") {
-    return "avr2";
+    return "i8085";
   }
 
   return CPU;

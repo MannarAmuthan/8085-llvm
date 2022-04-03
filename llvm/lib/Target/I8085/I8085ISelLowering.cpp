@@ -31,6 +31,8 @@
 #include "I8085TargetMachine.h"
 #include "MCTargetDesc/I8085MCTargetDesc.h"
 
+#include <iostream>
+
 namespace llvm {
 
 I8085TargetLowering::I8085TargetLowering(const I8085TargetMachine &TM,
@@ -38,6 +40,8 @@ I8085TargetLowering::I8085TargetLowering(const I8085TargetMachine &TM,
     : TargetLowering(TM), Subtarget(STI) {
   // Set up the register classes.
   addRegisterClass(MVT::i8, &I8085::GPR8RegClass);
+
+  addRegisterClass(MVT::i8, &I8085::GR8RegClass);
 
   // Compute derived properties from the register classes.
   computeRegisterProperties(Subtarget.getRegisterInfo());
@@ -345,6 +349,14 @@ SDValue I8085TargetLowering::getI8085Cmp(SDValue LHS, SDValue RHS, ISD::CondCode
 }
 
 
+SDValue I8085TargetLowering::LowerStore(SDValue Op,
+                                              SelectionDAG &DAG) const {
+                                                
+  std::cout << "********************************" << "\n";
+  return Op;
+}
+
+
 SDValue I8085TargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   switch (Op.getOpcode()) {
   default:
@@ -354,8 +366,9 @@ SDValue I8085TargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const
     return LowerGlobalAddress(Op, DAG);
   case ISD::BlockAddress:
     return LowerBlockAddress(Op, DAG);
+  case ISD::STORE:
+    return LowerStore(Op, DAG);  
   }
-  
   return SDValue();
 }
 
@@ -729,7 +742,7 @@ SDValue I8085TargetLowering::LowerFormalArguments(
       EVT RegVT = VA.getLocVT();
       const TargetRegisterClass *RC;
       if (RegVT == MVT::i8) {
-        RC = &I8085::GPR8RegClass;
+        RC = &I8085::GR8RegClass;
       } else if (RegVT == MVT::i16) {
         RC = &I8085::DREGSRegClass;
       } else {
@@ -1035,26 +1048,31 @@ I8085TargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
                  *DAG.getContext());
 
   MachineFunction &MF = DAG.getMachineFunction();
+  MachineFrameInfo &MFI = MF.getFrameInfo();
 
   // Analyze return values.
-  if (CallConv == CallingConv::I8085_BUILTIN) {
-    CCInfo.AnalyzeReturn(Outs, RetCC_I8085_BUILTIN);
-  } else {
-    analyzeReturnValues(Outs, CCInfo, Subtarget.hasTinyEncoding());
-  }
+  CCInfo.AnalyzeReturn(Outs, RetCC_I8085_BUILTIN);
+
+  // if (CallConv == CallingConv::I8085_BUILTIN) {
+  //   CCInfo.AnalyzeReturn(Outs, RetCC_I8085_BUILTIN);
+  // } else {
+  //   analyzeReturnValues(Outs, CCInfo, Subtarget.hasTinyEncoding());
+  // }
 
   SDValue Flag;
   SmallVector<SDValue, 4> RetOps(1, Chain);
   // Copy the result values into the output registers.
   for (unsigned i = 0, e = RVLocs.size(); i != e; ++i) {
     CCValAssign &VA = RVLocs[i];
-    assert(VA.isRegLoc() && "Can only return in registers!");
-
+    // assert(VA.isRegLoc() && "Can only return in registers!");
+    
+    if(VA.isRegLoc()){
     Chain = DAG.getCopyToReg(Chain, dl, VA.getLocReg(), OutVals[i], Flag);
-
-    // Guarantee that all emitted copies are stuck together with flags.
+        // Guarantee that all emitted copies are stuck together with flags.
     Flag = Chain.getValue(1);
     RetOps.push_back(DAG.getRegister(VA.getLocReg(), VA.getLocVT()));
+    }
+
   }
 
   // Don't emit the ret/reti instruction when the naked attribute is present in
@@ -1065,8 +1083,7 @@ I8085TargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
 
   const I8085MachineFunctionInfo *AFI = MF.getInfo<I8085MachineFunctionInfo>();
 
-  unsigned RetOpc =
-      AFI->isInterruptOrSignalHandler() ? I8085ISD::RETI_FLAG : I8085ISD::RET_FLAG;
+  unsigned RetOpc = I8085ISD::RET_FLAG;
 
   RetOps[0] = Chain; // Update chain.
 
@@ -1425,7 +1442,7 @@ I8085TargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
 I8085TargetLowering::ConstraintType
 I8085TargetLowering::getConstraintType(StringRef Constraint) const {
   if (Constraint.size() == 1) {
-    // See http://www.nongnu.org/avr-libc/user-manual/inline_asm.html
+    // See http://www.nongnu.org/I8085-libc/user-manual/inline_asm.html
     switch (Constraint[0]) {
     default:
       break;

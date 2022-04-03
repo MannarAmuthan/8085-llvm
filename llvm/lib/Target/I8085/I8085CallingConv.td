@@ -15,8 +15,13 @@
 
 // Special return value calling convention for runtime functions.
 def RetCC_I8085_BUILTIN : CallingConv<[
-  CCIfType<[i8], CCAssignToReg<[R24, R25]>>,
-  CCIfType<[i16], CCAssignToReg<[R23R22, R25R24]>>
+
+  CCIfType<[i8], CCAssignToReg<[A]>>
+  
+  // CCIfType<[i8], CCAssignToStack<1, 1>>
+
+  // CCIfType<[i8], CCAssignToReg<[R24, R25]>>,
+  // CCIfType<[i16], CCAssignToReg<[R23R22, R25R24]>>
 ]>;
 
 //===----------------------------------------------------------------------===//
@@ -37,7 +42,4 @@ def ArgCC_I8085_Vararg : CallingConv<[
 // Callee-saved register lists.
 //===----------------------------------------------------------------------===//
 
-def CSR_Normal : CalleeSavedRegs<(add R29, R28, (sequence "R%u", 17, 2))>;
-def CSR_NormalTiny : CalleeSavedRegs<(add R29, R28, R19, R18)>;
-def CSR_Interrupts : CalleeSavedRegs<(add(sequence "R%u", 31, 2))>;
-def CSR_InterruptsTiny : CalleeSavedRegs<(add(sequence "R%u", 31, 18))>;
+def CSR_Normal : CalleeSavedRegs<(add D, E, (sequence "R%u", 17, 2))>;

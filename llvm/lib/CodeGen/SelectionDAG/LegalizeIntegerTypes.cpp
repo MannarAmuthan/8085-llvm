@@ -28,6 +28,8 @@ using namespace llvm;
 
 #define DEBUG_TYPE "legalize-types"
 
+#include <iostream>
+
 //===----------------------------------------------------------------------===//
 //  Integer Result Promotion
 //===----------------------------------------------------------------------===//
