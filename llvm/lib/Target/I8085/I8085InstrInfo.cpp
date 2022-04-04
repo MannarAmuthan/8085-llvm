@@ -54,16 +54,22 @@ void I8085InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
       BuildMI(MBB, MI, DL, get(I8085::MOVWRdRr), DestReg)
           .addReg(SrcReg, getKillRegState(KillSrc));
     } else {
-      Register DestLo, DestHi, SrcLo, SrcHi;
+      std::cout << DestReg.id() << "\n";
+      std::cout << SrcReg.id() << "\n";
+      Opc = I8085::MOV;
 
-      TRI.splitReg(DestReg, DestLo, DestHi);
-      TRI.splitReg(SrcReg, SrcLo, SrcHi);
+      BuildMI(MBB, MI, DL, get(Opc), DestReg)
+        .addReg(SrcReg, getKillRegState(KillSrc));
+      // Register DestLo, DestHi, SrcLo, SrcHi;
 
-      // Copy each individual register with the `MOV` instruction.
-      BuildMI(MBB, MI, DL, get(I8085::MOV), DestLo)
-          .addReg(SrcLo, getKillRegState(KillSrc));
-      BuildMI(MBB, MI, DL, get(I8085::MOV), DestHi)
-          .addReg(SrcHi, getKillRegState(KillSrc));
+      // TRI.splitReg(DestReg, DestLo, DestHi);
+      // TRI.splitReg(SrcReg, SrcLo, SrcHi);
+
+      // // Copy each individual register with the `MOV` instruction.
+      // BuildMI(MBB, MI, DL, get(I8085::MOV), DestLo)
+      //     .addReg(SrcLo, getKillRegState(KillSrc));
+      // BuildMI(MBB, MI, DL, get(I8085::MOV), DestHi)
+      //     .addReg(SrcHi, getKillRegState(KillSrc));
     }
   } else {
     if (I8085::GR8RegClass.contains(DestReg, SrcReg)) {
@@ -78,7 +84,7 @@ void I8085InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
       // llvm_unreachable("Impossible reg-to-reg copy");
       Opc = I8085::MOV;
     }
-
+    
     BuildMI(MBB, MI, DL, get(Opc), DestReg)
         .addReg(SrcReg, getKillRegState(KillSrc));
   }

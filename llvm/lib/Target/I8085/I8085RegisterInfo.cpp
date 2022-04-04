@@ -279,6 +279,7 @@ I8085RegisterInfo::getPointerRegClass(const MachineFunction &MF,
 
 void I8085RegisterInfo::splitReg(Register Reg, Register &LoReg,
                                Register &HiReg) const {
+  std:: cout << Reg.id() << "\n";                           
   assert(I8085::DREGSRegClass.contains(Reg) && "can only split 16-bit registers");
 
   LoReg = getSubReg(Reg, I8085::sub_lo);
