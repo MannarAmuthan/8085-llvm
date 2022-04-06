@@ -1,4 +1,4 @@
-; RUN: llc -mattr=i8085,sram < %s -march=i8085 -verify-machineinstrs | FileCheck %s
+; RUN: llc -mattr=i8085,sram < %s -march=i8085  | FileCheck %s
 
 define void @retvoid(i8* %x) {
 ; CHECK-LABEL: retvoid:
@@ -9,7 +9,10 @@ define void @retvoid(i8* %x) {
 
 define i8 @reteight() #0 {
 ; CHECK-LABEL: reteight:
-; CHECK: MVI	A, 56
+; CHECK: MVI	B, 56
+; CHECK: LXI H, 3
+; CHECK: DAD	SP
+; CHECK: MOV M, B
 ; CHECK: ret
   ret i8 56
 }

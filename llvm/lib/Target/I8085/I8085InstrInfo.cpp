@@ -54,8 +54,6 @@ void I8085InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
       BuildMI(MBB, MI, DL, get(I8085::MOVWRdRr), DestReg)
           .addReg(SrcReg, getKillRegState(KillSrc));
     } else {
-      std::cout << DestReg.id() << "\n";
-      std::cout << SrcReg.id() << "\n";
       Opc = I8085::MOV;
 
       BuildMI(MBB, MI, DL, get(Opc), DestReg)
@@ -84,7 +82,7 @@ void I8085InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
       // llvm_unreachable("Impossible reg-to-reg copy");
       Opc = I8085::MOV;
     }
-    
+
     BuildMI(MBB, MI, DL, get(Opc), DestReg)
         .addReg(SrcReg, getKillRegState(KillSrc));
   }

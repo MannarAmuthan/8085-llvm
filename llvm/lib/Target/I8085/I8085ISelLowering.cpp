@@ -25,6 +25,8 @@
 #include "llvm/IR/Function.h"
 #include "llvm/Support/ErrorHandling.h"
 
+#include <iostream>
+
 #include "I8085.h"
 #include "I8085MachineFunctionInfo.h"
 #include "I8085Subtarget.h"
@@ -51,6 +53,8 @@ I8085TargetLowering::I8085TargetLowering(const I8085TargetMachine &TM,
 
   setOperationAction(ISD::GlobalAddress, MVT::i16, Custom);
   setOperationAction(ISD::BlockAddress, MVT::i16, Custom);
+
+  // setOperationAction(ISD::STORE, MVT::i16, Custom);
 
   setOperationAction(ISD::STACKSAVE, MVT::Other, Expand);
   setOperationAction(ISD::STACKRESTORE, MVT::Other, Expand);
@@ -850,8 +854,6 @@ SDValue I8085TargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const
     return LowerGlobalAddress(Op, DAG);
   case ISD::BlockAddress:
     return LowerBlockAddress(Op, DAG);
-  // case ISD::BR_CC:
-  //   return LowerBR_CC(Op, DAG);
   // case ISD::SELECT_CC:
   //   return LowerSELECT_CC(Op, DAG);
   // case ISD::SETCC:
@@ -1347,12 +1349,14 @@ SDValue I8085TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   }
 
   // Variadic functions do not need all the analysis below.
-  if (isVarArg) {
-    CCInfo.AnalyzeCallOperands(Outs, ArgCC_I8085_Vararg);
-  } else {
-    analyzeArguments(&CLI, F, &DAG.getDataLayout(), Outs, ArgLocs, CCInfo,
-                     Subtarget.hasTinyEncoding());
-  }
+
+  CCInfo.AnalyzeCallOperands(Outs, ArgCC_I8085_Vararg);
+  // if (isVarArg) {
+  //   CCInfo.AnalyzeCallOperands(Outs, ArgCC_I8085_Vararg);
+  // } else {
+  //   analyzeArguments(&CLI, F, &DAG.getDataLayout(), Outs, ArgLocs, CCInfo,
+  //                    Subtarget.hasTinyEncoding());
+  // }
 
   // Get a count of how many bytes are to be pushed on the stack.
   unsigned NumBytes = CCInfo.getNextStackOffset();
@@ -1536,6 +1540,7 @@ I8085TargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
                                const SDLoc &dl, SelectionDAG &DAG) const {
   // CCValAssign - represent the assignment of the return value to locations.
   SmallVector<CCValAssign, 16> RVLocs;
+  auto DL = DAG.getDataLayout();
 
   // CCState - Info about the registers and stack slot.
   CCState CCInfo(CallConv, isVarArg, DAG.getMachineFunction(), RVLocs,
@@ -1545,25 +1550,45 @@ I8085TargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
 
   CCInfo.AnalyzeReturn(Outs, RetCC_I8085_BUILTIN);
 
-  // // Analyze return values.
-  // if (CallConv == CallingConv::I8085_BUILTIN) {
-  //   CCInfo.AnalyzeReturn(Outs, RetCC_I8085_BUILTIN);
-  // } else {
-  //   analyzeReturnValues(Outs, CCInfo, Subtarget.hasTinyEncoding());
-  // }
+  MachineFrameInfo &MFI = MF.getFrameInfo();
 
   SDValue Flag;
   SmallVector<SDValue, 4> RetOps(1, Chain);
   // Copy the result values into the output registers.
   for (unsigned i = 0, e = RVLocs.size(); i != e; ++i) {
     CCValAssign &VA = RVLocs[i];
-    assert(VA.isRegLoc() && "Can only return in registers!");
+    if(VA.isRegLoc()){
 
-    Chain = DAG.getCopyToReg(Chain, dl, VA.getLocReg(), OutVals[i], Flag);
+      Chain = DAG.getCopyToReg(Chain, dl, VA.getLocReg(), OutVals[i], Flag);
 
-    // Guarantee that all emitted copies are stuck together with flags.
-    Flag = Chain.getValue(1);
-    RetOps.push_back(DAG.getRegister(VA.getLocReg(), VA.getLocVT()));
+      // Guarantee that all emitted copies are stuck together with flags.
+      Flag = Chain.getValue(1);
+      RetOps.push_back(DAG.getRegister(VA.getLocReg(), VA.getLocVT()));
+    }
+    else{
+    int Offset = VA.getLocMemOffset();
+    unsigned ObjSize = VA.getLocVT().getStoreSize();
+    // Create the frame index object for the memory location.
+    int FI = MFI.CreateFixedObject(ObjSize, Offset, false);
+
+    // Create a SelectionDAG node corresponding to a store
+    // to this memory location.
+    SDValue FIN = DAG.getFrameIndex(FI, MVT::i16);
+    if(ObjSize==8) FIN = DAG.getFrameIndex(FI, MVT::i8);
+
+
+    Chain = DAG.getStore(Chain, dl, OutVals[i], FIN,MachinePointerInfo::getFixedStack(DAG.getMachineFunction(), FI));
+
+
+    unsigned RetOpc = I8085ISD::RET_FLAG;  
+    RetOps[0] = Chain; 
+
+    if (Flag.getNode()) {
+          RetOps.push_back(Flag);
+    }
+
+    return DAG.getNode(RetOpc, dl, MVT::Other, RetOps); 
+    }
   }
 
   // Don't emit the ret/reti instruction when the naked attribute is present in

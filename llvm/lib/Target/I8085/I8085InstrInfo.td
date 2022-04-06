@@ -1267,9 +1267,7 @@ let isReMaterializable = 1 in {
                         : $dst),
                        (ins i16imm
                         : $src),
-                       "ldiw\t$dst, $src", [(set i16
-                                             : $dst, imm
-                                             : $src)]>;
+                       "ldiw\t$dst, $src", []>;
 }
 
 // Load from data space into register.
@@ -2237,9 +2235,7 @@ def STDWSPQRr : StorePseudo<(outs),
                             (ins memspi
                              : $dst, DREGS
                              : $src),
-                            "stdwstk\t$dst, $src", [(store i16
-                                                     : $src, addr
-                                                     : $dst)]>;
+                            "stdwstk\t$dst, $src", []>;
 
 // SP read/write pseudos.
 let hasSideEffects = 0 in {
@@ -2544,7 +2540,7 @@ def SUB_I8
             [(set i8: $rd, (sub i8: $src, imm: $k))]>;
 
 
-let Uses = [A] in def ADD_I8
+def ADD_I8
     : FWRdK<0b1,
             (outs GR8: $rd),
             (ins GR8: $src, i8imm: $k),
@@ -2553,7 +2549,7 @@ let Uses = [A] in def ADD_I8
 
 
 def mspi : Operand<iPTR> { 
-  let MIOperandInfo = (ops GPRSP, i16imm); 
+  let MIOperandInfo = (ops GR8, i16imm); 
   let PrintMethod = "printMemri";
   let EncoderMethod = "encodeMemri";
 }
@@ -2562,6 +2558,18 @@ def mspi : Operand<iPTR> {
 def STDSPQRr : I8085Pseudo<(outs),
                            (ins mspi: $dst, GR8: $src),
                            "PS_STORE\t$dst, $src", [(store i8: $src, addr: $dst)]>;
+
+// def STDSPQRr_16imm : I8085Pseudo<(outs),
+//                            (ins mspi: $dst, DLDREGS: $src),
+//                            "PS_STORE\t$dst, $src", [(store i16: $src, addr: $dst)]>;
+
+// def STDSPQRr_16imm : Pseudo<(outs DLDREGS
+//                         : $dst),
+//                        (ins i16imm
+//                         : $src),
+//                        "PS_STORE16 \t$dst, $src", [(set i16
+//                                              : $dst, imm
+//                                              : $src)]>;
 
 
 def LXI : I8085Pseudo<(outs GR8: $rd),
@@ -2607,3 +2615,22 @@ def MOV_M
             (ins GR8: $rs),
             "MOV M, $rs",
             []>;                                    
+
+def LOAD_16 : I8085Pseudo<(outs DLDREGS: $dst),
+                       (ins i16imm: $src),
+                       "LOAD\t$dst, $src", [(set i16
+                                             : $dst, imm
+                                             : $src)]>; 
+
+def STORE_16 : StorePseudo<(outs),
+                            (ins mspi
+                             : $dst, DREGS
+                             : $src),
+                            "STORE\t$dst, $src", [(store i16
+                                                     : $src, addr
+                                                     : $dst)]>;
+
+def LOAD_I16_TO_MEM: StorePseudo<(outs mspi: $dst),
+                            (ins i16imm: $src),
+                            "LOAD_I16_TO_MEM\t$dst, $src", 
+                            []>;                                                                                                  
