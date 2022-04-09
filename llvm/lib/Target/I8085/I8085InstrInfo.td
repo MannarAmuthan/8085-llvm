@@ -2555,9 +2555,9 @@ def mspi : Operand<iPTR> {
 }
 
 
-def STDSPQRr : I8085Pseudo<(outs),
-                           (ins mspi: $dst, GR8: $src),
-                           "PS_STORE\t$dst, $src", [(store i8: $src, addr: $dst)]>;
+// def STDSPQRr : I8085Pseudo<(outs),
+//                            (ins mspi: $dst, GR8: $src),
+//                            "PS_STORE\t$dst, $src", [(store i8: $src, addr: $dst)]>;
 
 // def STDSPQRr_16imm : I8085Pseudo<(outs),
 //                            (ins mspi: $dst, DLDREGS: $src),

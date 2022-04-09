@@ -336,7 +336,7 @@ template <> bool I8085DAGToDAGISel::select<ISD::STORE>(SDNode *N) {
   SDLoc DL(N);
   SDValue Offset = CurDAG->getTargetConstant(CST, DL, MVT::i16);
   SDValue Ops[] = {BasePtr.getOperand(0), Offset, ST->getValue(), Chain};
-  unsigned Opc = (VT == MVT::i16) ? I8085::STDWSPQRr : I8085::STDSPQRr;
+  unsigned Opc = (VT == MVT::i16) ? I8085::STORE_16 : I8085::STORE_8;
 
   SDNode *ResNode = CurDAG->getMachineNode(Opc, DL, MVT::Other, Ops);
 

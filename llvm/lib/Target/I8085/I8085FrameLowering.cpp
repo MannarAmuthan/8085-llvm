@@ -317,7 +317,7 @@ static void fixStackStores(MachineBasicBlock &MBB,
     unsigned Opcode = MI.getOpcode();
 
     // Only care of pseudo store instructions where SP is the base pointer.
-    if (Opcode != I8085::STDSPQRr)
+    if (Opcode != I8085::STORE_8)
       continue;
 
     // assert(MI.getOperand(0).getReg() == I8085::SP &&

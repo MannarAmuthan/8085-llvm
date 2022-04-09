@@ -22,6 +22,7 @@
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/RegisterScavenging.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
+#include <stdint.h>
 
 #include <iostream>
 
@@ -1156,39 +1157,39 @@ bool I8085ExpandPseudo::expand<I8085::STWPtrPdRr>(Block &MBB, BlockIt MBBI) {
   return true;
 }
 
-template <>
-bool I8085ExpandPseudo::expand<I8085::STORE_16>(Block &MBB, BlockIt MBBI) {
-  MachineInstr &MI = *MBBI;
-  Register SrcLoReg, SrcHiReg;
-  Register DstReg = MI.getOperand(0).getReg();
-  Register SrcReg = MI.getOperand(2).getReg();
-  unsigned Imm = MI.getOperand(1).getImm();
-  bool DstIsKill = MI.getOperand(0).isKill();
-  bool SrcIsKill = MI.getOperand(2).isKill();
-  unsigned OpLo = I8085::STORE_8;
-  unsigned OpHi = I8085::STORE_8;
-  TRI->splitReg(SrcReg, SrcLoReg, SrcHiReg);
+// template <>
+// bool I8085ExpandPseudo::expand<I8085::STORE_16>(Block &MBB, BlockIt MBBI) {
+//   MachineInstr &MI = *MBBI;
+//   Register SrcLoReg, SrcHiReg;
+//   Register DstReg = MI.getOperand(0).getReg();
+//   Register SrcReg = MI.getOperand(2).getReg();
+//   unsigned Imm = MI.getOperand(1).getImm();
+//   bool DstIsKill = MI.getOperand(0).isKill();
+//   bool SrcIsKill = MI.getOperand(2).isKill();
+//   unsigned OpLo = I8085::STORE_8;
+//   unsigned OpHi = I8085::STORE_8;
+//   TRI->splitReg(SrcReg, SrcLoReg, SrcHiReg);
 
-  // Since we add 1 to the Imm value for the high byte below, and 63 is the
-  // highest Imm value allowed for the instruction, 62 is the limit here.
-  assert(Imm <= 62 && "Offset is out of range");
+//   // Since we add 1 to the Imm value for the high byte below, and 63 is the
+//   // highest Imm value allowed for the instruction, 62 is the limit here.
+//   assert(Imm <= 62 && "Offset is out of range");
 
-  auto MIBLO = buildMI(MBB, MBBI, OpLo)
-                   .addReg(DstReg)
-                   .addImm(Imm)
-                   .addReg(SrcLoReg, getKillRegState(SrcIsKill));
+//   auto MIBLO = buildMI(MBB, MBBI, OpLo)
+//                    .addReg(DstReg)
+//                    .addImm(Imm)
+//                    .addReg(SrcLoReg, getKillRegState(SrcIsKill));
 
-  auto MIBHI = buildMI(MBB, MBBI, OpHi)
-                   .addReg(DstReg, getKillRegState(DstIsKill))
-                   .addImm(Imm + 1)
-                   .addReg(SrcHiReg, getKillRegState(SrcIsKill));
+//   auto MIBHI = buildMI(MBB, MBBI, OpHi)
+//                    .addReg(DstReg, getKillRegState(DstIsKill))
+//                    .addImm(Imm + 1)
+//                    .addReg(SrcHiReg, getKillRegState(SrcIsKill));
 
-  MIBLO.setMemRefs(MI.memoperands());
-  MIBHI.setMemRefs(MI.memoperands());
+//   MIBLO.setMemRefs(MI.memoperands());
+//   MIBHI.setMemRefs(MI.memoperands());
 
-  MI.eraseFromParent();
-  return true;
-}
+//   MI.eraseFromParent();
+//   return true;
+// }
 
 template <>
 bool I8085ExpandPseudo::expand<I8085::INWRdA>(Block &MBB, BlockIt MBBI) {
@@ -2356,6 +2357,72 @@ bool I8085ExpandPseudo::expand<I8085::STORE_8>(Block &MBB, BlockIt MBBI) {
   return true;
 }
 
+
+uint8_t high(uint64_t input){return (input >> 8) & 0xFF;}
+
+uint8_t low(uint64_t input){return input & 0xFF;}
+
+template <>
+bool I8085ExpandPseudo::expand<I8085::LOAD_16>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned lowReg,highReg;
+  unsigned destReg = MI.getOperand(0).getReg();
+
+  if(destReg==I8085::BC){
+    lowReg=I8085::C;
+    highReg=I8085::B;
+  }
+  if(destReg==I8085::DE){
+    lowReg=I8085::E;
+    highReg=I8085::D;
+  }
+
+  uint64_t amount = MI.getOperand(1).getImm();
+
+
+  buildMI(MBB, MBBI,  I8085::MOV)
+        .addReg(highReg)
+        .addImm(high(amount));
+
+  buildMI(MBB, MBBI,  I8085::MOV)
+        .addReg(lowReg)
+        .addImm(low(amount));
+
+  MI.eraseFromParent();
+
+  return true;
+}
+
+template <>
+bool I8085ExpandPseudo::expand<I8085::STORE_16>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+  
+  unsigned lowReg,highReg;
+  unsigned baseReg = MI.getOperand(0).getReg();
+  int64_t offsetToStore = MI.getOperand(1).getImm();
+  unsigned destReg = MI.getOperand(2).getReg();
+  
+  if(destReg==I8085::BC){  lowReg=I8085::C;  highReg=I8085::B; }
+  if(destReg==I8085::DE){  lowReg=I8085::E;  highReg=I8085::D; }
+
+  buildMI(MBB, MBBI,  I8085::STORE_8)
+        .addReg(baseReg)
+        .addImm(offsetToStore)
+        .addReg(highReg);
+
+  buildMI(MBB, MBBI,  I8085::STORE_8)
+        .addReg(baseReg)
+        .addImm(offsetToStore+1)
+        .addReg(lowReg);    
+
+  MI.eraseFromParent();
+
+  return true;
+}
+
 template <>
 bool I8085ExpandPseudo::expand<I8085::GROW_STACK_BY>(Block &MBB, BlockIt MBBI) {
   const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
@@ -2374,6 +2441,30 @@ bool I8085ExpandPseudo::expand<I8085::GROW_STACK_BY>(Block &MBB, BlockIt MBBI) {
   MI.eraseFromParent();
   return true;
 }
+
+uint16_t twos_complement(uint16_t val) { return -(unsigned int)val;}
+
+template <>
+bool I8085ExpandPseudo::expand<I8085::SHRINK_STACK_BY>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  uint16_t Amount = twos_complement((uint8_t) MI.getOperand(0).getImm());
+  
+  buildMI(MBB, MBBI,  I8085::LXI)
+        .addReg(I8085::H)
+        .addImm(Amount);
+
+  buildMI(MBB, MBBI,  I8085::DAD);
+
+  buildMI(MBB, MBBI,  I8085::SPHL);
+  
+  MI.eraseFromParent();
+  return true;
+}
+
+
+
 
 
 bool I8085ExpandPseudo::expandMI(Block &MBB, BlockIt MBBI) {
@@ -2441,9 +2532,10 @@ bool I8085ExpandPseudo::expandMI(Block &MBB, BlockIt MBBI) {
   //   EXPAND(I8085::LSRWNRd);
   //   EXPAND(I8085::ASRWNRd);
   //   EXPAND(I8085::LSLBNRd);
-  //   EXPAND(I8085::LSRBNRd);
-  //   EXPAND(I8085::ASRBNRd);
-  // EXPAND(I8085::GROW_STACK_BY);
+    EXPAND(I8085::LOAD_16);
+    EXPAND(I8085::STORE_16);
+    EXPAND(I8085::SHRINK_STACK_BY);
+    EXPAND(I8085::GROW_STACK_BY);
     EXPAND(I8085::STORE_8);
     EXPAND(I8085::SPREAD);
     EXPAND(I8085::SPWRITE);
