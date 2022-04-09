@@ -39,8 +39,8 @@ I8085TargetLowering::I8085TargetLowering(const I8085TargetMachine &TM,
                                      const I8085Subtarget &STI)
     : TargetLowering(TM), Subtarget(STI) {
   // Set up the register classes.
-  addRegisterClass(MVT::i8, &I8085::GPR8RegClass);
-  addRegisterClass(MVT::i16, &I8085::DREGSRegClass);
+  addRegisterClass(MVT::i8, &I8085::GR8RegClass);
+  addRegisterClass(MVT::i16, &I8085::GR16RegClass);
 
   // Compute derived properties from the register classes.
   computeRegisterProperties(Subtarget.getRegisterInfo());
@@ -1223,12 +1223,8 @@ SDValue I8085TargetLowering::LowerFormalArguments(
                  *DAG.getContext());
 
   // Variadic functions do not need all the analysis below.
-  if (isVarArg) {
-    CCInfo.AnalyzeFormalArguments(Ins, ArgCC_I8085_Vararg);
-  } else {
-    analyzeArguments(nullptr, &MF.getFunction(), &DL, Ins, ArgLocs, CCInfo,
-                     Subtarget.hasTinyEncoding());
-  }
+
+  CCInfo.AnalyzeFormalArguments(Ins, ArgCC_I8085_Vararg);
 
   SDValue ArgValue;
   for (CCValAssign &VA : ArgLocs) {
@@ -1238,7 +1234,7 @@ SDValue I8085TargetLowering::LowerFormalArguments(
       EVT RegVT = VA.getLocVT();
       const TargetRegisterClass *RC;
       if (RegVT == MVT::i8) {
-        RC = &I8085::GPR8RegClass;
+        RC = &I8085::GR8RegClass;
       } else if (RegVT == MVT::i16) {
         RC = &I8085::DREGSRegClass;
       } else {
@@ -1288,8 +1284,11 @@ SDValue I8085TargetLowering::LowerFormalArguments(
       // Create the SelectionDAG nodes corresponding to a load
       // from this parameter.
       SDValue FIN = DAG.getFrameIndex(FI, getPointerTy(DL));
-      InVals.push_back(DAG.getLoad(LocVT, dl, Chain, FIN,
-                                   MachinePointerInfo::getFixedStack(MF, FI)));
+
+      SDValue load=DAG.getLoad(LocVT, dl, Chain, FIN,
+                                   MachinePointerInfo::getFixedStack(MF, FI));
+
+      InVals.push_back(load);
     }
   }
 
@@ -1351,12 +1350,6 @@ SDValue I8085TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   // Variadic functions do not need all the analysis below.
 
   CCInfo.AnalyzeCallOperands(Outs, ArgCC_I8085_Vararg);
-  // if (isVarArg) {
-  //   CCInfo.AnalyzeCallOperands(Outs, ArgCC_I8085_Vararg);
-  // } else {
-  //   analyzeArguments(&CLI, F, &DAG.getDataLayout(), Outs, ArgLocs, CCInfo,
-  //                    Subtarget.hasTinyEncoding());
-  // }
 
   // Get a count of how many bytes are to be pushed on the stack.
   unsigned NumBytes = CCInfo.getNextStackOffset();
@@ -1372,29 +1365,7 @@ SDValue I8085TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
     CCValAssign &VA = ArgLocs[AI];
     EVT RegVT = VA.getLocVT();
     SDValue Arg = OutVals[AI];
-
-    // Promote the value if needed. With Clang this should not happen.
-    switch (VA.getLocInfo()) {
-    default:
-      llvm_unreachable("Unknown loc info!");
-    case CCValAssign::Full:
-      break;
-    case CCValAssign::SExt:
-      Arg = DAG.getNode(ISD::SIGN_EXTEND, DL, RegVT, Arg);
-      break;
-    case CCValAssign::ZExt:
-      Arg = DAG.getNode(ISD::ZERO_EXTEND, DL, RegVT, Arg);
-      break;
-    case CCValAssign::AExt:
-      Arg = DAG.getNode(ISD::ANY_EXTEND, DL, RegVT, Arg);
-      break;
-    case CCValAssign::BCvt:
-      Arg = DAG.getNode(ISD::BITCAST, DL, RegVT, Arg);
-      break;
-    }
-
-    // Stop when we encounter a stack argument, we need to process them
-    // in reverse order in the loop below.
+    
     if (VA.isMemLoc()) {
       HasStackArgs = true;
       break;
@@ -1411,18 +1382,33 @@ SDValue I8085TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   // chain them here. In fact, chaining them here somehow causes the first and
   // second store to be reversed which is the exact opposite of the intended
   // effect.
+  MachineFrameInfo &MFI = MF.getFrameInfo();
+
   if (HasStackArgs) {
     SmallVector<SDValue, 8> MemOpChains;
     for (; AI != AE; AI++) {
-      CCValAssign &VA = ArgLocs[AI];
-      SDValue Arg = OutVals[AI];
 
-      assert(VA.isMemLoc());
+    
+
+    CCValAssign &VA = ArgLocs[AI];
+    SDValue Arg = OutVals[AI];
+
+    assert(VA.isMemLoc());
+
+    // int Offset = VA.getLocMemOffset();
+    // unsigned ObjSize = VA.getLocVT().getStoreSize();
+    // int FI = MFI.CreateFixedObject(ObjSize, Offset, false);
+    // SDValue FIN = DAG.getFrameIndex(FI, MVT::i16);
+    // if(ObjSize==8) FIN = DAG.getFrameIndex(FI, MVT::i8);
+
+
+    // MemOpChains.push_back(DAG.getStore(Chain, DL, Arg, FIN,MachinePointerInfo::getFixedStack(DAG.getMachineFunction(), FI)));
+
 
       // SP points to one stack slot further so add one to adjust it.
       SDValue PtrOff = DAG.getNode(
           ISD::ADD, DL, getPointerTy(DAG.getDataLayout()),
-          DAG.getRegister(I8085::SP, getPointerTy(DAG.getDataLayout())),
+          DAG.getRegister(I8085::L, getPointerTy(DAG.getDataLayout())),
           DAG.getIntPtrConstant(VA.getLocMemOffset() + 1, DL));
 
       MemOpChains.push_back(
@@ -1497,19 +1483,21 @@ SDValue I8085TargetLowering::LowerCallResult(
                  *DAG.getContext());
 
   // Handle runtime calling convs.
-  if (CallConv == CallingConv::I8085_BUILTIN) {
-    CCInfo.AnalyzeCallResult(Ins, RetCC_I8085_BUILTIN);
-  } else {
-    analyzeReturnValues(Ins, CCInfo, Subtarget.hasTinyEncoding());
-  }
+
+  CCInfo.AnalyzeCallResult(Ins, RetCC_I8085_BUILTIN);
 
   // Copy all of the result registers out of their specified physreg.
   for (CCValAssign const &RVLoc : RVLocs) {
+    if(RVLoc.isRegLoc()){
     Chain = DAG.getCopyFromReg(Chain, dl, RVLoc.getLocReg(), RVLoc.getValVT(),
                                InFlag)
                 .getValue(1);
     InFlag = Chain.getValue(2);
     InVals.push_back(Chain.getValue(0));
+    }
+    else{
+      assert(RVLoc.isMemLoc() && "Must be memory location.");
+    }
   }
 
   return Chain;

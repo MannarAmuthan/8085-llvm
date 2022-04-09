@@ -2614,23 +2614,56 @@ def MOV_M
     : I8085Pseudo<(outs),
             (ins GR8: $rs),
             "MOV M, $rs",
-            []>;                                    
+            []>;
 
-def LOAD_16 : I8085Pseudo<(outs DLDREGS: $dst),
+def GROW_STACK_BY 
+    : I8085Pseudo<(outs),
+            (ins i16imm: $amount),
+            "GROW_STACK_BY $amount",
+            []>;
+
+
+def SHRINK_STACK_BY 
+    : I8085Pseudo<(outs),
+            (ins i16imm: $amount),
+            "SHRINK_STACK_BY $amount",
+            []>;               
+
+
+def LOAD_16 : I8085Pseudo<(outs GR16: $dst),
                        (ins i16imm: $src),
-                       "LOAD\t$dst, $src", [(set i16
+                       "LOAD_16\t$dst, $src", [(set i16
                                              : $dst, imm
                                              : $src)]>; 
 
 def STORE_16 : StorePseudo<(outs),
                             (ins mspi
-                             : $dst, DREGS
+                             : $dst, GR16
                              : $src),
-                            "STORE\t$dst, $src", [(store i16
+                            "STORE_16\t$dst, $src", [(store i16
                                                      : $src, addr
                                                      : $dst)]>;
 
-def LOAD_I16_TO_MEM: StorePseudo<(outs mspi: $dst),
-                            (ins i16imm: $src),
-                            "LOAD_I16_TO_MEM\t$dst, $src", 
-                            []>;                                                                                                  
+
+// def STDPtrQRr_x : FSTDLDD<1, (outs),
+//                         (ins mspi: $memri, 
+//                         GR8: $reg),
+//                         "std_x\t$memri, $reg", [(store i8
+//                                                : $reg, addr
+//                                                : $memri)]>;
+
+
+def STORE_8 : StorePseudo< (outs),
+                        (ins mspi: $memri,
+                         GR8: $reg),
+                        "STORE\t$memri, $reg", [(store i8: $reg, addr: $memri)]>;
+
+
+def LOAD_16_WITH_ADDR : I8085Pseudo<(outs GR16: $dst),
+                       (ins mspi: $src),
+                       "LOAD\t$dst, $src", [(set i16: $dst, (load addr: $src))]>;    
+
+def LOAD_8_WITH_ADDR : I8085Pseudo<(outs GR8: $dst),
+                       (ins mspi: $src),
+                       "LOAD\t$dst, $src", [(set i8: $dst, (load addr: $src))]>;                                                                                                                      
+                                                                                                 

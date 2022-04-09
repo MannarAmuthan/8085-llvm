@@ -16,9 +16,18 @@
 // Special return value calling convention for runtime functions.
 def RetCC_I8085_BUILTIN : CallingConv<[
 
-  // CCIfType<[i8], CCAssignToReg<[A]>>,
-  CCIfType<[i8], CCAssignToStack<1, 1>>,
-  CCIfType<[i16], CCAssignToStack<2, 1>>
+  /*
+
+      Goal - make them to return via stack
+
+  */
+
+  // CCIfType<[i8], CCAssignToStack<1, 1>>,
+  // CCIfType<[i16], CCAssignToStack<2, 1>>
+
+  CCIfType<[i8], CCAssignToReg<[A, B]>>,
+  CCIfType<[i16], CCAssignToReg<[BC,DE]>>
+
   // CCIfType<[i8], CCAssignToReg<[R24, R25]>>,
   // CCIfType<[i16], CCAssignToReg<[R23R22, R25R24]>>
 ]>;
@@ -41,4 +50,4 @@ def ArgCC_I8085_Vararg : CallingConv<[
 // Callee-saved register lists.
 //===----------------------------------------------------------------------===//
 
-def CSR_Normal : CalleeSavedRegs<(add D, E, (sequence "R%u", 17, 2))>;
+def CSR_Normal : CalleeSavedRegs<(add )>;

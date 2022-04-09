@@ -1157,7 +1157,7 @@ bool I8085ExpandPseudo::expand<I8085::STWPtrPdRr>(Block &MBB, BlockIt MBBI) {
 }
 
 template <>
-bool I8085ExpandPseudo::expand<I8085::STDWPtrQRr>(Block &MBB, BlockIt MBBI) {
+bool I8085ExpandPseudo::expand<I8085::STORE_16>(Block &MBB, BlockIt MBBI) {
   MachineInstr &MI = *MBBI;
   Register SrcLoReg, SrcHiReg;
   Register DstReg = MI.getOperand(0).getReg();
@@ -1165,8 +1165,8 @@ bool I8085ExpandPseudo::expand<I8085::STDWPtrQRr>(Block &MBB, BlockIt MBBI) {
   unsigned Imm = MI.getOperand(1).getImm();
   bool DstIsKill = MI.getOperand(0).isKill();
   bool SrcIsKill = MI.getOperand(2).isKill();
-  unsigned OpLo = I8085::STDPtrQRr;
-  unsigned OpHi = I8085::STDPtrQRr;
+  unsigned OpLo = I8085::STORE_8;
+  unsigned OpHi = I8085::STORE_8;
   TRI->splitReg(SrcReg, SrcLoReg, SrcHiReg);
 
   // Since we add 1 to the Imm value for the high byte below, and 63 is the
@@ -2331,7 +2331,7 @@ bool I8085ExpandPseudo::expand<I8085::SPWRITE>(Block &MBB, BlockIt MBBI) {
 }
 
 template <>
-bool I8085ExpandPseudo::expand<I8085::STDSPQRr>(Block &MBB, BlockIt MBBI) {
+bool I8085ExpandPseudo::expand<I8085::STORE_8>(Block &MBB, BlockIt MBBI) {
   const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
   MachineInstr &MI = *MBBI;
 
@@ -2351,6 +2351,25 @@ bool I8085ExpandPseudo::expand<I8085::STDSPQRr>(Block &MBB, BlockIt MBBI) {
   
   buildMI(MBB, MBBI, I8085::MOV_M)
       .addReg(srcReg);
+  
+  MI.eraseFromParent();
+  return true;
+}
+
+template <>
+bool I8085ExpandPseudo::expand<I8085::GROW_STACK_BY>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  int64_t Amount = MI.getOperand(0).getImm();
+
+  buildMI(MBB, MBBI,  I8085::LXI)
+        .addReg(I8085::H)
+        .addImm(Amount);
+
+  buildMI(MBB, MBBI,  I8085::DAD);
+
+  buildMI(MBB, MBBI,  I8085::SPHL);
   
   MI.eraseFromParent();
   return true;
@@ -2424,8 +2443,8 @@ bool I8085ExpandPseudo::expandMI(Block &MBB, BlockIt MBBI) {
   //   EXPAND(I8085::LSLBNRd);
   //   EXPAND(I8085::LSRBNRd);
   //   EXPAND(I8085::ASRBNRd);
-  //   EXPAND(I8085::SEXT);
-    EXPAND(I8085::STDSPQRr);
+  // EXPAND(I8085::GROW_STACK_BY);
+    EXPAND(I8085::STORE_8);
     EXPAND(I8085::SPREAD);
     EXPAND(I8085::SPWRITE);
   }

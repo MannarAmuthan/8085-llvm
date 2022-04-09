@@ -88,41 +88,42 @@ void I8085FrameLowering::emitPrologue(MachineFunction &MF,
       .addImm(lastStackAddress);
 
   /* Update stack pointer -> [current stack pointer - framesize]  */ 
+
+  if(FrameSize>0) {
   
-  BuildMI(MBB, MBBI, DL, TII.get(I8085::MOV))
-      .addReg(I8085::A)
-      .addReg(I8085::L);
+      BuildMI(MBB, MBBI, DL, TII.get(I8085::MOV))
+          .addReg(I8085::A)
+          .addReg(I8085::L);
+      
+      BuildMI(MBB, MBBI, DL, TII.get(I8085::MVI))
+          .addReg(I8085::L)
+          .addImm(FrameSize);
 
-  
-  BuildMI(MBB, MBBI, DL, TII.get(I8085::MVI))
-      .addReg(I8085::L)
-      .addImm(FrameSize);
+      BuildMI(MBB, MBBI, DL, TII.get(I8085::SUB))
+          .addReg(I8085::L);
 
-  BuildMI(MBB, MBBI, DL, TII.get(I8085::SUB))
-      .addReg(I8085::L);
+      BuildMI(MBB, MBBI, DL, TII.get(I8085::MOV))
+          .addReg(I8085::L)
+          .addReg(I8085::A);
 
-  BuildMI(MBB, MBBI, DL, TII.get(I8085::MOV))
-      .addReg(I8085::L)
-      .addReg(I8085::A);
+      BuildMI(MBB, MBBI, DL, TII.get(I8085::MOV))
+          .addReg(I8085::A)
+          .addReg(I8085::H);
 
-  BuildMI(MBB, MBBI, DL, TII.get(I8085::MOV))
-      .addReg(I8085::A)
-      .addReg(I8085::H);
+      BuildMI(MBB, MBBI, DL, TII.get(I8085::MVI))
+          .addReg(I8085::H)
+          .addImm(0);    
 
-  BuildMI(MBB, MBBI, DL, TII.get(I8085::MVI))
-      .addReg(I8085::H)
-      .addImm(0);    
+      BuildMI(MBB, MBBI, DL, TII.get(I8085::SBB))
+          .addReg(I8085::H);
 
-  BuildMI(MBB, MBBI, DL, TII.get(I8085::SBB))
-      .addReg(I8085::H);
-
-  BuildMI(MBB, MBBI, DL, TII.get(I8085::MOV))
-      .addReg(I8085::H)
-      .addReg(I8085::A);       
-
-  BuildMI(MBB, MBBI, DL, TII.get(I8085::SPHL));
-
-
+      BuildMI(MBB, MBBI, DL, TII.get(I8085::MOV))
+          .addReg(I8085::H)
+          .addReg(I8085::A);       
+      
+      BuildMI(MBB, MBBI, DL, TII.get(I8085::SPHL));
+      
+  }
 }
 
 static void restoreStatusRegister(MachineFunction &MF, MachineBasicBlock &MBB) {
@@ -256,8 +257,8 @@ bool I8085FrameLowering::spillCalleeSavedRegisters(
     Register Reg = I.getReg();
     bool IsNotLiveIn = !MBB.isLiveIn(Reg);
 
-    assert(TRI->getRegSizeInBits(*TRI->getMinimalPhysRegClass(Reg)) == 8 &&
-           "Invalid register size");
+    // assert(TRI->getRegSizeInBits(*TRI->getMinimalPhysRegClass(Reg)) == 8 &&
+    //        "Invalid register size");
 
     // Add the callee-saved register as live-in only if it is not already a
     // live-in register, this usually happens with arguments that are passed
@@ -293,8 +294,8 @@ bool I8085FrameLowering::restoreCalleeSavedRegisters(
   for (const CalleeSavedInfo &CCSI : CSI) {
     Register Reg = CCSI.getReg();
 
-    assert(TRI->getRegSizeInBits(*TRI->getMinimalPhysRegClass(Reg)) == 8 &&
-           "Invalid register size");
+    // assert(TRI->getRegSizeInBits(*TRI->getMinimalPhysRegClass(Reg)) == 8 &&
+    //        "Invalid register size");
 
     BuildMI(MBB, MI, DL, TII.get(I8085::POPRd), Reg);
   }
@@ -316,17 +317,16 @@ static void fixStackStores(MachineBasicBlock &MBB,
     unsigned Opcode = MI.getOpcode();
 
     // Only care of pseudo store instructions where SP is the base pointer.
-    if (Opcode != I8085::STDSPQRr && Opcode != I8085::STDWSPQRr)
+    if (Opcode != I8085::STDSPQRr)
       continue;
 
-    assert(MI.getOperand(0).getReg() == I8085::SP &&
-           "Invalid register, should be SP!");
+    // assert(MI.getOperand(0).getReg() == I8085::SP &&
+    //        "Invalid register, should be SP!");
 
     // Replace this instruction with a regular store. Use Y as the base
     // pointer since it is guaranteed to contain a copy of SP.
-    unsigned STOpc =
-        (Opcode == I8085::STDWSPQRr) ? I8085::STDWPtrQRr : I8085::STDPtrQRr;
-
+    unsigned STOpc = I8085::STORE_8;
+    
     MI.setDesc(TII.get(STOpc));
     MI.getOperand(0).setReg(FP);
   }
@@ -356,50 +356,17 @@ MachineBasicBlock::iterator I8085FrameLowering::eliminateCallFramePseudoInstr(
     assert(getStackAlign() == Align(1) && "Unsupported stack alignment");
 
     if (Opcode == TII.getCallFrameSetupOpcode()) {
-      // Update the stack pointer.
-      // In many cases this can be done far more efficiently by pushing the
-      // relevant values directly to the stack. However, doing that correctly
-      // (in the right order, possibly skipping some empty space for undef
-      // values, etc) is tricky and thus left to be optimized in the future.
-      BuildMI(MBB, MI, DL, TII.get(I8085::SPREAD), I8085::R31R30).addReg(I8085::SP);
 
-      MachineInstr *New =
-          BuildMI(MBB, MI, DL, TII.get(I8085::SUBIWRdK), I8085::R31R30)
-              .addReg(I8085::R31R30, RegState::Kill)
-              .addImm(Amount);
-      New->getOperand(3).setIsDead();
+        BuildMI(MBB, MI, DL, TII.get(I8085::GROW_STACK_BY))
+            .addImm(Amount);
 
-      BuildMI(MBB, MI, DL, TII.get(I8085::SPWRITE), I8085::SP).addReg(I8085::R31R30);
-
-      // Make sure the remaining stack stores are converted to real store
-      // instructions.
-      fixStackStores(MBB, MI, TII, I8085::R31R30);
+      fixStackStores(MBB, MI, TII, I8085::L);
     } else {
       assert(Opcode == TII.getCallFrameDestroyOpcode());
 
-      // Note that small stack changes could be implemented more efficiently
-      // with a few pop instructions instead of the 8-9 instructions now
-      // required.
+        BuildMI(MBB, MI, DL, TII.get(I8085::SHRINK_STACK_BY))
+            .addImm(Amount);
 
-      // Select the best opcode to adjust SP based on the offset size.
-      unsigned addOpcode;
-      if (isUInt<6>(Amount)) {
-        addOpcode = I8085::ADIWRdK;
-      } else {
-        addOpcode = I8085::SUBIWRdK;
-        Amount = -Amount;
-      }
-
-      // Build the instruction sequence.
-      BuildMI(MBB, MI, DL, TII.get(I8085::SPREAD), I8085::R31R30).addReg(I8085::SP);
-
-      MachineInstr *New = BuildMI(MBB, MI, DL, TII.get(addOpcode), I8085::R31R30)
-                              .addReg(I8085::R31R30, RegState::Kill)
-                              .addImm(Amount);
-      New->getOperand(3).setIsDead();
-
-      BuildMI(MBB, MI, DL, TII.get(I8085::SPWRITE), I8085::SP)
-          .addReg(I8085::R31R30, RegState::Kill);
     }
   }
 
@@ -413,8 +380,8 @@ void I8085FrameLowering::determineCalleeSaves(MachineFunction &MF,
 
   // If we have a frame pointer, the Y register needs to be saved as well.
   if (hasFP(MF)) {
-    SavedRegs.set(I8085::R29);
-    SavedRegs.set(I8085::R28);
+    SavedRegs.set(I8085::H);
+    SavedRegs.set(I8085::L);
   }
 }
 /// The frame analyzer pass.

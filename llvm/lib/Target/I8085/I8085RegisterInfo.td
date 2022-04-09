@@ -237,6 +237,13 @@ def H : I8085Reg<115, "H">, DwarfRegNum<[115]>;
 def L : I8085Reg<116, "L">, DwarfRegNum<[116]>;
 
 
+let SubRegIndices = [sub_lo, sub_hi], CoveredBySubRegs = 1 in {
+def BC : I8085Reg<111, "C:B", [B, C]>, DwarfRegNum<[111]>;
+def DE : I8085Reg<113, "E:D", [D, E]>, DwarfRegNum<[113]>; 
+}
+
+
+
 
 def GR8 : RegisterClass<"I8085", [i8], 8,
                         (
@@ -244,6 +251,13 @@ def GR8 : RegisterClass<"I8085", [i8], 8,
                             add A,B,C,D,E,H,L
                             // Scratch registers.
                             )>; 
+
+def GR16 : RegisterClass<"I8085", [i16], 8,
+                        (
+                            // Return value and arguments.
+                            add BC,DE
+                            // Scratch registers.
+                        )>;                             
 
 
 // def PTR_REGS : RegisterClass<"I8085", [i16], 8, (add DE), ptr>;                            

@@ -152,10 +152,22 @@ void I8085RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   int FrameIndex = MI.getOperand(FIOperandNum).getIndex();
   int Offset = MFI.getObjectOffset(FrameIndex);
 
+  // std::cout << "############" << "\n";
+  // MI.dump();
+  // std::cout << Offset << "\n";
+  // std::cout << MFI.getStackSize() << "\n";
+  // std::cout << TFI->getOffsetOfLocalArea() << "\n";
+  // std::cout << FIOperandNum << "\n";
+  // std::cout << MI.getOperand(FIOperandNum + 1).getImm() << "\n";
+
+
   // Add one to the offset because SP points to an empty slot.
   Offset += MFI.getStackSize() - TFI->getOffsetOfLocalArea() + 1;
   // Fold incoming offset.
   Offset += MI.getOperand(FIOperandNum + 1).getImm();
+
+  // std::cout << Offset << "\n";
+  // std::cout << "############" << "\n";
 
   // This is actually "load effective address" of the stack slot
   // instruction. We have only two-address instructions, thus we need to

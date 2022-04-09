@@ -91,8 +91,8 @@ void I8085InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
 unsigned I8085InstrInfo::isLoadFromStackSlot(const MachineInstr &MI,
                                            int &FrameIndex) const {
   switch (MI.getOpcode()) {
-  case I8085::LDDRdPtrQ:
-  case I8085::LDDWRdYQ: { //: FIXME: remove this once PR13375 gets fixed
+  case I8085::LOAD_8_WITH_ADDR:
+  case I8085::LOAD_16_WITH_ADDR: { //: FIXME: remove this once PR13375 gets fixed
     if (MI.getOperand(1).isFI() && MI.getOperand(2).isImm() &&
         MI.getOperand(2).getImm() == 0) {
       FrameIndex = MI.getOperand(1).getIndex();
@@ -110,8 +110,8 @@ unsigned I8085InstrInfo::isLoadFromStackSlot(const MachineInstr &MI,
 unsigned I8085InstrInfo::isStoreToStackSlot(const MachineInstr &MI,
                                           int &FrameIndex) const {
   switch (MI.getOpcode()) {
-  case I8085::STDPtrQRr:
-  case I8085::STDWPtrQRr: {
+  case I8085::STORE_8:
+  case I8085::STORE_16: {
     if (MI.getOperand(0).isFI() && MI.getOperand(1).isImm() &&
         MI.getOperand(1).getImm() == 0) {
       FrameIndex = MI.getOperand(0).getIndex();
@@ -151,9 +151,9 @@ void I8085InstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
 
   unsigned Opcode = 0;
   if (TRI->isTypeLegalForClass(*RC, MVT::i8)) {
-    Opcode = I8085::STDPtrQRr;
+    Opcode = I8085::STORE_8;
   } else if (TRI->isTypeLegalForClass(*RC, MVT::i16)) {
-    Opcode = I8085::STDWPtrQRr;
+    Opcode = I8085::STORE_16;
   } else {
     llvm_unreachable("Cannot store this register into a stack slot!");
   }
@@ -185,11 +185,11 @@ void I8085InstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
 
   unsigned Opcode = 0;
   if (TRI->isTypeLegalForClass(*RC, MVT::i8)) {
-    Opcode = I8085::LDDRdPtrQ;
+    Opcode = I8085::LOAD_8_WITH_ADDR;
   } else if (TRI->isTypeLegalForClass(*RC, MVT::i16)) {
     // Opcode = I8085::LDDWRdPtrQ;
     //: FIXME: remove this once PR13375 gets fixed
-    Opcode = I8085::LDDWRdYQ;
+    Opcode = I8085::LOAD_16_WITH_ADDR;
   } else {
     llvm_unreachable("Cannot load this register from a stack slot!");
   }
