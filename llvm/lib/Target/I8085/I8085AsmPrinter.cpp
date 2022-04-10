@@ -34,7 +34,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 
-#define DEBUG_TYPE "avr-asm-printer"
+#define DEBUG_TYPE "i8085-asm-printer"
 
 namespace llvm {
 
@@ -217,7 +217,7 @@ void I8085AsmPrinter::emitXXStructor(const DataLayout &DL, const Constant *CV) {
   //   EmittedStructorSymbolAttrs = true;
   // }
 
-  AsmPrinter::emitXXStructor(DL, CV);
+  // AsmPrinter::emitXXStructor(DL, CV);
 }
 
 bool I8085AsmPrinter::doFinalization(Module &M) {

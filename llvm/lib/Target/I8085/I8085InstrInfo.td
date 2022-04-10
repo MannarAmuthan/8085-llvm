@@ -2447,8 +2447,8 @@ let Predicates = [HasJMPCALL] in {
   def : Pat<(I8085call(i16 tglobaladdr:$dst)), (CALLk tglobaladdr:$dst)>;
   def : Pat<(I8085call(i16 texternalsym:$dst)), (CALLk texternalsym:$dst)>;
 }
-def : Pat<(I8085call(i16 tglobaladdr:$dst)), (RCALLk tglobaladdr:$dst)>;
-def : Pat<(I8085call(i16 texternalsym:$dst)), (RCALLk texternalsym:$dst)>;
+// def : Pat<(I8085call(i16 tglobaladdr:$dst)), (RCALLk tglobaladdr:$dst)>;
+// def : Pat<(I8085call(i16 texternalsym:$dst)), (RCALLk texternalsym:$dst)>;
 
 // `anyext`
 def : Pat<(i16(anyext i8
@@ -2616,6 +2616,14 @@ def MOV_M
             "MOV M, $rs",
             []>;
 
+
+def MOV_FROM_M 
+    : I8085Pseudo<(outs),
+            (ins GR8: $rd),
+            "MOV $rd, M",
+            []>;            
+
+
 def GROW_STACK_BY 
     : I8085Pseudo<(outs),
             (ins i16imm: $amount),
@@ -2666,4 +2674,13 @@ def LOAD_16_WITH_ADDR : I8085Pseudo<(outs GR16: $dst),
 def LOAD_8_WITH_ADDR : I8085Pseudo<(outs GR8: $dst),
                        (ins mspi: $src),
                        "LOAD\t$dst, $src", [(set i8: $dst, (load addr: $src))]>;                                                                                                                      
-                                                                                                 
+
+let isCall = 1 in {                                                                                                 
+let Uses = [SP] in def CALL : FBRk<1, (outs), (ins rcalltarget_13:$k),
+                                       "CALL\t$k", [(I8085call imm:$k)]>;
+}
+
+def : Pat<(I8085call(i16 tglobaladdr:$dst)), (CALL tglobaladdr:$dst)>;
+def : Pat<(I8085call(i16 texternalsym:$dst)), (CALL texternalsym:$dst)>;
+
+

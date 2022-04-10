@@ -75,21 +75,23 @@ void I8085FrameLowering::emitPrologue(MachineFunction &MF,
   
   /*Prologue sequence for 8085 processor */ 
   
-  /* saving current stack address */
 
-  unsigned lastStackAddress = 65530;
-  BuildMI(MBB, MBBI, DL, TII.get(I8085::LXI))
-      .addReg(I8085::H)
-      .addImm(0);
 
-  BuildMI(MBB, MBBI, DL, TII.get(I8085::DAD));
+  if(FrameSize) {
 
-  BuildMI(MBB, MBBI, DL, TII.get(I8085::SHLD))
-      .addImm(lastStackAddress);
+      /* saving current stack address */
 
-  /* Update stack pointer -> [current stack pointer - framesize]  */ 
+      unsigned lastStackAddress = 65530;
+      BuildMI(MBB, MBBI, DL, TII.get(I8085::LXI))
+          .addReg(I8085::H)
+          .addImm(0);
 
-  if(FrameSize>0) {
+      BuildMI(MBB, MBBI, DL, TII.get(I8085::DAD));
+
+      BuildMI(MBB, MBBI, DL, TII.get(I8085::SHLD))
+          .addImm(lastStackAddress);
+
+      /* Update stack pointer -> [current stack pointer - framesize]  */ 
   
       BuildMI(MBB, MBBI, DL, TII.get(I8085::MOV))
           .addReg(I8085::A)
@@ -192,27 +194,6 @@ void I8085FrameLowering::emitEpilogue(MachineFunction &MF,
 
     BuildMI(MBB, MBBI, DL, TII.get(I8085::SPHL));  
    
-
-    // unsigned Opcode;
-
-    // Opcode = I8085::ADD_I8;
-
-    // Select the optimal opcode depending on how big it is.
-    // if (isUInt<6>(FrameSize)) {
-    //   Opcode = I8085::ADD_I8;
-    // } else {
-    //   Opcode = I8085::SUBIWRdK;
-    //   FrameSize = -FrameSize;
-    // }
-
-    // Restore the frame pointer by doing FP += <size>.
-
-    // MachineInstr *MI = BuildMI(MBB, MBBI, DL, TII.get(Opcode), I8085::D)
-    //                       .addReg(I8085::D, RegState::Kill)
-    //                       .addImm(FrameSize);
-                          
-    // The SREG implicit def is dead.
-    // MI->getOperand(3).setIsDead();
   }
 
   // Write back R29R28 to SP and temporarily disable interrupts.

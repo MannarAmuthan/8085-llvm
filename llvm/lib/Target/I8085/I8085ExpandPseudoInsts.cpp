@@ -2463,9 +2463,60 @@ bool I8085ExpandPseudo::expand<I8085::SHRINK_STACK_BY>(Block &MBB, BlockIt MBBI)
   return true;
 }
 
+template <>
+bool I8085ExpandPseudo::expand<I8085::LOAD_8_WITH_ADDR>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+ 
+
+  unsigned destReg = MI.getOperand(0).getReg();
+  unsigned baseReg = MI.getOperand(1).getReg();
+  uint16_t offsetToLoad = MI.getOperand(2).getImm();
+  
+    /*  Getting address to store the register */
+
+  buildMI(MBB, MBBI, I8085::LXI)
+      .addReg(I8085::H)
+      .addImm(offsetToLoad);
+
+  buildMI(MBB, MBBI, I8085::DAD);
+  
+  /* Store the register value pointed by HL reg */
+  
+  buildMI(MBB, MBBI, I8085::MOV_FROM_M)
+      .addReg(destReg);
+  
+  MI.eraseFromParent();
+  return true;
+}
 
 
+template <>
+bool I8085ExpandPseudo::expand<I8085::LOAD_16_WITH_ADDR>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+  
+  unsigned lowReg,highReg;
+  unsigned destReg = MI.getOperand(0).getReg();
+  unsigned baseReg = MI.getOperand(1).getReg();
+  uint16_t offsetToLoad = MI.getOperand(2).getImm();
+  
+  if(destReg==I8085::BC){  lowReg=I8085::C;  highReg=I8085::B; }
+  if(destReg==I8085::DE){  lowReg=I8085::E;  highReg=I8085::D; }
 
+  buildMI(MBB, MBBI, I8085::LOAD_8_WITH_ADDR)
+      .addReg(highReg)
+      .addReg(baseReg)
+      .addImm(offsetToLoad);
+
+  buildMI(MBB, MBBI, I8085::LOAD_8_WITH_ADDR)
+      .addReg(lowReg)
+      .addReg(baseReg)
+      .addImm(offsetToLoad+1);    
+  
+  MI.eraseFromParent();
+  return true;
+}
 
 bool I8085ExpandPseudo::expandMI(Block &MBB, BlockIt MBBI) {
   MachineInstr &MI = *MBBI;
@@ -2531,7 +2582,9 @@ bool I8085ExpandPseudo::expandMI(Block &MBB, BlockIt MBBI) {
   //   EXPAND(I8085::LSLWNRd);
   //   EXPAND(I8085::LSRWNRd);
   //   EXPAND(I8085::ASRWNRd);
-  //   EXPAND(I8085::LSLBNRd);
+  // EXPAND(I8085::LSLBNRd);
+    EXPAND(I8085::LOAD_16_WITH_ADDR);
+    EXPAND(I8085::LOAD_8_WITH_ADDR);
     EXPAND(I8085::LOAD_16);
     EXPAND(I8085::STORE_16);
     EXPAND(I8085::SHRINK_STACK_BY);
