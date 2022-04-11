@@ -25,7 +25,7 @@ def RetCC_I8085_BUILTIN : CallingConv<[
   // CCIfType<[i8], CCAssignToStack<1, 1>>,
   // CCIfType<[i16], CCAssignToStack<2, 1>>
 
-  CCIfType<[i8], CCAssignToReg<[A, B]>>,
+  CCIfType<[i8], CCAssignToReg<[A]>>,
   CCIfType<[i16], CCAssignToReg<[BC,DE]>>
 
   // CCIfType<[i8], CCAssignToReg<[R24, R25]>>,
