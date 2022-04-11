@@ -2382,11 +2382,11 @@ bool I8085ExpandPseudo::expand<I8085::LOAD_16>(Block &MBB, BlockIt MBBI) {
   uint64_t amount = MI.getOperand(1).getImm();
 
 
-  buildMI(MBB, MBBI,  I8085::MOV)
+  buildMI(MBB, MBBI,  I8085::MVI)
         .addReg(highReg)
         .addImm(high(amount));
 
-  buildMI(MBB, MBBI,  I8085::MOV)
+  buildMI(MBB, MBBI,  I8085::MVI)
         .addReg(lowReg)
         .addImm(low(amount));
 
@@ -2599,7 +2599,7 @@ bool I8085ExpandPseudo::expandMI(Block &MBB, BlockIt MBBI) {
 
 } // end of anonymous namespace
 
-INITIALIZE_PASS(I8085ExpandPseudo, "avr-expand-pseudo", I8085_EXPAND_PSEUDO_NAME,
+INITIALIZE_PASS(I8085ExpandPseudo, "i8085-expand-pseudo", I8085_EXPAND_PSEUDO_NAME,
                 false, false)
 namespace llvm {
 

@@ -2677,7 +2677,7 @@ def LOAD_8_WITH_ADDR : I8085Pseudo<(outs GR8: $dst),
 
 let isCall = 1 in {                                                                                                 
 let Uses = [SP] in def CALL : FBRk<1, (outs), (ins rcalltarget_13:$k),
-                                       "CALL\t$k", [(I8085call imm:$k)]>;
+                                       "CALL $k", [(I8085call imm:$k)]>;
 }
 
 def : Pat<(I8085call(i16 tglobaladdr:$dst)), (CALL tglobaladdr:$dst)>;

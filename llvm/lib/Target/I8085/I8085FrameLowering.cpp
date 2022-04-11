@@ -88,8 +88,8 @@ void I8085FrameLowering::emitPrologue(MachineFunction &MF,
 
       BuildMI(MBB, MBBI, DL, TII.get(I8085::DAD));
 
-      BuildMI(MBB, MBBI, DL, TII.get(I8085::SHLD))
-          .addImm(lastStackAddress);
+      // BuildMI(MBB, MBBI, DL, TII.get(I8085::SHLD))
+      //     .addImm(lastStackAddress);
 
       /* Update stack pointer -> [current stack pointer - framesize]  */ 
   
@@ -189,10 +189,10 @@ void I8085FrameLowering::emitEpilogue(MachineFunction &MF,
   if (FrameSize) {
 
     unsigned lastStackAddress = 65530;
-    BuildMI(MBB, MBBI, DL, TII.get(I8085::LHLD))
-      .addImm(lastStackAddress);
+    // BuildMI(MBB, MBBI, DL, TII.get(I8085::LHLD))
+    //   .addImm(lastStackAddress);
 
-    BuildMI(MBB, MBBI, DL, TII.get(I8085::SPHL));  
+    // BuildMI(MBB, MBBI, DL, TII.get(I8085::SPHL));  
    
   }
 

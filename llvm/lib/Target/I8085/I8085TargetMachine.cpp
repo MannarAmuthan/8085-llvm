@@ -125,6 +125,8 @@ void I8085PassConfig::addPreSched2() {
 void I8085PassConfig::addPreEmitPass() {
   // Must run branch selection immediately preceding the asm printer.
   addPass(&BranchRelaxationPassID);
+  addPass(createI8085CustomASMPrinterPass());
 }
+
 
 } // end of namespace llvm
