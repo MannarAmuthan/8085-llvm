@@ -1,15 +1,20 @@
 # **I8085 backend**
 
-This experimental backend is for the [intel 8085 microprocessor](https://en.wikipedia.org/wiki/Intel_8085).
+This is the experimental LLVM backend for the  [intel 8085 microprocessor](https://en.wikipedia.org/wiki/Intel_8085).
 
 
 ## Contents
 
 [1.Implemented Functionalities](#implemented)
+
 [2.Some implementation notes](#notes)
+
 [3.Correctness](#correctness)
+
 [4.Disclaimer](#disclaimer)
+
 [5.Next on priority](#priority)
+
 [6.Credits](#credits)
 
 ## **Implemented Functionalities:**
