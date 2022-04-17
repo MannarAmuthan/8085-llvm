@@ -116,7 +116,7 @@ ret:                                    ; @ret
 **Some more examples:**
 
 Input:
-```
+```ll
 define i16 @foo(i16,i16) {
   %3 = add i16 %0, %1
   %4 = add i16 %3, %3
@@ -180,7 +180,7 @@ foo:                                    ; @foo
 ```
 
 Input:
-```
+```ll
 define i16 @functiontwo(i16,i16,i16){
   ret i16 %2
 }
