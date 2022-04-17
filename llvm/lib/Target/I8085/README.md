@@ -46,7 +46,7 @@ define signext i16 @ret(i16 signext %0, i16 signext %1) #0 {
 }
 ```
 4. And when input this to the llc tool , this backend produces below 8085 assembly
-```
+```assembly
 	.text
 	.file	"test.c"
 	.globl	ret                             ; -- Begin function ret
@@ -128,7 +128,7 @@ define i16 @foo(i16,i16) {
 ```
 
 Output:
-```
+```assembly
 	.text
 	.file	"mul.ll"
 	.globl	foo                             ; -- Begin function foo
@@ -181,7 +181,9 @@ foo:                                    ; @foo
 
 Input:
 ```
-declare i16 @functiontwo(i16,i16,i16)
+define i16 @functiontwo(i16,i16,i16){
+  ret i16 %2
+}
 
 define i16 @functionone(i16) {
     %2 = alloca i16, align 1
@@ -203,9 +205,24 @@ define i16 @functionone(i16) {
 ```
 
 Output:
-```
+```assembly
 	.text
 	.file	"mul.ll"
+	.globl	functiontwo                     ; -- Begin function functiontwo
+	.p2align	1
+	.type	functiontwo,@function
+functiontwo:                            ; @functiontwo
+; %bb.0:
+	LXI H, 6
+	DAD	SP
+	MOV B, M
+	LXI H, 7
+	DAD	SP
+	MOV C, M
+	ret
+.Lfunc_end0:
+	.size	functiontwo, .Lfunc_end0-functiontwo
+                                        ; -- End function
 	.globl	functionone                     ; -- Begin function functionone
 	.p2align	1
 	.type	functionone,@function
@@ -262,8 +279,8 @@ functionone:                            ; @functionone
 	MOV M, C
 	CALL functiontwo
 	ret
-.Lfunc_end0:
-	.size	functionone, .Lfunc_end0-functionone
+.Lfunc_end1:
+	.size	functionone, .Lfunc_end1-functionone
                                         ; -- End function
 ```
 ## <a id="notes">**Some implementation note:**
