@@ -2518,6 +2518,134 @@ bool I8085ExpandPseudo::expand<I8085::LOAD_16_WITH_ADDR>(Block &MBB, BlockIt MBB
   return true;
 }
 
+
+template <>
+bool I8085ExpandPseudo::expand<I8085::ADD_8>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned operandOne = MI.getOperand(1).getReg();
+  unsigned destReg = operandOne;
+  uint16_t operandTwo = MI.getOperand(2).getReg();    
+  
+  buildMI(MBB, MBBI, I8085::MOV)
+      .addReg(I8085::A)
+      .addReg(operandOne);
+
+  buildMI(MBB, MBBI, I8085::ADD)
+      .addReg(operandTwo);
+
+  buildMI(MBB, MBBI, I8085::MOV)
+      .addReg(destReg)
+      .addReg(I8085::A);
+
+  MI.eraseFromParent();
+  return true;
+}
+
+
+template <>
+bool I8085ExpandPseudo::expand<I8085::SUB_8>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned operandOne = MI.getOperand(1).getReg();
+  unsigned destReg = operandOne;
+  uint16_t operandTwo = MI.getOperand(2).getReg();   
+  
+  buildMI(MBB, MBBI, I8085::MOV)
+      .addReg(I8085::A)
+      .addReg(operandOne);
+
+  buildMI(MBB, MBBI, I8085::SUB)
+      .addReg(operandTwo);
+
+  buildMI(MBB, MBBI, I8085::MOV)
+      .addReg(destReg)
+      .addReg(I8085::A);
+
+  MI.eraseFromParent();
+  return true;
+}
+
+template <>
+bool I8085ExpandPseudo::expand<I8085::ADD_16>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned operandOne = MI.getOperand(1).getReg();
+  unsigned destReg = operandOne;
+  uint16_t operandTwo = MI.getOperand(2).getReg();  
+  bool DstIsDead = MI.getOperand(0).isDead();
+  
+  unsigned opLow,opHigh;
+  unsigned destLow,destHigh;
+
+  if(destReg==I8085::BC){  destLow=I8085::C;  destHigh=I8085::B; }
+  if(destReg==I8085::DE){  destLow=I8085::E;  destHigh=I8085::D; }
+
+  if(operandTwo==I8085::BC){  opLow=I8085::C;  opHigh=I8085::B; }
+  if(operandTwo==I8085::DE){  opLow=I8085::E;  opHigh=I8085::D; }
+  
+  buildMI(MBB, MBBI, I8085::ADD_8)
+      .addReg(destLow, RegState::Define | getDeadRegState(DstIsDead))
+      .addReg(destLow, RegState::Kill)
+      .addReg(opLow, RegState::Kill);
+  
+  buildMI(MBB, MBBI, I8085::MOV)
+      .addReg(I8085::A)
+      .addReg(destHigh);
+
+  buildMI(MBB, MBBI, I8085::ADC)
+      .addReg(opHigh);
+
+  buildMI(MBB, MBBI, I8085::MOV)
+      .addReg(destHigh)
+      .addReg(I8085::A);
+
+
+  MI.eraseFromParent();
+  return true;
+}
+
+template <>
+bool I8085ExpandPseudo::expand<I8085::SUB_16>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+  
+  unsigned operandOne = MI.getOperand(1).getReg();
+  unsigned destReg = operandOne;
+  uint16_t operandTwo = MI.getOperand(2).getReg();  
+  bool DstIsDead=MI.getOperand(0).isDead();
+  unsigned opLow,opHigh;
+  unsigned destLow,destHigh;
+
+  if(destReg==I8085::BC){  destLow=I8085::C;  destHigh=I8085::B; }
+  if(destReg==I8085::DE){  destLow=I8085::E;  destHigh=I8085::D; }
+
+  if(operandTwo==I8085::BC){  opLow=I8085::C;  opHigh=I8085::B; }
+  if(operandTwo==I8085::DE){  opLow=I8085::E;  opHigh=I8085::D; }
+  
+  buildMI(MBB, MBBI, I8085::SUB_8)
+      .addReg(destLow, RegState::Define | getDeadRegState(DstIsDead))
+      .addReg(destLow, RegState::Kill)
+      .addReg(opLow, RegState::Kill);
+  
+  buildMI(MBB, MBBI, I8085::MOV)
+      .addReg(I8085::A)
+      .addReg(destHigh);
+
+  buildMI(MBB, MBBI, I8085::SBB)
+      .addReg(opHigh);
+
+  buildMI(MBB, MBBI, I8085::MOV)
+      .addReg(destHigh)
+      .addReg(I8085::A);
+
+  MI.eraseFromParent();
+  return true;
+}
+
 bool I8085ExpandPseudo::expandMI(Block &MBB, BlockIt MBBI) {
   MachineInstr &MI = *MBBI;
   int Opcode = MBBI->getOpcode();
@@ -2580,9 +2708,10 @@ bool I8085ExpandPseudo::expandMI(Block &MBB, BlockIt MBBI) {
   //   EXPAND(I8085::LSRWLoRd);
   //   EXPAND(I8085::ASRWLoRd);
   //   EXPAND(I8085::LSLWNRd);
-  //   EXPAND(I8085::LSRWNRd);
-  //   EXPAND(I8085::ASRWNRd);
-  // EXPAND(I8085::LSLBNRd);
+    EXPAND(I8085::SUB_16);
+    EXPAND(I8085::ADD_16);
+    EXPAND(I8085::SUB_8);
+    EXPAND(I8085::ADD_8);
     EXPAND(I8085::LOAD_16_WITH_ADDR);
     EXPAND(I8085::LOAD_8_WITH_ADDR);
     EXPAND(I8085::LOAD_16);

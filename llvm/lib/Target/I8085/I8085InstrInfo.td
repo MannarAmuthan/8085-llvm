@@ -377,11 +377,7 @@ let isCommutable = 1, Constraints = "$src = $rd", Defs = [SREG] in {
                : $src, GPR8
                : $rr),
               "add\t$rd, $rr",
-              [(set i8
-                : $rd, (add i8
-                        : $src, i8
-                        : $rr)),
-               (implicit SREG)]>;
+              []>;
 
   // ADDW Rd+1:Rd, Rr+1:Rr
   // Pseudo instruction to add four 8-bit registers as two 16-bit values.
@@ -396,11 +392,7 @@ let isCommutable = 1, Constraints = "$src = $rd", Defs = [SREG] in {
                 : $src, DREGS
                 : $rr),
                "addw\t$rd, $rr",
-               [(set i16
-                 : $rd, (add i16
-                         : $src, i16
-                         : $rr)),
-                (implicit SREG)]>;
+               []>;
 
   // ADC Rd, Rr
   // Adds two 8-bit registers with carry.
@@ -430,13 +422,7 @@ let isCommutable = 1, Constraints = "$src = $rd", Defs = [SREG] in {
                                              (ins DREGS
                                               : $src, DREGS
                                               : $rr),
-                                             "adcw\t$rd, $rr", [
-                                               (set i16
-                                                : $rd, (adde i16
-                                                        : $src, i16
-                                                        : $rr)),
-                                               (implicit SREG)
-                                             ]>;
+                                             "adcw\t$rd, $rr", []>;
 
   // AIDW Rd, k
   // Adds an immediate 6-bit value K to Rd, placing the result in Rd.
@@ -448,12 +434,7 @@ let isCommutable = 1, Constraints = "$src = $rd", Defs = [SREG] in {
                : $src, imm_arith6
                : $k),
               "adiw\t$rd, $k",
-              [(set i16
-                : $rd, (add i16
-                        : $src, uimm6
-                        : $k)),
-               (implicit SREG)]>,
-        Requires<[HasADDSUBIW]>;
+              []>;
 }
 
 //===----------------------------------------------------------------------===//
@@ -470,11 +451,7 @@ let Constraints = "$src = $rd", Defs = [SREG] in {
                : $src, GPR8
                : $rr),
               "sub\t$rd, $rr",
-              [(set i8
-                : $rd, (sub i8
-                        : $src, i8
-                        : $rr)),
-               (implicit SREG)]>;
+              []>;
 
   // SUBW Rd+1:Rd, Rr+1:Rr
   // Subtracts two 16-bit values and places the result into Rd.
@@ -489,11 +466,7 @@ let Constraints = "$src = $rd", Defs = [SREG] in {
                 : $src, DREGS
                 : $rr),
                "subw\t$rd, $rr",
-               [(set i16
-                 : $rd, (sub i16
-                         : $src, i16
-                         : $rr)),
-                (implicit SREG)]>;
+               []>;
 
   def SUBIRdK
       : FRdK<0b0101,
@@ -503,11 +476,7 @@ let Constraints = "$src = $rd", Defs = [SREG] in {
               : $src, imm_ldi8
               : $k),
              "subi\t$rd, $k",
-             [(set i8
-               : $rd, (sub i8
-                       : $src, imm
-                       : $k)),
-              (implicit SREG)]>;
+             []>;
 
   // SUBIW Rd+1:Rd, K+1:K
   //
@@ -521,11 +490,7 @@ let Constraints = "$src = $rd", Defs = [SREG] in {
                 : $src, i16imm
                 : $rr),
                "subiw\t$rd, $rr",
-               [(set i16
-                 : $rd, (sub i16
-                         : $src, imm
-                         : $rr)),
-                (implicit SREG)]>;
+               []>;
 
   def SBIWRdK
       : FWRdK<0b1,
@@ -535,12 +500,7 @@ let Constraints = "$src = $rd", Defs = [SREG] in {
                : $src, imm_arith6
                : $k),
               "sbiw\t$rd, $k",
-              [(set i16
-                : $rd, (sub i16
-                        : $src, uimm6
-                        : $k)),
-               (implicit SREG)]>,
-        Requires<[HasADDSUBIW]>;
+              []>;
 
   // Subtract with carry operations which must read the carry flag in SREG.
   let Uses = [SREG] in {
@@ -552,11 +512,7 @@ let Constraints = "$src = $rd", Defs = [SREG] in {
                  : $src, GPR8
                  : $rr),
                 "sbc\t$rd, $rr",
-                [(set i8
-                  : $rd, (sube i8
-                          : $src, i8
-                          : $rr)),
-                 (implicit SREG)]>;
+                []>;
 
     // SBCW Rd+1:Rd, Rr+1:Rr
     //
@@ -568,13 +524,7 @@ let Constraints = "$src = $rd", Defs = [SREG] in {
                           (ins DREGS
                            : $src, DREGS
                            : $rr),
-                          "sbcw\t$rd, $rr", [
-                            (set i16
-                             : $rd, (sube i16
-                                     : $src, i16
-                                     : $rr)),
-                            (implicit SREG)
-                          ]>;
+                          "sbcw\t$rd, $rr", []>;
 
     def SBCIRdK
         : FRdK<0b0100,
@@ -584,11 +534,7 @@ let Constraints = "$src = $rd", Defs = [SREG] in {
                 : $src, imm_ldi8
                 : $k),
                "sbci\t$rd, $k",
-               [(set i8
-                 : $rd, (sube i8
-                         : $src, imm
-                         : $k)),
-                (implicit SREG)]>;
+               []>;
 
     // SBCIW Rd+1:Rd, K+1:K
     // sbci Rd,   K
@@ -598,13 +544,7 @@ let Constraints = "$src = $rd", Defs = [SREG] in {
                           (ins DLDREGS
                            : $src, i16imm
                            : $rr),
-                          "sbciw\t$rd, $rr", [
-                            (set i16
-                             : $rd, (sube i16
-                                     : $src, imm
-                                     : $rr)),
-                            (implicit SREG)
-                          ]>;
+                          "sbciw\t$rd, $rr", []>;
   }
 }
 
@@ -2388,59 +2328,59 @@ def CopyR1 : Pseudo<(outs GPR8:$rd), (ins), "clrz\t$rd", [(set i8:$rd, 0)]>;
 // add x, 128 -> sub x, -128. Clang is emitting an eor for this (ldi+eor)
 
 // the add instruction always writes the carry flag
-def : Pat<(addc i8 : $src, i8 : $src2), (ADDRdRr i8 : $src, i8 : $src2)>;
-def : Pat<(addc DREGS
-           : $src, DREGS
-           : $src2),
-          (ADDWRdRr DREGS
-           : $src, DREGS
-           : $src2)>;
+// def : Pat<(addc i8 : $src, i8 : $src2), (ADDRdRr i8 : $src, i8 : $src2)>;
+// def : Pat<(addc DREGS
+//            : $src, DREGS
+//            : $src2),
+//           (ADDWRdRr DREGS
+//            : $src, DREGS
+//            : $src2)>;
 
 // all sub instruction variants always writes the carry flag
-def : Pat<(subc i8 : $src, i8 : $src2), (SUBRdRr i8 : $src, i8 : $src2)>;
-def : Pat<(subc i16 : $src, i16 : $src2), (SUBWRdRr i16 : $src, i16 : $src2)>;
-def : Pat<(subc i8 : $src, imm : $src2), (SUBIRdK i8 : $src, imm : $src2)>;
-def : Pat<(subc i16 : $src, imm : $src2), (SUBIWRdK i16 : $src, imm : $src2)>;
+// def : Pat<(subc i8 : $src, i8 : $src2), (SUBRdRr i8 : $src, i8 : $src2)>;
+// def : Pat<(subc i16 : $src, i16 : $src2), (SUBWRdRr i16 : $src, i16 : $src2)>;
+// def : Pat<(subc i8 : $src, imm : $src2), (SUBIRdK i8 : $src, imm : $src2)>;
+// def : Pat<(subc i16 : $src, imm : $src2), (SUBIWRdK i16 : $src, imm : $src2)>;
 
 // These patterns convert add (x, -imm) to sub (x, imm) since we dont have
 // any add with imm instructions. Also take care of the adiw/sbiw instructions.
-def : Pat<(add i16
-           : $src1, imm0_63_neg
-           : $src2),
-          (SBIWRdK i16
-           : $src1, (imm0_63_neg
-                     : $src2))>;
-def : Pat<(add i16
-           : $src1, imm
-           : $src2),
-          (SUBIWRdK i16
-           : $src1, (imm16_neg_XFORM imm
-                     : $src2))>;
-def : Pat<(addc i16
-           : $src1, imm
-           : $src2),
-          (SUBIWRdK i16
-           : $src1, (imm16_neg_XFORM imm
-                     : $src2))>;
+// def : Pat<(add i16
+//            : $src1, imm0_63_neg
+//            : $src2),
+//           (SBIWRdK i16
+//            : $src1, (imm0_63_neg
+//                      : $src2))>;
+// def : Pat<(add i16
+//            : $src1, imm
+//            : $src2),
+//           (SUBIWRdK i16
+//            : $src1, (imm16_neg_XFORM imm
+//                      : $src2))>;
+// def : Pat<(addc i16
+//            : $src1, imm
+//            : $src2),
+//           (SUBIWRdK i16
+//            : $src1, (imm16_neg_XFORM imm
+//                      : $src2))>;
 
-def : Pat<(add i8
-           : $src1, imm
-           : $src2),
-          (SUBIRdK i8
-           : $src1, (imm8_neg_XFORM imm
-                     : $src2))>;
-def : Pat<(addc i8
-           : $src1, imm
-           : $src2),
-          (SUBIRdK i8
-           : $src1, (imm8_neg_XFORM imm
-                     : $src2))>;
-def : Pat<(adde i8
-           : $src1, imm
-           : $src2),
-          (SBCIRdK i8
-           : $src1, (imm8_neg_XFORM imm
-                     : $src2))>;
+// def : Pat<(add i8
+//            : $src1, imm
+//            : $src2),
+//           (SUBIRdK i8
+//            : $src1, (imm8_neg_XFORM imm
+//                      : $src2))>;
+// def : Pat<(addc i8
+//            : $src1, imm
+//            : $src2),
+//           (SUBIRdK i8
+//            : $src1, (imm8_neg_XFORM imm
+//                      : $src2))>;
+// def : Pat<(adde i8
+//            : $src1, imm
+//            : $src2),
+//           (SBCIRdK i8
+//            : $src1, (imm8_neg_XFORM imm
+//                      : $src2))>;
 
 // Calls.
 let Predicates = [HasJMPCALL] in {
@@ -2520,6 +2460,34 @@ def : Pat<(I8085lsl i8 : $rd), (ADDRdRr GPR8 : $rd, GPR8 : $rd)>;
 
 // ------------------------------------- NEW ---------------------------------------
 
+let Constraints = "$src = $rd"  in {
+
+  def SUB_8
+      : I8085Pseudo<(outs GR8: $rd),
+              (ins GR8: $src, GR8: $rr),
+              "SUB_8\t$rd, $rr",
+              [(set i8: $rd, (sub i8: $src, i8: $rr))]>;
+
+  def SUB_16
+      : I8085Pseudo<(outs GR16: $rd),
+              (ins GR16: $src, GR16: $rr),
+              "SUB_16\t$rd, $rr",
+              [(set i16: $rd, (sub i16: $src, i16: $rr))]>;
+
+  def ADD_8
+      : I8085Pseudo<(outs GR8: $rd),
+              (ins GR8: $src, GR8: $rr),
+              "ADD_8\t$rd, $rr",
+              [(set i8: $rd, (add i8: $src, i8: $rr))]>;
+
+  def ADD_16
+      : I8085Pseudo<(outs GR16: $rd),
+              (ins GR16: $src, GR16: $rr),
+              "ADD_16\t$rd, $rr",
+              [(set i16: $rd, (add i16: $src, i16: $rr))]>;
+
+}
+
  def MVI : MV_F<0b1111,
                     (outs GR8: $rd),
                     (ins i8imm: $k),
@@ -2532,44 +2500,11 @@ def : Pat<(I8085lsl i8 : $rd), (ADDRdRr GPR8 : $rd, GPR8 : $rd)>;
                     "MOV\t$rd, $rs", [(set i8: $rd, i8: $rs)]>;
 
 
-def SUB_I8
-    : FWRdK<0b1,
-            (outs GR8: $rd),
-            (ins GR8: $src, i8imm: $k),
-            "SUB\t$rd, $k",
-            [(set i8: $rd, (sub i8: $src, imm: $k))]>;
-
-
-def ADD_I8
-    : FWRdK<0b1,
-            (outs GR8: $rd),
-            (ins GR8: $src, i8imm: $k),
-            "ADD\t$rd, $k",
-            [(set i8: $rd, (sub i8: $src, imm: $k))]>;    
-
-
 def mspi : Operand<iPTR> { 
   let MIOperandInfo = (ops GR8, i16imm); 
   let PrintMethod = "printMemri";
   let EncoderMethod = "encodeMemri";
 }
-
-
-// def STDSPQRr : I8085Pseudo<(outs),
-//                            (ins mspi: $dst, GR8: $src),
-//                            "PS_STORE\t$dst, $src", [(store i8: $src, addr: $dst)]>;
-
-// def STDSPQRr_16imm : I8085Pseudo<(outs),
-//                            (ins mspi: $dst, DLDREGS: $src),
-//                            "PS_STORE\t$dst, $src", [(store i16: $src, addr: $dst)]>;
-
-// def STDSPQRr_16imm : Pseudo<(outs DLDREGS
-//                         : $dst),
-//                        (ins i16imm
-//                         : $src),
-//                        "PS_STORE16 \t$dst, $src", [(set i16
-//                                              : $dst, imm
-//                                              : $src)]>;
 
 
 def LXI : I8085Pseudo<(outs GR8: $rd),
@@ -2608,8 +2543,26 @@ def SUB_M
     : I8085Pseudo<(outs),
             (ins),
             "SUB M",
-            []>;           
+            []>;
 
+def ADD
+    : I8085Pseudo<(outs),
+            (ins GR8: $rs),
+            "ADD $rs",
+            []>;
+
+def ADC
+    : I8085Pseudo<(outs),
+            (ins GR8: $rs),
+            "ADC $rs",
+            []>;
+
+def ADD_M
+    : I8085Pseudo<(outs),
+            (ins),
+            "ADD M",
+            []>;            
+    
 def MOV_M 
     : I8085Pseudo<(outs),
             (ins GR8: $rs),
@@ -2652,15 +2605,6 @@ def STORE_16 : StorePseudo<(outs),
                                                      : $src, addr
                                                      : $dst)]>;
 
-
-// def STDPtrQRr_x : FSTDLDD<1, (outs),
-//                         (ins mspi: $memri, 
-//                         GR8: $reg),
-//                         "std_x\t$memri, $reg", [(store i8
-//                                                : $reg, addr
-//                                                : $memri)]>;
-
-
 def STORE_8 : StorePseudo< (outs),
                         (ins mspi: $memri,
                          GR8: $reg),
@@ -2684,3 +2628,30 @@ def : Pat<(I8085call(i16 tglobaladdr:$dst)), (CALL tglobaladdr:$dst)>;
 def : Pat<(I8085call(i16 texternalsym:$dst)), (CALL texternalsym:$dst)>;
 
 
+
+def imm16_Neg_Form : SDNodeXForm<imm, [{
+                    return CurDAG->getTargetConstant(-N->getAPIntValue(),
+                                                     SDLoc(N), MVT::i16);
+                  }]>;
+
+
+def imm8_Neg_Form : SDNodeXForm<imm, [{
+                    return CurDAG->getTargetConstant(-N->getAPIntValue(),
+                                                     SDLoc(N), MVT::i8);
+                  }]>;
+
+
+def IsNeg8 : ImmLeaf<i8, [{
+  return Imm < 0;
+}], imm8_Neg_Form>;
+
+def IsNeg16 : ImmLeaf<i16, [{
+  return Imm < 0;
+}], imm16_Neg_Form>;
+
+
+def : Pat<(add i8: $src1, (IsNeg8 :$src2)),(SUB_8 i8: $src1, (MVI (imm8_Neg_Form imm: $src2)))>;
+def : Pat<(add i16: $src1, (IsNeg16 :$src2)),(SUB_16 i16: $src1, (LOAD_16 (imm16_Neg_Form imm: $src2)))>;
+
+def : Pat<(add i8: $src1, (imm :$src2)),(ADD_8 i8: $src1, (MVI imm: $src2))>;
+def : Pat<(add i16: $src1, (imm :$src2)),(ADD_16 i16: $src1, (LOAD_16 imm: $src2))>;

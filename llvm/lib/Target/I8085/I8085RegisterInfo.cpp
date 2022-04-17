@@ -89,11 +89,7 @@ I8085RegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC,
 
 
   if (TRI->isTypeLegalForClass(*RC, MVT::i16)) {
-    return &I8085::DREGSRegClass;
-  }
-
-  if (TRI->isTypeLegalForClass(*RC, MVT::i8)) {
-    return &I8085::GPR8RegClass;
+    return &I8085::GR16RegClass;
   }
 
   if (TRI->isTypeLegalForClass(*RC, MVT::i8)) {
