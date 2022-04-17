@@ -16,6 +16,6 @@ Target &getTheI8085Target() {
 } // namespace llvm
 
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeI8085TargetInfo() {
-  llvm::RegisterTarget<llvm::Triple::avr> X(llvm::getTheI8085Target(), "i8085",
+  llvm::RegisterTarget<llvm::Triple::i8085> X(llvm::getTheI8085Target(), "i8085",
                                             "I8085 Microprocessor", "I8085");
 }

@@ -24,7 +24,6 @@ add_llvm_target(I8085CodeGen
   I8085MCInstLower.cpp
   I8085RelaxMemOperations.cpp
   I8085RegisterInfo.cpp
-  I8085ShiftExpand.cpp
   I8085Subtarget.cpp
   I8085TargetMachine.cpp
   I8085TargetObjectFile.cpp

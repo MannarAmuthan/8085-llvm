@@ -81,7 +81,6 @@ void I8085PassConfig::addIRPasses() {
   // Expand instructions like
   //   %result = shl i32 %n, %amount
   // to a loop so that library calls are avoided.
-  addPass(createI8085ShiftExpandPass());
 
   TargetPassConfig::addIRPasses();
 }
@@ -93,7 +92,6 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeI8085Target() {
   auto &PR = *PassRegistry::getPassRegistry();
   initializeI8085ExpandPseudoPass(PR);
   initializeI8085RelaxMemPass(PR);
-  initializeI8085ShiftExpandPass(PR);
 }
 
 const I8085Subtarget *I8085TargetMachine::getSubtargetImpl() const {

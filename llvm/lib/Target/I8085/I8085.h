@@ -24,7 +24,6 @@ namespace llvm {
 class I8085TargetMachine;
 class FunctionPass;
 
-Pass *createI8085ShiftExpandPass();
 FunctionPass *createI8085ISelDag(I8085TargetMachine &TM,
                                CodeGenOpt::Level OptLevel);
 FunctionPass *createI8085ExpandPseudoPass();
@@ -33,7 +32,6 @@ FunctionPass *createI8085RelaxMemPass();
 FunctionPass *createI8085BranchSelectionPass();
 FunctionPass *createI8085CustomASMPrinterPass();
 
-void initializeI8085ShiftExpandPass(PassRegistry &);
 void initializeI8085ExpandPseudoPass(PassRegistry &);
 void initializeI8085RelaxMemPass(PassRegistry &);
 

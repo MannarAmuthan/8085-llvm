@@ -16,7 +16,7 @@
 #include "llvm/MC/MCObjectWriter.h"
 #include "llvm/MC/MCSymbol.h"
 
-#define DEBUG_TYPE "avrmcelfstreamer"
+#define DEBUG_TYPE "i8085mcelfstreamer"
 
 using namespace llvm;
 

@@ -51,8 +51,8 @@ void I8085InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
   // Not all I8085 devices support the 16-bit `MOVW` instruction.
   if (I8085::GR8RegClass.contains(DestReg, SrcReg)) {
     if (STI.hasMOVW() && I8085::DREGSMOVWRegClass.contains(DestReg, SrcReg)) {
-      BuildMI(MBB, MI, DL, get(I8085::MOVWRdRr), DestReg)
-          .addReg(SrcReg, getKillRegState(KillSrc));
+      // BuildMI(MBB, MI, DL, get(I8085::MOVWRdRr), DestReg)
+      //     .addReg(SrcReg, getKillRegState(KillSrc));
     } else {
       Opc = I8085::MOV;
 
@@ -70,18 +70,20 @@ void I8085InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
       //     .addReg(SrcHi, getKillRegState(KillSrc));
     }
   } else {
-    if (I8085::GR8RegClass.contains(DestReg, SrcReg)) {
-      Opc = I8085::MOV;
-    } else if (SrcReg == I8085::SP && I8085::GR8RegClass.contains(DestReg)) {
-      Opc = I8085::SPREAD;
-    } else if (DestReg == I8085::SP && I8085::GR8RegClass.contains(SrcReg)) {
-      Opc = I8085::SPWRITE;
-    } else {
-      // std::cout << SrcReg << "\n";
-      // std::cout <<  DestReg << "\n";
-      // llvm_unreachable("Impossible reg-to-reg copy");
-      Opc = I8085::MOV;
-    }
+    // if (I8085::GR8RegClass.contains(DestReg, SrcReg)) {
+    //   Opc = I8085::MOV;
+    // } else if (SrcReg == I8085::SP && I8085::GR8RegClass.contains(DestReg)) {
+    //   Opc = I8085::SPREAD;
+    // } else if (DestReg == I8085::SP && I8085::GR8RegClass.contains(SrcReg)) {
+    //   Opc = I8085::SPWRITE;
+    // } else {
+    //   // std::cout << SrcReg << "\n";
+    //   // std::cout <<  DestReg << "\n";
+    //   // llvm_unreachable("Impossible reg-to-reg copy");
+    //   Opc = I8085::MOV;
+    // }
+
+    Opc = I8085::MOV;
 
     BuildMI(MBB, MI, DL, get(Opc), DestReg)
         .addReg(SrcReg, getKillRegState(KillSrc));

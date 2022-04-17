@@ -31,7 +31,7 @@
 
 #include <sstream>
 
-#define DEBUG_TYPE "avr-asm-parser"
+#define DEBUG_TYPE "i8085-asm-parser"
 
 using namespace llvm;
 
@@ -336,8 +336,6 @@ bool I8085AsmParser::MatchAndEmitInstruction(SMLoc Loc, unsigned &Opcode,
     return invalidOperand(Loc, Operands, ErrorInfo);
   case Match_MnemonicFail:
     return Error(Loc, "invalid instruction");
-  case Match_InvalidRegisterOnTiny:
-    return Error(Loc, "invalid register on avrtiny");
   default:
     return true;
   }
@@ -404,11 +402,6 @@ bool I8085AsmParser::tryParseRegisterOperand(OperandVector &Operands) {
 
   if (RegNo == I8085::NoRegister)
     return true;
-
-  // Reject R0~R15 on avrtiny.
-  if (I8085::R0 <= RegNo && RegNo <= I8085::R15 &&
-      STI.hasFeature(I8085::FeatureTinyEncoding))
-    return Error(Parser.getTok().getLoc(), "invalid register on avrtiny");
 
   AsmToken const &T = Parser.getTok();
   Operands.push_back(I8085Operand::CreateReg(RegNo, T.getLoc(), T.getEndLoc()));
@@ -738,7 +731,7 @@ unsigned I8085AsmParser::validateTargetOperandClass(MCParsedAsmOperand &AsmOp,
     if (MCConstantExpr const *Const = dyn_cast<MCConstantExpr>(Op.getImm())) {
       int64_t RegNum = Const->getValue();
 
-      // Reject R0~R15 on avrtiny.
+
       if (0 <= RegNum && RegNum <= 15 &&
           STI.hasFeature(I8085::FeatureTinyEncoding))
         return Match_InvalidRegisterOnTiny;
