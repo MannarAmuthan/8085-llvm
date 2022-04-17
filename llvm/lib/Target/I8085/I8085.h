@@ -28,12 +28,10 @@ FunctionPass *createI8085ISelDag(I8085TargetMachine &TM,
                                CodeGenOpt::Level OptLevel);
 FunctionPass *createI8085ExpandPseudoPass();
 FunctionPass *createI8085FrameAnalyzerPass();
-FunctionPass *createI8085RelaxMemPass();
 FunctionPass *createI8085BranchSelectionPass();
 FunctionPass *createI8085CustomASMPrinterPass();
 
 void initializeI8085ExpandPseudoPass(PassRegistry &);
-void initializeI8085RelaxMemPass(PassRegistry &);
 
 /// Contains the I8085 backend.
 namespace I8085 {

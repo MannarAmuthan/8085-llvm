@@ -45,7 +45,6 @@ void I8085InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
                                const DebugLoc &DL, MCRegister DestReg,
                                MCRegister SrcReg, bool KillSrc) const {
   const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
-  const I8085RegisterInfo &TRI = *STI.getRegisterInfo();
   unsigned Opc;
 
   // Not all I8085 devices support the 16-bit `MOVW` instruction.
