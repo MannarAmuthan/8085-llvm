@@ -68,22 +68,22 @@ unsigned
 I8085MCCodeEmitter::loadStorePostEncoder(const MCInst &MI, unsigned EncodedValue,
                                        const MCSubtargetInfo &STI) const {
 
-  assert(MI.getOperand(0).isReg() && MI.getOperand(1).isReg() &&
-         "the load/store operands must be registers");
+  // assert(MI.getOperand(0).isReg() && MI.getOperand(1).isReg() &&
+  //        "the load/store operands must be registers");
 
-  unsigned Opcode = MI.getOpcode();
+  // unsigned Opcode = MI.getOpcode();
 
-  // check whether either of the registers are the X pointer register.
-  bool IsRegX = MI.getOperand(0).getReg() == I8085::R27R26 ||
-                MI.getOperand(1).getReg() == I8085::R27R26;
+  // // check whether either of the registers are the X pointer register.
+  // bool IsRegX = MI.getOperand(0).getReg() == I8085::R27R26 ||
+  //               MI.getOperand(1).getReg() == I8085::R27R26;
 
-  bool IsPredec = Opcode == I8085::LDRdPtrPd || Opcode == I8085::STPtrPdRr;
-  bool IsPostinc = Opcode == I8085::LDRdPtrPi || Opcode == I8085::STPtrPiRr;
+  // bool IsPredec = Opcode == I8085::LDRdPtrPd || Opcode == I8085::STPtrPdRr;
+  // bool IsPostinc = Opcode == I8085::LDRdPtrPi || Opcode == I8085::STPtrPiRr;
 
-  // Check if we need to set the inconsistent bit
-  if (IsRegX || IsPredec || IsPostinc) {
-    EncodedValue |= (1 << 12);
-  }
+  // // Check if we need to set the inconsistent bit
+  // if (IsRegX || IsPredec || IsPostinc) {
+  //   EncodedValue |= (1 << 12);
+  // }
 
   return EncodedValue;
 }
@@ -113,21 +113,8 @@ I8085MCCodeEmitter::encodeRelCondBrTarget(const MCInst &MI, unsigned OpNo,
 unsigned I8085MCCodeEmitter::encodeLDSTPtrReg(const MCInst &MI, unsigned OpNo,
                                             SmallVectorImpl<MCFixup> &Fixups,
                                             const MCSubtargetInfo &STI) const {
-  auto MO = MI.getOperand(OpNo);
 
-  // The operand should be a pointer register.
-  assert(MO.isReg());
-
-  switch (MO.getReg()) {
-  case I8085::R27R26:
-    return 0x03; // X: 0b11
-  case I8085::R29R28:
-    return 0x02; // Y: 0b10
-  case I8085::R31R30:
-    return 0x00; // Z: 0b00
-  default:
-    llvm_unreachable("invalid pointer register");
-  }
+  return 0;
 }
 
 /// Encodes a `memri` operand.
@@ -137,37 +124,7 @@ unsigned I8085MCCodeEmitter::encodeLDSTPtrReg(const MCInst &MI, unsigned OpNo,
 unsigned I8085MCCodeEmitter::encodeMemri(const MCInst &MI, unsigned OpNo,
                                        SmallVectorImpl<MCFixup> &Fixups,
                                        const MCSubtargetInfo &STI) const {
-  auto RegOp = MI.getOperand(OpNo);
-  auto OffsetOp = MI.getOperand(OpNo + 1);
-
-  assert(RegOp.isReg() && "Expected register operand");
-
-  uint8_t RegBit = 0;
-
-  switch (RegOp.getReg()) {
-  default:
-    llvm_unreachable("Expected either Y or Z register");
-  case I8085::R31R30:
-    RegBit = 0;
-    break; // Z register
-  case I8085::R29R28:
-    RegBit = 1;
-    break; // Y register
-  }
-
-  int8_t OffsetBits;
-
-  if (OffsetOp.isImm()) {
-    OffsetBits = OffsetOp.getImm();
-  } else if (OffsetOp.isExpr()) {
-    OffsetBits = 0;
-    Fixups.push_back(MCFixup::create(0, OffsetOp.getExpr(),
-                                     MCFixupKind(I8085::fixup_6), MI.getLoc()));
-  } else {
-    llvm_unreachable("invalid value for offset");
-  }
-
-  return (RegBit << 6) | OffsetBits;
+  return 0;
 }
 
 unsigned I8085MCCodeEmitter::encodeComplement(const MCInst &MI, unsigned OpNo,

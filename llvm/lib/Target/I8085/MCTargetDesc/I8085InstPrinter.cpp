@@ -41,42 +41,6 @@ void I8085InstPrinter::printInst(const MCInst *MI, uint64_t Address,
   // of the form "ld reg, X+".
   // TODO: We should be able to rewrite this using TableGen data.
   switch (Opcode) {
-  case I8085::LDRdPtr:
-  case I8085::LDRdPtrPi:
-  case I8085::LDRdPtrPd:
-    O << "\tld\t";
-    printOperand(MI, 0, O);
-    O << ", ";
-
-    if (Opcode == I8085::LDRdPtrPd)
-      O << '-';
-
-    printOperand(MI, 1, O);
-
-    if (Opcode == I8085::LDRdPtrPi)
-      O << '+';
-    break;
-  case I8085::STPtrRr:
-    O << "\tst\t";
-    printOperand(MI, 0, O);
-    O << ", ";
-    printOperand(MI, 1, O);
-    break;
-  case I8085::STPtrPiRr:
-  case I8085::STPtrPdRr:
-    O << "\tst\t";
-
-    if (Opcode == I8085::STPtrPdRr)
-      O << '-';
-
-    printOperand(MI, 1, O);
-
-    if (Opcode == I8085::STPtrPiRr)
-      O << '+';
-
-    O << ", ";
-    printOperand(MI, 2, O);
-    break;
   default:
     if (!printAliasInstr(MI, Address, O))
       printInstruction(MI, Address, O);
