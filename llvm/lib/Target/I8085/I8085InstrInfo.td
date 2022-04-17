@@ -2488,13 +2488,13 @@ let Constraints = "$src = $rd"  in {
 
 }
 
- def MVI : MV_F<0b1111,
+ def MVI : I8085Pseudo<
                     (outs GR8: $rd),
                     (ins i8imm: $k),
                     "MVI\t$rd, $k", [(set i8: $rd, imm: $k)]>;
 
 
- def MOV : MV_F<0b0000,
+ def MOV : I8085Pseudo<
                     (outs GR8: $rd),
                     (ins GR8: $rs),
                     "MOV\t$rd, $rs", [(set i8: $rd, i8: $rs)]>;
@@ -2597,7 +2597,7 @@ def LOAD_16 : I8085Pseudo<(outs GR16: $dst),
                                              : $dst, imm
                                              : $src)]>; 
 
-def STORE_16 : StorePseudo<(outs),
+def STORE_16 : I8085Pseudo<(outs),
                             (ins mspi
                              : $dst, GR16
                              : $src),
@@ -2605,7 +2605,7 @@ def STORE_16 : StorePseudo<(outs),
                                                      : $src, addr
                                                      : $dst)]>;
 
-def STORE_8 : StorePseudo< (outs),
+def STORE_8 : I8085Pseudo<(outs),
                         (ins mspi: $memri,
                          GR8: $reg),
                         "STORE\t$memri, $reg", [(store i8: $reg, addr: $memri)]>;
@@ -2620,7 +2620,7 @@ def LOAD_8_WITH_ADDR : I8085Pseudo<(outs GR8: $dst),
                        "LOAD\t$dst, $src", [(set i8: $dst, (load addr: $src))]>;                                                                                                                      
 
 let isCall = 1 in {                                                                                                 
-let Uses = [SP] in def CALL : FBRk<1, (outs), (ins rcalltarget_13:$k),
+let Uses = [SP] in def CALL : I8085Pseudo<(outs), (ins rcalltarget_13:$k),
                                        "CALL $k", [(I8085call imm:$k)]>;
 }
 

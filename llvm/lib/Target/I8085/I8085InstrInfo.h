@@ -66,9 +66,9 @@ public:
   explicit I8085InstrInfo();
 
   const I8085RegisterInfo &getRegisterInfo() const { return RI; }
-  const MCInstrDesc &getBrCond(I8085CC::CondCodes CC) const;
-  I8085CC::CondCodes getCondFromBranchOpc(unsigned Opc) const;
-  I8085CC::CondCodes getOppositeCondition(I8085CC::CondCodes CC) const;
+  // const MCInstrDesc &getBrCond(I8085CC::CondCodes CC) const;
+  // I8085CC::CondCodes getCondFromBranchOpc(unsigned Opc) const;
+  // I8085CC::CondCodes getOppositeCondition(I8085CC::CondCodes CC) const;
   unsigned getInstSizeInBytes(const MachineInstr &MI) const override;
 
   void copyPhysReg(MachineBasicBlock &MBB, MachineBasicBlock::iterator MI,
@@ -88,29 +88,29 @@ public:
   unsigned isStoreToStackSlot(const MachineInstr &MI,
                               int &FrameIndex) const override;
 
-  // Branch analysis.
-  bool analyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
-                     MachineBasicBlock *&FBB,
-                     SmallVectorImpl<MachineOperand> &Cond,
-                     bool AllowModify = false) const override;
-  unsigned insertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
-                        MachineBasicBlock *FBB, ArrayRef<MachineOperand> Cond,
-                        const DebugLoc &DL,
-                        int *BytesAdded = nullptr) const override;
-  unsigned removeBranch(MachineBasicBlock &MBB,
-                        int *BytesRemoved = nullptr) const override;
-  bool
-  reverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond) const override;
+  // // Branch analysis.
+  // bool analyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
+  //                    MachineBasicBlock *&FBB,
+  //                    SmallVectorImpl<MachineOperand> &Cond,
+  //                    bool AllowModify = false) const override;
+  // unsigned insertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
+  //                       MachineBasicBlock *FBB, ArrayRef<MachineOperand> Cond,
+  //                       const DebugLoc &DL,
+  //                       int *BytesAdded = nullptr) const override;
+  // unsigned removeBranch(MachineBasicBlock &MBB,
+  //                       int *BytesRemoved = nullptr) const override;
+  // bool
+  // reverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond) const override;
 
-  MachineBasicBlock *getBranchDestBlock(const MachineInstr &MI) const override;
+  // MachineBasicBlock *getBranchDestBlock(const MachineInstr &MI) const override;
 
-  bool isBranchOffsetInRange(unsigned BranchOpc,
-                             int64_t BrOffset) const override;
+  // bool isBranchOffsetInRange(unsigned BranchOpc,
+  //                            int64_t BrOffset) const override;
 
-  void insertIndirectBranch(MachineBasicBlock &MBB,
-                            MachineBasicBlock &NewDestBB,
-                            MachineBasicBlock &RestoreBB, const DebugLoc &DL,
-                            int64_t BrOffset, RegScavenger *RS) const override;
+  // void insertIndirectBranch(MachineBasicBlock &MBB,
+  //                           MachineBasicBlock &NewDestBB,
+  //                           MachineBasicBlock &RestoreBB, const DebugLoc &DL,
+  //                           int64_t BrOffset, RegScavenger *RS) const override;
 
 private:
   const I8085RegisterInfo RI;

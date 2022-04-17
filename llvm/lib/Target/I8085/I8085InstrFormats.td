@@ -564,19 +564,6 @@ class ShiftPseudo<dag outs, dag ins, string asmstr, list<dag> pattern>
 // -------------------------------- NEW -----------------------------------
 
 //===----------------------------------------------------------------------===//
-class MV_F<bits<4> opcode, dag outs, dag ins, string asmstr, list<dag> pattern>
-    : I8085Inst16<outs, ins, asmstr, pattern> {
-  bits<4> rd;
-  bits<8> k;
-
-  let Inst{15 - 12} = opcode;
-  let Inst{11 - 8} = k{7 - 4};
-  let Inst{7 - 4} = rd{3 - 0};
-  let Inst{3 - 0} = k{3 - 0};
-
-  let isAsCheapAsAMove = 1;
-}
-
 
 class I8085Pseudo<dag outs, dag ins, string asmstr, list<dag> pattern>
     : Pseudo<outs, ins, asmstr, pattern> {

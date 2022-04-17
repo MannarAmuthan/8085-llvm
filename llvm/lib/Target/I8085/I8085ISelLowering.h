@@ -120,22 +120,6 @@ public:
   EVT getSetCCResultType(const DataLayout &DL, LLVMContext &Context,
                          EVT VT) const override;
 
-  MachineBasicBlock *
-  EmitInstrWithCustomInserter(MachineInstr &MI,
-                              MachineBasicBlock *MBB) const override;
-
-  ConstraintType getConstraintType(StringRef Constraint) const override;
-
-  ConstraintWeight
-  getSingleConstraintMatchWeight(AsmOperandInfo &info,
-                                 const char *constraint) const override;
-
-  std::pair<unsigned, const TargetRegisterClass *>
-  getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
-                               StringRef Constraint, MVT VT) const override;
-
-  unsigned getInlineAsmMemConstraint(StringRef ConstraintCode) const override;
-
   // void LowerAsmOperandForConstraint(SDValue Op, std::string &Constraint,
   //                                   std::vector<SDValue> &Ops,
   //                                   SelectionDAG &DAG) const override;
