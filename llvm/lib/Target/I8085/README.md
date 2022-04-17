@@ -1,3 +1,4 @@
+
 # **I8085 backend**
 
 This is the experimental LLVM backend for the  [intel 8085 microprocessor](https://en.wikipedia.org/wiki/Intel_8085).
@@ -5,21 +6,19 @@ This is the experimental LLVM backend for the  [intel 8085 microprocessor](https
 
 ## Contents
 
-[1.Implemented Functionalities](#implemented)
+[1. Implemented Functionalities](#implemented)
 
-[2.Some implementation notes](#notes)
+[2. Some implementation notes](#notes)
 
-[3.Correctness](#correctness)
+[3. Correctness](#correctness)
 
-[4.Disclaimer](#disclaimer)
+[4. Disclaimer](#disclaimer)
 
-[5.Next on priority](#priority)
+[5. Next on priority](#priority)
 
-[6.Credits](#credits)
+[6. Credits](#credits)
 
-## **Implemented Functionalities:**
-
-##### <a id="implemented">Implemented Functionalities:</a>
+## <a id="implemented">**Implemented Functionalities:**
 
 Currently basic constructs such as , loading and storing variables, function call, and two arithmetic operations such as addition and subtraction are implemented. And those are also only for i8 and i16 integer types alone. Still far way to go.
 
@@ -267,9 +266,29 @@ functionone:                            ; @functionone
 	.size	functionone, .Lfunc_end0-functionone
                                         ; -- End function
 ```
+## <a id="notes">**Some implementation note:**
 
-## **Thanks and Credits:**
+1. Arguments are passed via stack, and return value is stored in register.
+2. 8 bit integers are stored in A reg and 16 bit integer is stored in BC reg pair.
+3. HL reg is used as base pointer here.
 
-##### <a id="credits">Credits:</a>
+
+## <a id="correctness">**Correctness:**
+
+The output assembly is tested in open source 8085 simulators and assemblers.  Codegen Tests are located [here](llvm/test/CodeGen/I8085).
+
+## <a id="disclaimer">**Disclaimer:**
+
+This 8085 backend is purely experimental and never tested with original hardware and never used in productional use cases. 
+
+## <a id="priority">**Next on priority:**
+1.  When running test cases with -verifymachineinstr tag, tests are failing, so need to fix this.
+2.  Implementing subroutine/branch instructions.
+3. Implement logical and shift operations.
+4. Adding 32 bit integer support.
+5. Adding more arithmetic operations and floating point types.
+
+
+## <a id="credits"> **Thanks and Credits:**
 
 This backend is inspired by LLVM backend for AVR 8 bit microcontroller. Some of the functionalities here is referred from there. 
