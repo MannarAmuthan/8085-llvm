@@ -1,8 +1,5 @@
 # I8085 backend
 
-This experimental backend is for the 8-bit Atmel [I8085](https://en.wikipedia.org/wiki/Atmel_I8085) microcontroller.
+This experimental backend is for the [intel 8085 microprocessor](https://en.wikipedia.org/wiki/Intel_8085).
 
-## Useful links
-
-* [Unresolved bugs](https://llvm.org/bugs/buglist.cgi?product=libraries&component=Backend%3A%20I8085&resolution=---&list_id=109466)
-* [Architecture notes](https://github.com/avr-llvm/architecture)
+## Currently implemented functionalities
