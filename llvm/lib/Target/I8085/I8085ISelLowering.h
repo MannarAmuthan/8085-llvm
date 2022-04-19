@@ -29,8 +29,6 @@ enum NodeType {
   RET_FLAG,
   /// Return from ISR.
   RETI_FLAG,
-
-  ADD_I8,
   /// Represents an abstract call instruction,
   /// which includes a bunch of information.
   CALL,

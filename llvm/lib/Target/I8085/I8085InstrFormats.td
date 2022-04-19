@@ -567,5 +567,5 @@ class ShiftPseudo<dag outs, dag ins, string asmstr, list<dag> pattern>
 
 class I8085Pseudo<dag outs, dag ins, string asmstr, list<dag> pattern>
     : Pseudo<outs, ins, asmstr, pattern> {
-  let Defs = [SP];
+      
 }

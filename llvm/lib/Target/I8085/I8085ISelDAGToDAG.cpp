@@ -19,6 +19,8 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <iostream>
+
 #define DEBUG_TYPE "i8085-isel"
 
 namespace llvm {
@@ -112,9 +114,57 @@ bool I8085DAGToDAGISel::SelectAddr(SDNode *Op, SDValue N, SDValue &Base,
   return false;
 }
 
+unsigned getOpc(EVT type, ISD::CondCode CC){
+  unsigned Opc;
+
+  if((type.getSizeInBits()/8) == 1){
+    switch(CC){
+      case ISD::SETNE:
+              Opc = I8085::SET_NE_8;
+              break;
+      
+      case ISD::SETEQ:
+              Opc = I8085::SET_EQ_8;
+              break;
+
+      case ISD::SETGE:
+              Opc = I8085::SET_GE_8;
+              break;
+
+      case ISD::SETLE:
+              Opc = I8085::SET_LE_8;
+              break;
+
+      case ISD::SETGT:
+              Opc = I8085::SET_GT_8;
+              break;
+
+      case ISD::SETLT:
+              Opc = I8085::SET_LT_8;
+              break;                           
+    }
+  }
+  return Opc;
+}
 
 
+template <> bool I8085DAGToDAGISel::select<ISD::SETCC>(SDNode *N) {
+  SDLoc dl(N);
+  auto DL = CurDAG->getDataLayout();
 
+  ISD::CondCode CC = cast<CondCodeSDNode>(N->getOperand(2))->get();
+
+  SDValue Lhs = N->getOperand(0);
+  SDValue Rhs = N->getOperand(1);
+  SDValue Ops[] = {Lhs,Rhs};
+  
+  unsigned Opc=getOpc(N->getValueType(0),CC);
+
+  SDNode *ResNode=CurDAG->getMachineNode(Opc, dl,MVT::i8,Ops);
+  ReplaceUses(SDValue(N, 0), SDValue(ResNode, 0));
+  CurDAG->RemoveDeadNode(N);
+  return true;
+}
 
 
 
@@ -140,6 +190,8 @@ bool I8085DAGToDAGISel::trySelect(SDNode *N) {
   SDLoc DL(N);
 
   switch (Opcode) {
+  case ISD::SETCC:
+    return select<ISD::SETCC>(N);
   default:
     return false;
   }

@@ -133,7 +133,7 @@ bool I8085ExpandPseudo::expand<I8085::STORE_8>(Block &MBB, BlockIt MBBI) {
   /*  Getting address to store the register */
 
   buildMI(MBB, MBBI, I8085::LXI)
-      .addReg(I8085::H)
+      .addReg(I8085::H,RegState::Define)
       .addImm(offsetToStore);
 
   buildMI(MBB, MBBI, I8085::DAD);
@@ -221,7 +221,7 @@ bool I8085ExpandPseudo::expand<I8085::GROW_STACK_BY>(Block &MBB, BlockIt MBBI) {
   int64_t Amount = MI.getOperand(0).getImm();
 
   buildMI(MBB, MBBI,  I8085::LXI)
-        .addReg(I8085::H)
+        .addReg(I8085::H,RegState::Define)
         .addImm(Amount);
 
   buildMI(MBB, MBBI,  I8085::DAD);
@@ -242,7 +242,7 @@ bool I8085ExpandPseudo::expand<I8085::SHRINK_STACK_BY>(Block &MBB, BlockIt MBBI)
   uint16_t Amount = twos_complement((uint8_t) MI.getOperand(0).getImm());
   
   buildMI(MBB, MBBI,  I8085::LXI)
-        .addReg(I8085::H)
+        .addReg(I8085::H,RegState::Define)
         .addImm(Amount);
 
   buildMI(MBB, MBBI,  I8085::DAD);
@@ -266,7 +266,7 @@ bool I8085ExpandPseudo::expand<I8085::LOAD_8_WITH_ADDR>(Block &MBB, BlockIt MBBI
     /*  Getting address to store the register */
 
   buildMI(MBB, MBBI, I8085::LXI)
-      .addReg(I8085::H)
+      .addReg(I8085::H,RegState::Define)
       .addImm(offsetToLoad);
 
   buildMI(MBB, MBBI, I8085::DAD);
@@ -379,8 +379,8 @@ bool I8085ExpandPseudo::expand<I8085::ADD_16>(Block &MBB, BlockIt MBBI) {
   
   buildMI(MBB, MBBI, I8085::ADD_8)
       .addReg(destLow, RegState::Define | getDeadRegState(DstIsDead))
-      .addReg(destLow, RegState::Kill)
-      .addReg(opLow, RegState::Kill);
+      .addReg(destLow)
+      .addReg(opLow);
   
   buildMI(MBB, MBBI, I8085::MOV)
       .addReg(I8085::A)
@@ -418,8 +418,8 @@ bool I8085ExpandPseudo::expand<I8085::SUB_16>(Block &MBB, BlockIt MBBI) {
   
   buildMI(MBB, MBBI, I8085::SUB_8)
       .addReg(destLow, RegState::Define | getDeadRegState(DstIsDead))
-      .addReg(destLow, RegState::Kill)
-      .addReg(opLow, RegState::Kill);
+      .addReg(destLow)
+      .addReg(opLow);
   
   buildMI(MBB, MBBI, I8085::MOV)
       .addReg(I8085::A)

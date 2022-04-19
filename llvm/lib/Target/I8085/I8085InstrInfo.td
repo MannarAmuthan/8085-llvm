@@ -2655,3 +2655,27 @@ def : Pat<(add i16: $src1, (IsNeg16 :$src2)),(SUB_16 i16: $src1, (LOAD_16 (imm16
 
 def : Pat<(add i8: $src1, (imm :$src2)),(ADD_8 i8: $src1, (MVI imm: $src2))>;
 def : Pat<(add i16: $src1, (imm :$src2)),(ADD_16 i16: $src1, (LOAD_16 imm: $src2))>;
+
+def SET_NE_8 : I8085Pseudo<(outs GR8: $dst),
+                        (ins GR8: $lhs,GR8: $rhs),
+                        "SET_NE_8\t$dst, $lhs, $rhs", []>;
+
+def SET_EQ_8 : I8085Pseudo<(outs GR8: $dst),
+                        (ins GR8: $lhs,GR8: $rhs),
+                        "SET_EQ_8\t$dst, $lhs, $rhs", []>;
+
+def SET_GT_8 : I8085Pseudo<(outs GR8: $dst),
+                        (ins GR8: $lhs,GR8: $rhs),
+                        "SET_SGT_8\t$dst, $lhs, $rhs", []>;
+
+def SET_GE_8 : I8085Pseudo<(outs GR8: $dst),
+                        (ins GR8: $lhs,GR8: $rhs),
+                        "SET_SGE_8\t$dst, $lhs, $rhs", []>;
+
+def SET_LT_8 : I8085Pseudo<(outs GR8: $dst),
+                        (ins GR8: $lhs,GR8: $rhs),
+                        "SET_SLT_8\t$dst, $lhs, $rhs", []>;
+
+def SET_LE_8 : I8085Pseudo<(outs GR8: $dst),
+                        (ins GR8: $lhs,GR8: $rhs),
+                        "SET_SLE_8\t$dst, $lhs, $rhs", []>;                                              
