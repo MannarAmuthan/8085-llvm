@@ -26,7 +26,6 @@ add_llvm_target(I8085CodeGen
   I8085Subtarget.cpp
   I8085TargetMachine.cpp
   I8085TargetObjectFile.cpp
-  I8085CustomASMPrinterPass.cpp
 
   DEPENDS
   intrinsics_gen

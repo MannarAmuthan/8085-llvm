@@ -29,7 +29,6 @@ FunctionPass *createI8085ISelDag(I8085TargetMachine &TM,
 FunctionPass *createI8085ExpandPseudoPass();
 FunctionPass *createI8085FrameAnalyzerPass();
 FunctionPass *createI8085BranchSelectionPass();
-FunctionPass *createI8085CustomASMPrinterPass();
 
 void initializeI8085ExpandPseudoPass(PassRegistry &);
 

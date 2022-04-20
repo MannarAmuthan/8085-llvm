@@ -212,16 +212,20 @@ template <> bool I8085DAGToDAGISel::select<ISD::BR_CC>(SDNode *N) {
   
   
   unsigned Opc=get8Opc(CC);
+  unsigned JumpOpc=I8085::JMP_8_IF;
   
   if(LHS.getSimpleValueType() == MVT::i16){
     Opc=get16Opc(CC);
   }
   SDNode *SETccNode=CurDAG->getMachineNode(Opc, dl,MVT::i8,{LHS,RHS});
 
+  if(SETccNode->getSimpleValueType(0) == MVT::i16){
+    JumpOpc=I8085::JMP_16_IF;
+  }
 
   SDValue Ops[] = {SDValue(SETccNode, 0),JumpTo,Chain};
   
-  SDNode *ResNode = CurDAG->getMachineNode(I8085::JMP_IF, dl,MVT::Other,Ops);
+  SDNode *ResNode = CurDAG->getMachineNode(JumpOpc, dl,MVT::Other,Ops);
   ReplaceUses(SDValue(N, 0), SDValue(ResNode, 0));
   CurDAG->RemoveDeadNode(N);
   return true;

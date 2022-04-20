@@ -485,12 +485,74 @@ template <> bool I8085ExpandPseudo::expand<I8085::SET_NE_8>(Block &MBB, BlockIt 
   return true;
 }
 
-template <> bool I8085ExpandPseudo::expand<I8085::JMP_IF>(Block &MBB, BlockIt MBBI) {
+template <> bool I8085ExpandPseudo::expand<I8085::SET_EQ_16>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+  
+  unsigned operandOne = MI.getOperand(1).getReg();
+  unsigned destReg = operandOne;
+  uint16_t operandTwo = MI.getOperand(2).getReg();  
+  bool DstIsDead=MI.getOperand(0).isDead();
+  unsigned opLow,opHigh;
+  unsigned destLow,destHigh;
+
+  if(destReg==I8085::BC){  destLow=I8085::C;  destHigh=I8085::B; }
+  if(destReg==I8085::DE){  destLow=I8085::E;  destHigh=I8085::D; }
+
+  if(operandTwo==I8085::BC){  opLow=I8085::C;  opHigh=I8085::B; }
+  if(operandTwo==I8085::DE){  opLow=I8085::E;  opHigh=I8085::D; }
+
+  buildMI(MBB, MBBI, I8085::SUB_16)
+    .addReg(destReg, RegState::Define | getDeadRegState(DstIsDead))
+    .addReg(operandOne)
+    .addReg(operandTwo);
+
+  buildMI(MBB, MBBI, I8085::CMA);
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(destReg)
+    .addReg(I8085::A);
+  
+  MI.eraseFromParent();
+  return true;
+}
+
+template <> bool I8085ExpandPseudo::expand<I8085::SET_NE_16>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+  
+  unsigned operandOne = MI.getOperand(1).getReg();
+  unsigned destReg = operandOne;
+  uint16_t operandTwo = MI.getOperand(2).getReg();  
+  bool DstIsDead=MI.getOperand(0).isDead();
+  unsigned opLow,opHigh;
+  unsigned destLow,destHigh;
+
+  if(destReg==I8085::BC){  destLow=I8085::C;  destHigh=I8085::B; }
+  if(destReg==I8085::DE){  destLow=I8085::E;  destHigh=I8085::D; }
+
+  if(operandTwo==I8085::BC){  opLow=I8085::C;  opHigh=I8085::B; }
+  if(operandTwo==I8085::DE){  opLow=I8085::E;  opHigh=I8085::D; }
+
+  buildMI(MBB, MBBI, I8085::SUB_16)
+    .addReg(destReg, RegState::Define | getDeadRegState(DstIsDead))
+    .addReg(operandOne)
+    .addReg(operandTwo);
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(destReg)
+    .addReg(I8085::A);
+  
+  MI.eraseFromParent();
+  return true;
+}
+
+template <> bool I8085ExpandPseudo::expand<I8085::JMP_8_IF>(Block &MBB, BlockIt MBBI) {
   const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
   MachineInstr &MI = *MBBI;
   
   unsigned operand = MI.getOperand(0).getReg();
-  
+
 
   buildMI(MBB, MBBI, I8085::MOV)
     .addReg(I8085::A)
@@ -511,7 +573,9 @@ bool I8085ExpandPseudo::expandMI(Block &MBB, BlockIt MBBI) {
     return expand<Op>(MBB, MI)
 
   switch (Opcode) {
-    EXPAND(I8085::JMP_IF);
+    EXPAND(I8085::JMP_8_IF);
+    EXPAND(I8085::SET_NE_16);
+    EXPAND(I8085::SET_EQ_16);
     EXPAND(I8085::SET_NE_8);
     EXPAND(I8085::SET_EQ_8);
     EXPAND(I8085::SUB_16);
