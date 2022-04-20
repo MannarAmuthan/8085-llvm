@@ -114,35 +114,62 @@ bool I8085DAGToDAGISel::SelectAddr(SDNode *Op, SDValue N, SDValue &Base,
   return false;
 }
 
-unsigned getOpc(EVT type, ISD::CondCode CC){
-  unsigned Opc;
-
-  if((type.getSizeInBits()/8) == 1){
+unsigned get8Opc(ISD::CondCode CC){
+  unsigned Opc=0;
     switch(CC){
       case ISD::SETNE:
-              Opc = I8085::SET_NE_8;
-              break;
+          Opc = I8085::SET_NE_8;
+          break;
       
       case ISD::SETEQ:
-              Opc = I8085::SET_EQ_8;
-              break;
+          Opc = I8085::SET_EQ_8;
+          break;
 
       case ISD::SETGE:
-              Opc = I8085::SET_GE_8;
-              break;
+          Opc = I8085::SET_GE_8;
+          break;
 
       case ISD::SETLE:
-              Opc = I8085::SET_LE_8;
-              break;
+          Opc = I8085::SET_LE_8;
+          break;
 
       case ISD::SETGT:
-              Opc = I8085::SET_GT_8;
-              break;
+          Opc = I8085::SET_GT_8;
+          break;
 
       case ISD::SETLT:
-              Opc = I8085::SET_LT_8;
-              break;                           
-    }
+          Opc = I8085::SET_LT_8;
+          break;
+  }
+  return Opc;
+}
+
+unsigned get16Opc(ISD::CondCode CC){
+  unsigned Opc=0;
+    switch(CC){
+      case ISD::SETNE:
+          Opc = I8085::SET_NE_16;
+          break;
+      
+      case ISD::SETEQ:
+          Opc = I8085::SET_EQ_16;
+          break;
+
+      case ISD::SETGE:
+          Opc = I8085::SET_GE_16;
+          break;
+
+      case ISD::SETLE:
+          Opc = I8085::SET_LE_16;
+          break;
+
+      case ISD::SETGT:
+          Opc = I8085::SET_GT_16;
+          break;
+
+      case ISD::SETLT:
+          Opc = I8085::SET_LT_16;
+          break;
   }
   return Opc;
 }
@@ -158,7 +185,11 @@ template <> bool I8085DAGToDAGISel::select<ISD::SETCC>(SDNode *N) {
   SDValue Rhs = N->getOperand(1);
   SDValue Ops[] = {Lhs,Rhs};
   
-  unsigned Opc=getOpc(N->getValueType(0),CC);
+  unsigned Opc=get8Opc(CC);
+
+  if(Lhs.getSimpleValueType() == MVT::i16){
+    Opc=get16Opc(CC);
+  }
 
   SDNode *ResNode=CurDAG->getMachineNode(Opc, dl,MVT::i8,Ops);
   ReplaceUses(SDValue(N, 0), SDValue(ResNode, 0));
@@ -167,6 +198,34 @@ template <> bool I8085DAGToDAGISel::select<ISD::SETCC>(SDNode *N) {
 }
 
 
+template <> bool I8085DAGToDAGISel::select<ISD::BR_CC>(SDNode *N) {
+  SDLoc dl(N);
+  auto DL = CurDAG->getDataLayout();
+
+  ISD::CondCode CC = cast<CondCodeSDNode>(N->getOperand(1))->get();
+
+  SDValue Chain = N->getOperand(0);
+  SDValue LHS = N->getOperand(2);
+  SDValue RHS = N->getOperand(3);
+  SDValue JumpTo = N->getOperand(4);
+  
+  
+  
+  unsigned Opc=get8Opc(CC);
+  
+  if(LHS.getSimpleValueType() == MVT::i16){
+    Opc=get16Opc(CC);
+  }
+  SDNode *SETccNode=CurDAG->getMachineNode(Opc, dl,MVT::i8,{LHS,RHS});
+
+
+  SDValue Ops[] = {SDValue(SETccNode, 0),JumpTo,Chain};
+  
+  SDNode *ResNode = CurDAG->getMachineNode(I8085::JMP_IF, dl,MVT::Other,Ops);
+  ReplaceUses(SDValue(N, 0), SDValue(ResNode, 0));
+  CurDAG->RemoveDeadNode(N);
+  return true;
+}
 
 
 void I8085DAGToDAGISel::Select(SDNode *N) {
@@ -192,6 +251,8 @@ bool I8085DAGToDAGISel::trySelect(SDNode *N) {
   switch (Opcode) {
   case ISD::SETCC:
     return select<ISD::SETCC>(N);
+  case ISD::BR_CC:
+    return select<ISD::BR_CC>(N);  
   default:
     return false;
   }

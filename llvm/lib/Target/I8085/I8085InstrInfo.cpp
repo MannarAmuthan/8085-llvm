@@ -230,4 +230,26 @@ unsigned I8085InstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {
   }
 }
 
+MachineBasicBlock *I8085InstrInfo::getBranchDestBlock(const MachineInstr &MI) const {
+  switch (MI.getOpcode()) {
+  default:
+    llvm_unreachable("unexpected branch opcode!");
+  case I8085::JMP:
+    return MI.getOperand(0).getMBB();
+  }
+}
+
+
+bool I8085InstrInfo::isBranchOffsetInRange(unsigned BranchOp,
+                                         int64_t BrOffset) const {
+
+  switch (BranchOp) {
+  default:
+    llvm_unreachable("unexpected opcode!");
+  case I8085::JMP:
+  case I8085::CALL:
+    return true;
+  }
+}
+
 } // end of namespace llvm

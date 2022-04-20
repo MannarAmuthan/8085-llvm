@@ -881,29 +881,28 @@ def : InstAlias<"sbr\t$rd, $k",
 //===----------------------------------------------------------------------===//
 // Jump instructions
 //===----------------------------------------------------------------------===//
-let isBarrier = 1, isBranch = 1, isTerminator = 1 in {
-  def RJMPk : FBRk<0, (outs),
-                   (ins brtarget_13
-                    : $target),
-                   "rjmp\t$target", [(br bb
-                                      : $target)]>;
+// let isBarrier = 1, isBranch = 1, isTerminator = 1 in {
+//   def RJMPk : FBRk<0, (outs),
+//                    (ins brtarget_13
+//                     : $target),
+//                    "rjmp\t$target", []>;
 
-  let isIndirectBranch = 1,
-      Uses = [R31R30] in def IJMP
-      : F16<0b1001010000001001, (outs), (ins), "ijmp", []>,
-      Requires<[HasIJMPCALL]>;
+//   let isIndirectBranch = 1,
+//       Uses = [R31R30] in def IJMP
+//       : F16<0b1001010000001001, (outs), (ins), "ijmp", []>,
+//       Requires<[HasIJMPCALL]>;
 
-  let isIndirectBranch = 1,
-      Uses = [R31R30] in def EIJMP
-      : F16<0b1001010000011001, (outs), (ins), "eijmp", []>,
-      Requires<[HasEIJMPCALL]>;
+//   let isIndirectBranch = 1,
+//       Uses = [R31R30] in def EIJMP
+//       : F16<0b1001010000011001, (outs), (ins), "eijmp", []>,
+//       Requires<[HasEIJMPCALL]>;
 
-  def JMPk : F32BRk<0b110, (outs),
-                    (ins call_target
-                     : $k),
-                    "jmp\t$k", []>,
-             Requires<[HasJMPCALL]>;
-}
+//   def JMPk : F32BRk<0b110, (outs),
+//                     (ins call_target
+//                      : $k),
+//                     "jmp\t$k", []>,
+//              Requires<[HasJMPCALL]>;
+// }
 
 //===----------------------------------------------------------------------===//
 // Call instructions
@@ -2317,8 +2316,8 @@ def Asr16 : ShiftPseudo<(outs DREGS
                                                      : $cnt))]>;
 
 // lowered to a copy from R1, which contains the value zero.
-let usesCustomInserter=1 in
-def CopyR1 : Pseudo<(outs GPR8:$rd), (ins), "clrz\t$rd", [(set i8:$rd, 0)]>;
+
+def CopyR1 : Pseudo<(outs GPR8:$rd), (ins), "clrz\t$rd", []>;
 
 //===----------------------------------------------------------------------===//
 // Non-Instruction Patterns
@@ -2656,6 +2655,8 @@ def : Pat<(add i16: $src1, (IsNeg16 :$src2)),(SUB_16 i16: $src1, (LOAD_16 (imm16
 def : Pat<(add i8: $src1, (imm :$src2)),(ADD_8 i8: $src1, (MVI imm: $src2))>;
 def : Pat<(add i16: $src1, (imm :$src2)),(ADD_16 i16: $src1, (LOAD_16 imm: $src2))>;
 
+
+let Constraints = "$lhs = $dst" in {
 def SET_NE_8 : I8085Pseudo<(outs GR8: $dst),
                         (ins GR8: $lhs,GR8: $rhs),
                         "SET_NE_8\t$dst, $lhs, $rhs", []>;
@@ -2678,4 +2679,55 @@ def SET_LT_8 : I8085Pseudo<(outs GR8: $dst),
 
 def SET_LE_8 : I8085Pseudo<(outs GR8: $dst),
                         (ins GR8: $lhs,GR8: $rhs),
-                        "SET_SLE_8\t$dst, $lhs, $rhs", []>;                                              
+                        "SET_SLE_8\t$dst, $lhs, $rhs", []>;   
+
+}
+
+let Constraints = "$lhs = $dst" in {
+def SET_NE_16 : I8085Pseudo<(outs GR16: $dst),
+                        (ins GR16: $lhs,GR16: $rhs),
+                        "SET_NE_16\t$dst, $lhs, $rhs", []>;
+
+def SET_EQ_16 : I8085Pseudo<(outs GR16: $dst),
+                        (ins GR16: $lhs,GR16: $rhs),
+                        "SET_EQ_16\t$dst, $lhs, $rhs", []>;
+
+def SET_GT_16 : I8085Pseudo<(outs GR16: $dst),
+                        (ins GR16: $lhs,GR16: $rhs),
+                        "SET_SGT_16\t$dst, $lhs, $rhs", []>;
+
+def SET_GE_16 : I8085Pseudo<(outs GR16: $dst),
+                        (ins GR16: $lhs,GR16: $rhs),
+                        "SET_SGE_16\t$dst, $lhs, $rhs", []>;
+
+def SET_LT_16 : I8085Pseudo<(outs GR16: $dst),
+                        (ins GR16: $lhs,GR16: $rhs),
+                        "SET_SLT_16\t$dst, $lhs, $rhs", []>;
+
+def SET_LE_16 : I8085Pseudo<(outs GR16: $dst),
+                        (ins GR16: $lhs,GR16: $rhs),
+                        "SET_SLE_16\t$dst, $lhs, $rhs", []>;   
+
+}
+
+let isBarrier = 1, isBranch = 1, isTerminator = 1 in {                                                                                                
+   def JMP_IF : I8085Pseudo<(outs),(ins GR8: $reg, brtarget_13:$k),
+                                           "JMP_IF $reg, $k", []>;
+   def JMP : I8085Pseudo<(outs),(ins brtarget_13:$k),
+                                           "JMP $k", [(br bb: $k)]>; 
+}
+
+
+let Constraints = "$src = $dst" in {
+def INV : I8085Pseudo<(outs GR8: $dst),
+                        (ins GR8: $src),
+                        "INVERSE\t$src", []>; 
+}
+
+def CMP : I8085Pseudo<(outs),(ins GR8: $reg),"CMP\t$reg", []>;
+
+def CMA : I8085Pseudo<(outs),(ins),"CMA", []>;
+
+def JZ :  I8085Pseudo<(outs),(ins brtarget_13: $label),"JZ\t$label", []>;
+
+def JNZ :  I8085Pseudo<(outs),(ins brtarget_13: $label),"JNZ\t$label", []>;
