@@ -20,7 +20,7 @@ This is the experimental LLVM backend for the  [intel 8085 microprocessor](https
 
 ## <a id="implemented">**Implemented Functionalities:**
 
-Currently basic constructs such as , loading and storing variables, function call, and two arithmetic operations such as addition and subtraction are implemented. And those are also only for i8 and i16 integer types alone. Still far way to go.
+Currently basic constructs such as , loading and storing variables, function call, logical operations (and, or, xor) and two arithmetic operations such as addition and subtraction are implemented. And those are also only for i8 and i16 integer types alone. Still far way to go.
 
 **Example:**
 ``` c
@@ -282,6 +282,81 @@ functionone:                            ; @functionone
 .Lfunc_end1:
 	.size	functionone, .Lfunc_end1-functionone
                                         ; -- End function
+```
+
+Input:
+```ll
+define i16 @logical(i16,i16) {
+  %3 = xor i16 %0, %1 
+  %4 = and i16 %3, %1
+  %5 = or i16 %4, %0 
+  ret i16 %5
+}
+```
+
+Output:
+```assembly
+	.globl	logical                         ; -- Begin function logical
+	.p2align	1
+	.type	logical,@function
+logical:                                ; @logical
+; %bb.0:
+	LXI H, 0
+	DAD	SP
+	MOV	A, L
+	MVI	L, 2
+	SUB L
+	MOV	L, A
+	MOV	A, H
+	MVI	H, 0
+	SBB H
+	MOV	H, A
+	SPHL
+	LXI H, 6
+	DAD	SP
+	MOV D, M
+	LXI H, 7
+	DAD	SP
+	MOV E, M
+	LXI H, 4
+	DAD	SP
+	MOV B, M
+	LXI H, 5
+	DAD	SP
+	MOV C, M
+	LXI H, 0
+	DAD	SP
+	MOV M, B
+	LXI H, 1
+	DAD	SP
+	MOV M, C
+	MOV	A, C
+	XRA E
+	MOV	C, A
+	MOV	A, B
+	XRA D
+	MOV	B, A
+	MOV	A, C
+	ANA E
+	MOV	C, A
+	MOV	A, B
+	ANA D
+	MOV	B, A
+	LXI H, 0
+	DAD	SP
+	MOV D, M
+	LXI H, 1
+	DAD	SP
+	MOV E, M
+	MOV	A, C
+	ORA E
+	MOV	C, A
+	MOV	A, B
+	ORA D
+	MOV	B, A
+	ret
+.Lfunc_end1:
+	.size	logical, .Lfunc_end1-logical
 ```
 ## <a id="notes">**Some implementation note:**
 
