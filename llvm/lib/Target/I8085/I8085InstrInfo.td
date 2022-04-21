@@ -639,171 +639,171 @@ let Defs =
 //===----------------------------------------------------------------------===//
 // Logic
 //===----------------------------------------------------------------------===//
-let Constraints = "$src = $rd", Defs = [SREG] in {
-  // Register-Register logic instructions (which have the
-  // property of commutativity).
-  let isCommutable = 1 in {
-    def ANDRdRr
-        : FRdRr<0b0010, 0b00,
-                (outs GPR8
-                 : $rd),
-                (ins GPR8
-                 : $src, GPR8
-                 : $rr),
-                "and\t$rd, $rr",
-                [(set i8
-                  : $rd, (and i8
-                          : $src, i8
-                          : $rr)),
-                 (implicit SREG)]>;
+// let Constraints = "$src = $rd", Defs = [SREG] in {
+//   // Register-Register logic instructions (which have the
+//   // property of commutativity).
+//   let isCommutable = 1 in {
+//     def ANDRdRr
+//         : FRdRr<0b0010, 0b00,
+//                 (outs GPR8
+//                  : $rd),
+//                 (ins GPR8
+//                  : $src, GPR8
+//                  : $rr),
+//                 "and\t$rd, $rr",
+//                 [(set i8
+//                   : $rd, (and i8
+//                           : $src, i8
+//                           : $rr)),
+//                  (implicit SREG)]>;
 
-    // ANDW Rd+1:Rd, Rr+1:Rr
-    //
-    // Expands to:
-    // and Rd,   Rr
-    // and Rd+1, Rr+1
-    def ANDWRdRr : Pseudo<(outs DREGS
-                           : $rd),
-                          (ins DREGS
-                           : $src, DREGS
-                           : $rr),
-                          "andw\t$rd, $rr", [
-                            (set i16
-                             : $rd, (and i16
-                                     : $src, i16
-                                     : $rr)),
-                            (implicit SREG)
-                          ]>;
+//     // ANDW Rd+1:Rd, Rr+1:Rr
+//     //
+//     // Expands to:
+//     // and Rd,   Rr
+//     // and Rd+1, Rr+1
+//     def ANDWRdRr : Pseudo<(outs DREGS
+//                            : $rd),
+//                           (ins DREGS
+//                            : $src, DREGS
+//                            : $rr),
+//                           "andw\t$rd, $rr", [
+//                             (set i16
+//                              : $rd, (and i16
+//                                      : $src, i16
+//                                      : $rr)),
+//                             (implicit SREG)
+//                           ]>;
 
-    def ORRdRr
-        : FRdRr<0b0010, 0b10,
-                (outs GPR8
-                 : $rd),
-                (ins GPR8
-                 : $src, GPR8
-                 : $rr),
-                "or\t$rd, $rr",
-                [(set i8
-                  : $rd, (or i8
-                          : $src, i8
-                          : $rr)),
-                 (implicit SREG)]>;
+//     def ORRdRr
+//         : FRdRr<0b0010, 0b10,
+//                 (outs GPR8
+//                  : $rd),
+//                 (ins GPR8
+//                  : $src, GPR8
+//                  : $rr),
+//                 "or\t$rd, $rr",
+//                 [(set i8
+//                   : $rd, (or i8
+//                           : $src, i8
+//                           : $rr)),
+//                  (implicit SREG)]>;
 
-    // ORW Rd+1:Rd, Rr+1:Rr
-    //
-    // Expands to:
-    // or Rd,   Rr
-    // or Rd+1, Rr+1
-    def ORWRdRr : Pseudo<(outs DREGS
-                          : $rd),
-                         (ins DREGS
-                          : $src, DREGS
-                          : $rr),
-                         "orw\t$rd, $rr", [
-                           (set i16
-                            : $rd, (or i16
-                                    : $src, i16
-                                    : $rr)),
-                           (implicit SREG)
-                         ]>;
+//     // ORW Rd+1:Rd, Rr+1:Rr
+//     //
+//     // Expands to:
+//     // or Rd,   Rr
+//     // or Rd+1, Rr+1
+//     def ORWRdRr : Pseudo<(outs DREGS
+//                           : $rd),
+//                          (ins DREGS
+//                           : $src, DREGS
+//                           : $rr),
+//                          "orw\t$rd, $rr", [
+//                            (set i16
+//                             : $rd, (or i16
+//                                     : $src, i16
+//                                     : $rr)),
+//                            (implicit SREG)
+//                          ]>;
 
-    def EORRdRr
-        : FRdRr<0b0010, 0b01,
-                (outs GPR8
-                 : $rd),
-                (ins GPR8
-                 : $src, GPR8
-                 : $rr),
-                "eor\t$rd, $rr",
-                [(set i8
-                  : $rd, (xor i8
-                          : $src, i8
-                          : $rr)),
-                 (implicit SREG)]>;
+//     def EORRdRr
+//         : FRdRr<0b0010, 0b01,
+//                 (outs GPR8
+//                  : $rd),
+//                 (ins GPR8
+//                  : $src, GPR8
+//                  : $rr),
+//                 "eor\t$rd, $rr",
+//                 [(set i8
+//                   : $rd, (xor i8
+//                           : $src, i8
+//                           : $rr)),
+//                  (implicit SREG)]>;
 
-    // EORW Rd+1:Rd, Rr+1:Rr
-    //
-    // Expands to:
-    // eor Rd,   Rr
-    // eor Rd+1, Rr+1
-    def EORWRdRr : Pseudo<(outs DREGS
-                           : $rd),
-                          (ins DREGS
-                           : $src, DREGS
-                           : $rr),
-                          "eorw\t$rd, $rr", [
-                            (set i16
-                             : $rd, (xor i16
-                                     : $src, i16
-                                     : $rr)),
-                            (implicit SREG)
-                          ]>;
-  }
+//     // EORW Rd+1:Rd, Rr+1:Rr
+//     //
+//     // Expands to:
+//     // eor Rd,   Rr
+//     // eor Rd+1, Rr+1
+//     def EORWRdRr : Pseudo<(outs DREGS
+//                            : $rd),
+//                           (ins DREGS
+//                            : $src, DREGS
+//                            : $rr),
+//                           "eorw\t$rd, $rr", [
+//                             (set i16
+//                              : $rd, (xor i16
+//                                      : $src, i16
+//                                      : $rr)),
+//                             (implicit SREG)
+//                           ]>;
+//   }
 
-  def ANDIRdK
-      : FRdK<0b0111,
-             (outs LD8
-              : $rd),
-             (ins LD8
-              : $src, imm_ldi8
-              : $k),
-             "andi\t$rd, $k",
-             [(set i8
-               : $rd, (and i8
-                       : $src, imm
-                       : $k)),
-              (implicit SREG)]>;
+//   def ANDIRdK
+//       : FRdK<0b0111,
+//              (outs LD8
+//               : $rd),
+//              (ins LD8
+//               : $src, imm_ldi8
+//               : $k),
+//              "andi\t$rd, $k",
+//              [(set i8
+//                : $rd, (and i8
+//                        : $src, imm
+//                        : $k)),
+//               (implicit SREG)]>;
 
-  // ANDI Rd+1:Rd, K+1:K
-  //
-  // Expands to:
-  // andi Rd,   K
-  // andi Rd+1, K+1
-  def ANDIWRdK
-      : Pseudo<(outs DLDREGS
-                : $rd),
-               (ins DLDREGS
-                : $src, i16imm
-                : $k),
-               "andiw\t$rd, $k",
-               [(set i16
-                 : $rd, (and i16
-                         : $src, imm
-                         : $k)),
-                (implicit SREG)]>;
+//   // ANDI Rd+1:Rd, K+1:K
+//   //
+//   // Expands to:
+//   // andi Rd,   K
+//   // andi Rd+1, K+1
+//   def ANDIWRdK
+//       : Pseudo<(outs DLDREGS
+//                 : $rd),
+//                (ins DLDREGS
+//                 : $src, i16imm
+//                 : $k),
+//                "andiw\t$rd, $k",
+//                [(set i16
+//                  : $rd, (and i16
+//                          : $src, imm
+//                          : $k)),
+//                 (implicit SREG)]>;
 
-  def ORIRdK
-      : FRdK<0b0110,
-             (outs LD8
-              : $rd),
-             (ins LD8
-              : $src, imm_ldi8
-              : $k),
-             "ori\t$rd, $k",
-             [(set i8
-               : $rd, (or i8
-                       : $src, imm
-                       : $k)),
-              (implicit SREG)]>;
+//   def ORIRdK
+//       : FRdK<0b0110,
+//              (outs LD8
+//               : $rd),
+//              (ins LD8
+//               : $src, imm_ldi8
+//               : $k),
+//              "ori\t$rd, $k",
+//              [(set i8
+//                : $rd, (or i8
+//                        : $src, imm
+//                        : $k)),
+//               (implicit SREG)]>;
 
-  // ORIW Rd+1:Rd, K+1,K
-  //
-  // Expands to:
-  // ori Rd,   K
-  // ori Rd+1, K+1
-  def ORIWRdK
-      : Pseudo<(outs DLDREGS
-                : $rd),
-               (ins DLDREGS
-                : $src, i16imm
-                : $rr),
-               "oriw\t$rd, $rr",
-               [(set i16
-                 : $rd, (or i16
-                         : $src, imm
-                         : $rr)),
-                (implicit SREG)]>;
-}
+//   // ORIW Rd+1:Rd, K+1,K
+//   //
+//   // Expands to:
+//   // ori Rd,   K
+//   // ori Rd+1, K+1
+//   def ORIWRdK
+//       : Pseudo<(outs DLDREGS
+//                 : $rd),
+//                (ins DLDREGS
+//                 : $src, i16imm
+//                 : $rr),
+//                "oriw\t$rd, $rr",
+//                [(set i16
+//                  : $rd, (or i16
+//                          : $src, imm
+//                          : $rr)),
+//                 (implicit SREG)]>;
+// }
 
 //===----------------------------------------------------------------------===//
 // One's/Two's Complement
@@ -866,17 +866,17 @@ let Constraints = "$src = $rd", Defs = [SREG] in {
 // TST Rd
 // Test for zero of minus.
 // This operation is identical to a `Rd AND Rd`.
-def : InstAlias<"tst\t$rd", (ANDRdRr GPR8 : $rd, GPR8 : $rd)>;
+// def : InstAlias<"tst\t$rd", (ANDRdRr GPR8 : $rd, GPR8 : $rd)>;
 
 // SBR Rd, K
 //
 // Mnemonic alias to 'ORI Rd, K'. Same bit pattern, same operands,
 // same everything.
-def : InstAlias<"sbr\t$rd, $k",
-                (ORIRdK LD8
-                 : $rd, imm_ldi8
-                 : $k),
-                /* Disable display, so we don't override ORI */ 0>;
+// def : InstAlias<"sbr\t$rd, $k",
+//                 (ORIRdK LD8
+//                  : $rd, imm_ldi8
+//                  : $k),
+                // /* Disable display, so we don't override ORI */ 0>;
 
 //===----------------------------------------------------------------------===//
 // Jump instructions
@@ -2025,21 +2025,21 @@ let Constraints = "$src = $rd",
                                      : $b),
                                     "bld\t$rd, $b", []>;
 
-def CBR : InstAlias<"cbr\t$rd, $k", (ANDIRdK LD8 : $rd, imm_com8 : $k), 0>;
+// def CBR : InstAlias<"cbr\t$rd, $k", (ANDIRdK LD8 : $rd, imm_com8 : $k), 0>;
 
 // CLR Rd
 // Alias for EOR Rd, Rd
 // -------------
 // Clears all bits in a register.
-def CLR : InstAlias<"clr\t$rd", (EORRdRr GPR8 : $rd, GPR8 : $rd)>;
+// def CLR : InstAlias<"clr\t$rd", (EORRdRr GPR8 : $rd, GPR8 : $rd)>;
 
 // LSL Rd
 // Alias for ADD Rd, Rd
 // --------------
 // Logical shift left one bit.
-def LSL : InstAlias<"lsl\t$rd", (ADDRdRr GPR8 : $rd, GPR8 : $rd)>;
+// def LSL : InstAlias<"lsl\t$rd", (ADDRdRr GPR8 : $rd, GPR8 : $rd)>;
 
-def ROL : InstAlias<"rol\t$rd", (ADCRdRr GPR8 : $rd, GPR8 : $rd)>;
+// def ROL : InstAlias<"rol\t$rd", (ADCRdRr GPR8 : $rd, GPR8 : $rd)>;
 
 // SER Rd
 // Alias for LDI Rd, 0xff
@@ -2450,7 +2450,7 @@ def : Pat<(shl i16 : $src1, (i8 1)), (LSLWRd i16 : $src1)>;
 
 // Lowering of 'tst' node to 'TST' instruction.
 // TST is an alias of AND Rd, Rd.
-def : Pat<(I8085tst i8 : $rd), (ANDRdRr GPR8 : $rd, GPR8 : $rd)>;
+// def : Pat<(I8085tst i8 : $rd), (ANDRdRr GPR8 : $rd, GPR8 : $rd)>;
 
 // Lowering of 'lsl' node to 'LSL' instruction.
 // LSL is an alias of 'ADD Rd, Rd'
@@ -2487,13 +2487,99 @@ let Constraints = "$src = $rd"  in {
 
 }
 
- def MVI : I8085Pseudo<
+def SUB : I8085Pseudo<(outs), (ins GR8: $rs), "SUB $rs", []>;
+def SBB : I8085Pseudo<(outs), (ins GR8: $rs), "SBB $rs",[]>;
+def SUB_M : I8085Pseudo<(outs), (ins), "SUB M", []>;
+def ADD : I8085Pseudo<(outs), (ins GR8: $rs), "ADD $rs", []>;
+def ADC : I8085Pseudo<(outs), (ins GR8: $rs), "ADC $rs", []>;
+def ADD_M : I8085Pseudo<(outs), (ins), "ADD M", []>;  
+
+
+let Constraints = "$src = $rd"  in {
+
+  def AND_8
+      : I8085Pseudo<(outs GR8: $rd),
+              (ins GR8: $src, GR8: $rr),
+              "AND_8\t$rd, $rr",
+              [(set i8: $rd, (and i8: $src, i8: $rr))]>;
+
+  def AND_16
+      : I8085Pseudo<(outs GR16: $rd),
+              (ins GR16: $src, GR16: $rr),
+              "AND_16\t$rd, $rr",
+              [(set i16: $rd, (and i16: $src, i16: $rr))]>;
+
+  def OR_8
+      : I8085Pseudo<(outs GR8: $rd),
+              (ins GR8: $src, GR8: $rr),
+              "OR_8\t$rd, $rr",
+              [(set i8: $rd, (or i8: $src, i8: $rr))]>;
+
+  def OR_16
+      : I8085Pseudo<(outs GR16: $rd),
+              (ins GR16: $src, GR16: $rr),
+              "OR_16\t$rd, $rr",
+              [(set i16: $rd, (or i16: $src, i16: $rr))]>;
+
+  def XOR_8
+      : I8085Pseudo<(outs GR8: $rd),
+              (ins GR8: $src, GR8: $rr),
+              "XOR_8\t$rd, $rr",
+              [(set i8: $rd, (xor i8: $src, i8: $rr))]>;
+
+  def XOR_16
+      : I8085Pseudo<(outs GR16: $rd),
+              (ins GR16: $src, GR16: $rr),
+              "XOR_16\t$rd, $rr",
+              [(set i16: $rd, (xor i16: $src, i16: $rr))]>;
+
+  def ANDI_8
+      : I8085Pseudo<(outs GR8: $rd),
+              (ins GR8: $src, i8imm: $val),
+              "ANDI_8\t$rd, $val",
+              [(set i8: $rd, (and i8: $src, imm: $val))]>;
+  def ORI_8
+      : I8085Pseudo<(outs GR8: $rd),
+              (ins GR8: $src, i8imm: $val),
+              "ORI_8\t$rd, $val",
+              [(set i8: $rd, (or i8: $src, imm: $val))]>;
+  def XORI_8
+      : I8085Pseudo<(outs GR8: $rd),
+              (ins GR8: $src, i8imm: $val),
+              "XORI_8\t$rd, $val",
+              [(set i8: $rd, (xor i8: $src, imm: $val))]>; 
+  def SHL_8
+      : I8085Pseudo<(outs GR8: $rd),
+              (ins GR8: $src, GR8: $rr),
+              "SHL_8\t$rd, $rr",
+              [(set i8: $rd, (shl i8: $src, i8: $rr))]>;
+  def SRA_8
+      : I8085Pseudo<(outs GR8: $rd),
+              (ins GR8: $src, GR8: $rr),
+              "SRA_8\t$rd, $rr",
+              [(set i8: $rd, (sra i8: $src, i8: $rr))]>;                                                                                          
+}
+
+
+
+
+
+def ANA : I8085Pseudo<(outs), (ins GR8: $rs), "ANA $rs", []>;
+def ORA : I8085Pseudo<(outs), (ins GR8: $rs), "ORA $rs", []>;
+def XRA : I8085Pseudo<(outs), (ins GR8: $rs), "XRA $rs", []>;
+
+def ANI : I8085Pseudo<(outs), (ins i8imm: $val), "ANI $val", []>;
+def ORI : I8085Pseudo<(outs), (ins i8imm: $val), "ORI $val", []>;
+def XRI : I8085Pseudo<(outs), (ins i8imm: $val), "XRI $val", []>;
+
+
+def MVI : I8085Pseudo<
                     (outs GR8: $rd),
                     (ins i8imm: $k),
                     "MVI\t$rd, $k", [(set i8: $rd, imm: $k)]>;
 
 
- def MOV : I8085Pseudo<
+def MOV : I8085Pseudo<
                     (outs GR8: $rd),
                     (ins GR8: $rs),
                     "MOV\t$rd, $rs", [(set i8: $rd, i8: $rs)]>;
@@ -2506,74 +2592,20 @@ def mspi : Operand<iPTR> {
 }
 
 
-def LXI : I8085Pseudo<(outs GR8: $rd),
-                    (ins i16imm: $k),
-                    "LXI $rd, $k", []>;                  
+def LXI : I8085Pseudo<(outs GR8: $rd), (ins i16imm: $k), "LXI $rd, $k", []>;                  
 
-def DAD : I8085Pseudo<(outs),
-                    (ins),
-                    "DAD\tSP", []>;
+def DAD : I8085Pseudo<(outs), (ins), "DAD\tSP", []>;
 
-def SPHL : I8085Pseudo<(outs),
-                    (ins),
-                    "SPHL", []>;                          
+def SPHL : I8085Pseudo<(outs), (ins), "SPHL", []>;                          
 
-def SHLD : I8085Pseudo<(outs),
-                    (ins i16imm: $k),
-                    "SHLD $k", []>;   
+def SHLD : I8085Pseudo<(outs), (ins i16imm: $k), "SHLD $k", []>;   
 
-def LHLD : I8085Pseudo<(outs),
-                    (ins i16imm: $k),
-                    "LHLD $k", []>;                      
-
-def SUB
-    : I8085Pseudo<(outs),
-            (ins GR8: $rs),
-            "SUB $rs",
-            []>;
-
-def SBB
-    : I8085Pseudo<(outs),
-            (ins GR8: $rs),
-            "SBB $rs",
-            []>;
-
-def SUB_M
-    : I8085Pseudo<(outs),
-            (ins),
-            "SUB M",
-            []>;
-
-def ADD
-    : I8085Pseudo<(outs),
-            (ins GR8: $rs),
-            "ADD $rs",
-            []>;
-
-def ADC
-    : I8085Pseudo<(outs),
-            (ins GR8: $rs),
-            "ADC $rs",
-            []>;
-
-def ADD_M
-    : I8085Pseudo<(outs),
-            (ins),
-            "ADD M",
-            []>;            
-    
-def MOV_M 
-    : I8085Pseudo<(outs),
-            (ins GR8: $rs),
-            "MOV M, $rs",
-            []>;
+def LHLD : I8085Pseudo<(outs), (ins i16imm: $k), "LHLD $k", []>;                      
+ 
+def MOV_M  : I8085Pseudo<(outs), (ins GR8: $rs), "MOV M, $rs", []>;
 
 
-def MOV_FROM_M 
-    : I8085Pseudo<(outs),
-            (ins GR8: $rd),
-            "MOV $rd, M",
-            []>;            
+def MOV_FROM_M  : I8085Pseudo<(outs), (ins GR8: $rd), "MOV $rd, M", []>;            
 
 
 def GROW_STACK_BY 
