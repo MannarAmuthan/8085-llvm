@@ -2,10 +2,10 @@
 
 define i16 @argpass16(i16,i16,i16) #0  {
 ; CHECK-LABEL:   argpass16:     
-; CHECK: LXI H, 6
+; CHECK: LXI H, 7
 ; CHECK: DAD	SP
 ; CHECK: MOV B, M
-; CHECK: LXI H, 7
+; CHECK: LXI H, 6
 ; CHECK: DAD	SP
 ; CHECK: MOV C, M
 

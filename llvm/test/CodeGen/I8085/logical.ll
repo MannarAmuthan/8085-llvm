@@ -39,22 +39,22 @@ define i16 @functiontwo(i16,i16) {
 ; CHECK: SBB H
 ; CHECK: MOV	H, A
 ; CHECK: SPHL
-; CHECK: LXI H, 6
-; CHECK: DAD	SP
-; CHECK: MOV D, M
 ; CHECK: LXI H, 7
 ; CHECK: DAD	SP
-; CHECK: MOV E, M
-; CHECK: LXI H, 4
+; CHECK: MOV D, M
+; CHECK: LXI H, 6
 ; CHECK: DAD	SP
-; CHECK: MOV B, M
+; CHECK: MOV E, M
 ; CHECK: LXI H, 5
 ; CHECK: DAD	SP
+; CHECK: MOV B, M
+; CHECK: LXI H, 4
+; CHECK: DAD	SP
 ; CHECK: MOV C, M
-; CHECK: LXI H, 0
+; CHECK: LXI H, 1
 ; CHECK: DAD	SP
 ; CHECK: MOV M, B
-; CHECK: LXI H, 1
+; CHECK: LXI H, 0
 ; CHECK: DAD	SP
 ; CHECK: MOV M, C
 ; CHECK: MOV	A, C
@@ -69,10 +69,10 @@ define i16 @functiontwo(i16,i16) {
 ; CHECK: MOV	A, B
 ; CHECK: ANA D
 ; CHECK: MOV	B, A
-; CHECK: LXI H, 0
+; CHECK: LXI H, 1
 ; CHECK: DAD	SP
 ; CHECK: MOV D, M
-; CHECK: LXI H, 1
+; CHECK: LXI H, 0
 ; CHECK: DAD	SP
 ; CHECK: MOV E, M
 ; CHECK: MOV	A, C
@@ -120,16 +120,16 @@ define i8 @functionthree(i8,i8) {
 
 define i16 @functionfour(i16,i16) {
 ; CHECK-LABEL:   functionfour:     
-; CHECK: LXI H, 4
-; CHECK: DAD	SP
-; CHECK: MOV D, M
 ; CHECK: LXI H, 5
 ; CHECK: DAD	SP
+; CHECK: MOV D, M
+; CHECK: LXI H, 4
+; CHECK: DAD	SP
 ; CHECK: MOV E, M
-; CHECK: LXI H, 2
+; CHECK: LXI H, 3
 ; CHECK: DAD	SP
 ; CHECK: MOV B, M
-; CHECK: LXI H, 3
+; CHECK: LXI H, 2
 ; CHECK: DAD	SP
 ; CHECK: MOV C, M
 ; CHECK: MOV	A, C

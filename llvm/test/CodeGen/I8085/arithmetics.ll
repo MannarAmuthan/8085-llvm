@@ -2,16 +2,16 @@
 
 define i16 @add_sub_1(i16,i16) {
 ; CHECK-LABEL:   add_sub_1:
-; CHECK: LXI H, 4
-; CHECK: DAD	SP
-; CHECK: MOV D, M
 ; CHECK: LXI H, 5
 ; CHECK: DAD	SP
+; CHECK: MOV D, M
+; CHECK: LXI H, 4
+; CHECK: DAD	SP
 ; CHECK: MOV E, M
-; CHECK: LXI H, 2
+; CHECK: LXI H, 3
 ; CHECK: DAD	SP
 ; CHECK: MOV B, M
-; CHECK: LXI H, 3
+; CHECK: LXI H, 2
 ; CHECK: DAD	SP
 ; CHECK: MOV C, M
 ; CHECK: MOV	A, C
@@ -60,16 +60,16 @@ define i16 @add_sub_1(i16,i16) {
 define i16 @add_sub_2(i16,i16) {
 
 ; CHECK-LABEL:   add_sub_2:
-; CHECK: LXI H, 4
-; CHECK: DAD	SP
-; CHECK: MOV D, M
 ; CHECK: LXI H, 5
 ; CHECK: DAD	SP
+; CHECK: MOV D, M
+; CHECK: LXI H, 4
+; CHECK: DAD	SP
 ; CHECK: MOV E, M
-; CHECK: LXI H, 2
+; CHECK: LXI H, 3
 ; CHECK: DAD	SP
 ; CHECK: MOV B, M
-; CHECK: LXI H, 3
+; CHECK: LXI H, 2
 ; CHECK: DAD	SP
 ; CHECK: MOV C, M
 ; CHECK: MOV	A, C

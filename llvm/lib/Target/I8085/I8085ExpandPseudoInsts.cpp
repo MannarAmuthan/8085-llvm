@@ -164,6 +164,7 @@ bool I8085ExpandPseudo::expand<I8085::LOAD_16>(Block &MBB, BlockIt MBBI) {
     lowReg=I8085::C;
     highReg=I8085::B;
   }
+
   if(destReg==I8085::DE){
     lowReg=I8085::E;
     highReg=I8085::D;
@@ -200,12 +201,12 @@ bool I8085ExpandPseudo::expand<I8085::STORE_16>(Block &MBB, BlockIt MBBI) {
 
   buildMI(MBB, MBBI,  I8085::STORE_8)
         .addReg(baseReg)
-        .addImm(offsetToStore)
+        .addImm(offsetToStore+1)
         .addReg(highReg);
 
   buildMI(MBB, MBBI,  I8085::STORE_8)
         .addReg(baseReg)
-        .addImm(offsetToStore+1)
+        .addImm(offsetToStore)
         .addReg(lowReg);    
 
   MI.eraseFromParent();
@@ -297,12 +298,12 @@ bool I8085ExpandPseudo::expand<I8085::LOAD_16_WITH_ADDR>(Block &MBB, BlockIt MBB
   buildMI(MBB, MBBI, I8085::LOAD_8_WITH_ADDR)
       .addReg(highReg)
       .addReg(baseReg)
-      .addImm(offsetToLoad);
+      .addImm(offsetToLoad+1);
 
   buildMI(MBB, MBBI, I8085::LOAD_8_WITH_ADDR)
       .addReg(lowReg)
       .addReg(baseReg)
-      .addImm(offsetToLoad+1);    
+      .addImm(offsetToLoad);    
   
   MI.eraseFromParent();
   return true;
@@ -802,6 +803,9 @@ template <> bool I8085ExpandPseudo::expand<I8085::JMP_8_IF>(Block &MBB, BlockIt 
   buildMI(MBB, MBBI, I8085::MOV)
     .addReg(I8085::A)
     .addReg(operand);
+
+  buildMI(MBB, MBBI, I8085::ORI)
+    .addImm(0);
 
   buildMI(MBB, MBBI, I8085::JNZ).add(MI.getOperand(1));
   

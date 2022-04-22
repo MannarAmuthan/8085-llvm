@@ -47,7 +47,7 @@ define signext i16 @ret(i16 signext %0, i16 signext %1) #0 {
 ```
 4. And when input this to the llc tool , this backend produces below 8085 assembly
 ```assembly
-	.text
+		.text
 	.file	"test.c"
 	.globl	ret                             ; -- Begin function ret
 	.p2align	1
@@ -65,40 +65,40 @@ ret:                                    ; @ret
 	SBB H
 	MOV	H, A
 	SPHL
-	LXI H, 8
-	DAD	SP
-	MOV B, M
 	LXI H, 9
 	DAD	SP
-	MOV C, M
-	LXI H, 6
+	MOV B, M
+	LXI H, 8
 	DAD	SP
-	MOV D, M
+	MOV C, M
 	LXI H, 7
 	DAD	SP
+	MOV D, M
+	LXI H, 6
+	DAD	SP
 	MOV E, M
-	LXI H, 2
+	LXI H, 3
 	DAD	SP
 	MOV M, D
-	LXI H, 3
-	DAD	SP
-	MOV M, E
-	LXI H, 0
-	DAD	SP
-	MOV M, B
-	LXI H, 1
-	DAD	SP
-	MOV M, C
 	LXI H, 2
 	DAD	SP
-	MOV B, M
-	LXI H, 3
+	MOV M, E
+	LXI H, 1
 	DAD	SP
-	MOV C, M
+	MOV M, B
 	LXI H, 0
 	DAD	SP
-	MOV D, M
+	MOV M, C
+	LXI H, 3
+	DAD	SP
+	MOV B, M
+	LXI H, 2
+	DAD	SP
+	MOV C, M
 	LXI H, 1
+	DAD	SP
+	MOV D, M
+	LXI H, 0
 	DAD	SP
 	MOV E, M
 	MOV	A, C
@@ -129,23 +129,23 @@ define i16 @foo(i16,i16) {
 
 Output:
 ```assembly
-	.text
-	.file	"mul.ll"
+		.text
+	.file	"test.ll"
 	.globl	foo                             ; -- Begin function foo
 	.p2align	1
 	.type	foo,@function
 foo:                                    ; @foo
 ; %bb.0:
-	LXI H, 4
-	DAD	SP
-	MOV D, M
 	LXI H, 5
 	DAD	SP
+	MOV D, M
+	LXI H, 4
+	DAD	SP
 	MOV E, M
-	LXI H, 2
+	LXI H, 3
 	DAD	SP
 	MOV B, M
-	LXI H, 3
+	LXI H, 2
 	DAD	SP
 	MOV C, M
 	MOV	A, C
@@ -177,6 +177,7 @@ foo:                                    ; @foo
 .Lfunc_end0:
 	.size	foo, .Lfunc_end0-foo
                                         ; -- End function
+
 ```
 
 Input:
@@ -207,16 +208,16 @@ define i16 @functionone(i16) {
 Output:
 ```assembly
 	.text
-	.file	"mul.ll"
+	.file	"test.ll"
 	.globl	functiontwo                     ; -- Begin function functiontwo
 	.p2align	1
 	.type	functiontwo,@function
 functiontwo:                            ; @functiontwo
 ; %bb.0:
-	LXI H, 6
+	LXI H, 7
 	DAD	SP
 	MOV B, M
-	LXI H, 7
+	LXI H, 6
 	DAD	SP
 	MOV C, M
 	ret
@@ -241,40 +242,40 @@ functionone:                            ; @functionone
 	SPHL
 	MVI	B, 39
 	MVI	C, 16
-	LXI H, 8
-	DAD	SP
-	MOV M, B
 	LXI H, 9
 	DAD	SP
-	MOV M, C
-	LXI H, 6
-	DAD	SP
 	MOV M, B
+	LXI H, 8
+	DAD	SP
+	MOV M, C
 	LXI H, 7
 	DAD	SP
-	MOV M, C
-	LXI H, 12
-	DAD	SP
-	MOV D, M
-	LXI H, 13
-	DAD	SP
-	MOV E, M
-	LXI H, 5
-	DAD	SP
-	MOV M, D
+	MOV M, B
 	LXI H, 6
 	DAD	SP
-	MOV M, E
-	LXI H, 3
+	MOV M, C
+	LXI H, 13
 	DAD	SP
-	MOV M, B
+	MOV D, M
+	LXI H, 12
+	DAD	SP
+	MOV E, M
+	LXI H, 6
+	DAD	SP
+	MOV M, D
+	LXI H, 5
+	DAD	SP
+	MOV M, E
 	LXI H, 4
 	DAD	SP
+	MOV M, B
+	LXI H, 3
+	DAD	SP
 	MOV M, C
-	LXI H, 1
+	LXI H, 2
 	DAD	SP
 	MOV M, B
-	LXI H, 2
+	LXI H, 1
 	DAD	SP
 	MOV M, C
 	CALL functiontwo
@@ -296,6 +297,8 @@ define i16 @logical(i16,i16) {
 
 Output:
 ```assembly
+	.text
+	.file	"test.ll"
 	.globl	logical                         ; -- Begin function logical
 	.p2align	1
 	.type	logical,@function
@@ -312,22 +315,22 @@ logical:                                ; @logical
 	SBB H
 	MOV	H, A
 	SPHL
-	LXI H, 6
-	DAD	SP
-	MOV D, M
 	LXI H, 7
 	DAD	SP
-	MOV E, M
-	LXI H, 4
+	MOV D, M
+	LXI H, 6
 	DAD	SP
-	MOV B, M
+	MOV E, M
 	LXI H, 5
 	DAD	SP
+	MOV B, M
+	LXI H, 4
+	DAD	SP
 	MOV C, M
-	LXI H, 0
+	LXI H, 1
 	DAD	SP
 	MOV M, B
-	LXI H, 1
+	LXI H, 0
 	DAD	SP
 	MOV M, C
 	MOV	A, C
@@ -342,10 +345,10 @@ logical:                                ; @logical
 	MOV	A, B
 	ANA D
 	MOV	B, A
-	LXI H, 0
+	LXI H, 1
 	DAD	SP
 	MOV D, M
-	LXI H, 1
+	LXI H, 0
 	DAD	SP
 	MOV E, M
 	MOV	A, C
@@ -355,13 +358,14 @@ logical:                                ; @logical
 	ORA D
 	MOV	B, A
 	ret
-.Lfunc_end1:
-	.size	logical, .Lfunc_end1-logical
+.Lfunc_end0:
+	.size	logical, .Lfunc_end0-logical
+                                        ; -- End function
 ```
 ## <a id="notes">**Some implementation note:**
 
 1. Arguments are passed via stack, and return value is stored in register.
-2. 8 bit integers are stored in A reg and 16 bit integer is stored in BC reg pair.
+2. 8 bit integers are returned via A reg and 16 bit integers are returned via BC reg pair.
 3. HL reg is used as base pointer here.
 
 
@@ -375,8 +379,8 @@ This 8085 backend is purely experimental and never tested with original hardware
 
 ## <a id="priority">**Next on priority:**
 1.  When running test cases with -verifymachineinstr tag, tests are failing, so need to fix this.
-2.  Implementing subroutine/branch instructions.
-3. Implement logical and shift operations.
+2.  Implementing branch instructions.
+3. Implement shift operations.
 4. Adding 32 bit integer support.
 5. Adding more arithmetic operations and floating point types.
 

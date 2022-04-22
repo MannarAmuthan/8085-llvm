@@ -209,8 +209,6 @@ template <> bool I8085DAGToDAGISel::select<ISD::BR_CC>(SDNode *N) {
   SDValue RHS = N->getOperand(3);
   SDValue JumpTo = N->getOperand(4);
   
-  
-  
   unsigned Opc=get8Opc(CC);
   unsigned JumpOpc=I8085::JMP_8_IF;
   
