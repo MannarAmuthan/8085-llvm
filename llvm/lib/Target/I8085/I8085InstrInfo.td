@@ -2650,6 +2650,13 @@ def LOAD_8_WITH_ADDR : I8085Pseudo<(outs GR8: $dst),
                        (ins mspi: $src),
                        "LOAD\t$dst, $src", [(set i8: $dst, (load addr: $src))]>;                                                                                                                      
 
+
+
+def addressTarget : Operand<OtherVT> {
+  let PrintMethod = "printPCRelImm";
+  let EncoderMethod = "encodeRelCondBrTarget<I8085::fixup_13_pcrel>";
+}
+
 let isCall = 1 in {                                                                                                 
 let Uses = [SP] in def CALL : I8085Pseudo<(outs), (ins rcalltarget_13:$k),
                                        "CALL $k", [(I8085call imm:$k)]>;

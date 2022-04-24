@@ -122,6 +122,9 @@ public:
   //                                   std::vector<SDValue> &Ops,
   //                                   SelectionDAG &DAG) const override;
 
+  MachineBasicBlock * EmitInstrWithCustomInserter(MachineInstr &MI,
+                              MachineBasicBlock *MBB) const override;
+
   Register getRegisterByName(const char *RegName, LLT VT,
                              const MachineFunction &MF) const override;
 
@@ -182,6 +185,9 @@ private:
   MachineBasicBlock *insertAtomicArithmeticOp(MachineInstr &MI,
                                               MachineBasicBlock *BB,
                                               unsigned Opcode, int Width) const;
+
+
+  MachineBasicBlock *insertCondSet(MachineInstr &MI, MachineBasicBlock *MBB) const;                                            
 };
 
 } // end namespace llvm

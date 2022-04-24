@@ -569,3 +569,10 @@ class I8085Pseudo<dag outs, dag ins, string asmstr, list<dag> pattern>
     : Pseudo<outs, ins, asmstr, pattern> {
       
 }
+
+
+class I8085SelectPseudo<dag outs, dag ins, string asmstr, list<dag> pattern>
+    : Pseudo<outs, ins, asmstr, pattern> {
+      let usesCustomInserter = 1;
+}
+

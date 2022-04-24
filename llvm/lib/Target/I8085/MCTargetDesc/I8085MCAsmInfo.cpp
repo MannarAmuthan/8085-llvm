@@ -21,7 +21,7 @@ I8085MCAsmInfo::I8085MCAsmInfo(const Triple &TT, const MCTargetOptions &Options)
   CalleeSaveStackSlotSize = 2;
   CommentString = ";";
   PrivateGlobalPrefix = ".L";
-  PrivateLabelPrefix = ".L";
+  PrivateLabelPrefix = "L";
   UsesELFSectionDirectiveForBSS = true;
   SupportsDebugInformation = true;
 }
