@@ -68,8 +68,7 @@ void I8085FrameLowering::emitPrologue(MachineFunction &MF,
 
   // Skip the callee-saved push instructions.
   while (
-      (MBBI != MBB.end()) && MBBI->getFlag(MachineInstr::FrameSetup) &&
-      (MBBI->getOpcode() == I8085::PUSHRr || MBBI->getOpcode() == I8085::PUSHWRr)) {
+      (MBBI != MBB.end()) && MBBI->getFlag(MachineInstr::FrameSetup)) {
     ++MBBI;
   }
   
@@ -140,11 +139,11 @@ static void restoreStatusRegister(MachineFunction &MF, MachineBasicBlock &MBB) {
   // Emit special epilogue code to restore R1, R0 and SREG in interrupt/signal
   // handlers at the very end of the function, just before reti.
   if (AFI->isInterruptOrSignalHandler()) {
-    BuildMI(MBB, MBBI, DL, TII.get(I8085::POPRd), I8085::R0);
-    BuildMI(MBB, MBBI, DL, TII.get(I8085::OUTARr))
-        .addImm(STI.getIORegSREG())
-        .addReg(I8085::R0, RegState::Kill);
-    BuildMI(MBB, MBBI, DL, TII.get(I8085::POPWRd), I8085::R1R0);
+    // BuildMI(MBB, MBBI, DL, TII.get(I8085::POPRd), I8085::R0);
+    // BuildMI(MBB, MBBI, DL, TII.get(I8085::OUTARr))
+    //     .addImm(STI.getIORegSREG())
+    //     .addReg(I8085::R0, RegState::Kill);
+    // BuildMI(MBB, MBBI, DL, TII.get(I8085::POPWRd), I8085::R1R0);
   }
 }
 
@@ -179,7 +178,7 @@ void I8085FrameLowering::emitEpilogue(MachineFunction &MF,
     MachineBasicBlock::iterator PI = std::prev(MBBI);
     int Opc = PI->getOpcode();
 
-    if (Opc != I8085::POPRd && Opc != I8085::POPWRd && !PI->isTerminator()) {
+    if (!PI->isTerminator()) {
       break;
     }
 
@@ -249,9 +248,9 @@ bool I8085FrameLowering::spillCalleeSavedRegisters(
     }
 
     // Do not kill the register when it is an input argument.
-    BuildMI(MBB, MI, DL, TII.get(I8085::PUSHRr))
-        .addReg(Reg, getKillRegState(IsNotLiveIn))
-        .setMIFlag(MachineInstr::FrameSetup);
+    // BuildMI(MBB, MI, DL, TII.get(I8085::PUSHRr))
+    //     .addReg(Reg, getKillRegState(IsNotLiveIn))
+    //     .setMIFlag(MachineInstr::FrameSetup);
     ++CalleeFrameSize;
   }
 
@@ -278,7 +277,7 @@ bool I8085FrameLowering::restoreCalleeSavedRegisters(
     // assert(TRI->getRegSizeInBits(*TRI->getMinimalPhysRegClass(Reg)) == 8 &&
     //        "Invalid register size");
 
-    BuildMI(MBB, MI, DL, TII.get(I8085::POPRd), Reg);
+    // BuildMI(MBB, MI, DL, TII.get(I8085::POPRd), Reg);
   }
 
   return true;

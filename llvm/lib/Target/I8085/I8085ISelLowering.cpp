@@ -51,6 +51,13 @@ I8085TargetLowering::I8085TargetLowering(const I8085TargetMachine &TM,
   setStackPointerRegisterToSaveRestore(I8085::SP);
   setSupportsUnalignedAtomics(true);
 
+  for (MVT VT : MVT::integer_valuetypes()) {
+    for (auto N : {ISD::EXTLOAD, ISD::SEXTLOAD, ISD::ZEXTLOAD}) {
+      setLoadExtAction(N, VT, MVT::i1, Promote);
+      setLoadExtAction(N, VT, MVT::i8, Expand);
+    }
+  }
+
   setOperationAction(ISD::GlobalAddress, MVT::i16, Custom);
   setOperationAction(ISD::BlockAddress, MVT::i16, Custom);
 
