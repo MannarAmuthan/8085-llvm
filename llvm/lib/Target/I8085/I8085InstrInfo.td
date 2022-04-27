@@ -809,7 +809,7 @@ let hasSideEffects = 0 in {
 
 // ------------------------------------- NEW ---------------------------------------
 
-let Constraints = "$src = $rd"  in {
+let Constraints = "$src = $rd", Defs=[SREG]  in {
 
   def SUB_8
       : I8085Pseudo<(outs GR8: $rd),
@@ -842,7 +842,8 @@ def SBB : I8085Pseudo<(outs), (ins GR8: $rs), "SBB $rs",[]>;
 def SUB_M : I8085Pseudo<(outs), (ins), "SUB M", []>;
 def ADD : I8085Pseudo<(outs), (ins GR8: $rs), "ADD $rs", []>;
 def ADC : I8085Pseudo<(outs), (ins GR8: $rs), "ADC $rs", []>;
-def ADD_M : I8085Pseudo<(outs), (ins), "ADD M", []>;  
+def ADD_M : I8085Pseudo<(outs), (ins), "ADD M", []>;
+def ADI : I8085Pseudo<(outs), (ins i8imm: $val), "ADI $val", []>;
 
 
 let Constraints = "$src = $rd"  in {
@@ -1048,12 +1049,12 @@ def : Pat<(add i16: $src1, (imm :$src2)),(ADD_16 i16: $src1, (LOAD_16 imm: $src2
 include "I8085CondBrInstrInfo.td"
 
 
-def SEXT16
+def SEXT8TO16
     : I8085Pseudo<(outs GR16
                        : $dst),
                       (ins GR8
                        : $src),
-                      "sext\t$dst, $src",
+                      "sext8to16\t$dst, $src",
                       [(set i16
                         : $dst, (sext i8
                                  : $src))]>;

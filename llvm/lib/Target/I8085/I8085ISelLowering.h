@@ -187,7 +187,8 @@ private:
                                               unsigned Opcode, int Width) const;
 
 
-  MachineBasicBlock *insertCondSet(MachineInstr &MI, MachineBasicBlock *MBB) const;                                            
+  MachineBasicBlock *insertCond8Set(MachineInstr &MI, MachineBasicBlock *MBB) const;
+  MachineBasicBlock *insertCond16Set(MachineInstr &MI, MachineBasicBlock *MBB) const;                                             
 };
 
 } // end namespace llvm

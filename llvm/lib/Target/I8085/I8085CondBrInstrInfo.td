@@ -1,5 +1,5 @@
 
-let Constraints = "$lhs = $dst" in {
+let Constraints = "$lhs = $dst" , Uses=[SREG] in {
 def SET_NE_8 : I8085SelectPseudo<(outs GR8: $dst),
                         (ins GR8: $lhs,GR8: $rhs),
                         "SET_NE_8\t$dst, $lhs, $rhs", []>;
@@ -26,34 +26,33 @@ def SET_LE_8 : I8085SelectPseudo<(outs GR8: $dst),
 
 }
 
-let Constraints = "$lhs = $dst" in {
-def SET_NE_16 : I8085SelectPseudo<(outs GR16: $dst),
+let Constraints = "$lhs = $dst" , Uses=[SREG]  in {
+def SET_NE_16 : I8085SelectPseudo<(outs GR8: $dst),
                         (ins GR16: $lhs,GR16: $rhs),
                         "SET_NE_16\t$dst, $lhs, $rhs", []>;
 
-def SET_EQ_16 : I8085SelectPseudo<(outs GR16: $dst),
+def SET_EQ_16 : I8085SelectPseudo<(outs GR8: $dst),
                         (ins GR16: $lhs,GR16: $rhs),
                         "SET_EQ_16\t$dst, $lhs, $rhs", []>;
 
-def SET_GT_16 : I8085SelectPseudo<(outs GR16: $dst),
+def SET_GT_16 : I8085SelectPseudo<(outs GR8: $dst),
                         (ins GR16: $lhs,GR16: $rhs),
                         "SET_SGT_16\t$dst, $lhs, $rhs", []>;
 
-def SET_GE_16 : I8085SelectPseudo<(outs GR16: $dst),
+def SET_GE_16 : I8085SelectPseudo<(outs GR8: $dst),
                         (ins GR16: $lhs,GR16: $rhs),
                         "SET_SGE_16\t$dst, $lhs, $rhs", []>;
 
-def SET_LT_16 : I8085SelectPseudo<(outs GR16: $dst),
+def SET_LT_16 : I8085SelectPseudo<(outs GR8: $dst),
                         (ins GR16: $lhs,GR16: $rhs),
                         "SET_SLT_16\t$dst, $lhs, $rhs", []>;
 
-def SET_LE_16 : I8085SelectPseudo<(outs GR16: $dst),
+def SET_LE_16 : I8085SelectPseudo<(outs GR8: $dst),
                         (ins GR16: $lhs,GR16: $rhs),
                         "SET_SLE_16\t$dst, $lhs, $rhs", []>;   
-
 }
 
-let isBarrier = 1, isBranch = 1, isTerminator = 1 in {                                                                                                                                    
+let isBarrier = 1, isBranch = 1, isTerminator = 1 , Uses=[SREG]  in {                                                                                                                                    
    def JMP : I8085Pseudo<(outs),(ins addressTarget:$k),
                                            "JMP $k", [(br bb: $k)]>; 
 

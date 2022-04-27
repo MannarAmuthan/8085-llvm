@@ -813,6 +813,41 @@ template <> bool I8085ExpandPseudo::expand<I8085::JMP_8_IF>(Block &MBB, BlockIt 
   return true;
 }
 
+
+template <> bool I8085ExpandPseudo::expand<I8085::SEXT8TO16>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+  
+  unsigned destReg = MI.getOperand(0).getReg();
+  unsigned operand = MI.getOperand(1).getReg();
+
+  unsigned destLow,destHigh;
+  if(destReg==I8085::BC){  destLow=I8085::C;  destHigh=I8085::B; }
+  if(destReg==I8085::DE){  destLow=I8085::E;  destHigh=I8085::D; }
+  
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(I8085::A)
+    .addReg(operand);
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(destLow)
+    .addReg(I8085::A);
+
+  buildMI(MBB, MBBI, I8085::ADI)
+    .addImm(128); // 80h in hex .. [Adding 80h will set carry flag if HSB is high]
+
+
+  buildMI(MBB, MBBI, I8085::SBB)
+    .addReg(I8085::A);  // will result in FFh if CF set, 0 else
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(destHigh)
+    .addReg(I8085::A);  
+     
+  MI.eraseFromParent();
+  return true;
+}
+
 bool I8085ExpandPseudo::expandMI(Block &MBB, BlockIt MBBI) {
   MachineInstr &MI = *MBBI;
   int Opcode = MBBI->getOpcode();
@@ -822,6 +857,7 @@ bool I8085ExpandPseudo::expandMI(Block &MBB, BlockIt MBBI) {
     return expand<Op>(MBB, MI)
 
   switch (Opcode) {
+    EXPAND(I8085::SEXT8TO16);
     EXPAND(I8085::JMP_8_IF);
     // EXPAND(I8085::SET_NE_16);
     // EXPAND(I8085::SET_EQ_16);
