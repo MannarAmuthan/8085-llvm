@@ -57,33 +57,10 @@ void I8085InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
 
       BuildMI(MBB, MI, DL, get(Opc), DestReg)
         .addReg(SrcReg, getKillRegState(KillSrc));
-      // Register DestLo, DestHi, SrcLo, SrcHi;
-
-      // TRI.splitReg(DestReg, DestLo, DestHi);
-      // TRI.splitReg(SrcReg, SrcLo, SrcHi);
-
-      // // Copy each individual register with the `MOV` instruction.
-      // BuildMI(MBB, MI, DL, get(I8085::MOV), DestLo)
-      //     .addReg(SrcLo, getKillRegState(KillSrc));
-      // BuildMI(MBB, MI, DL, get(I8085::MOV), DestHi)
-      //     .addReg(SrcHi, getKillRegState(KillSrc));
     }
   } else {
-    // if (I8085::GR8RegClass.contains(DestReg, SrcReg)) {
-    //   Opc = I8085::MOV;
-    // } else if (SrcReg == I8085::SP && I8085::GR8RegClass.contains(DestReg)) {
-    //   Opc = I8085::SPREAD;
-    // } else if (DestReg == I8085::SP && I8085::GR8RegClass.contains(SrcReg)) {
-    //   Opc = I8085::SPWRITE;
-    // } else {
-    //   // std::cout << SrcReg << "\n";
-    //   // std::cout <<  DestReg << "\n";
-    //   // llvm_unreachable("Impossible reg-to-reg copy");
-    //   Opc = I8085::MOV;
-    // }
 
     Opc = I8085::MOV;
-
     BuildMI(MBB, MI, DL, get(Opc), DestReg)
         .addReg(SrcReg, getKillRegState(KillSrc));
   }
@@ -235,7 +212,11 @@ MachineBasicBlock *I8085InstrInfo::getBranchDestBlock(const MachineInstr &MI) co
   default:
     llvm_unreachable("unexpected branch opcode!");
   case I8085::JMP:
-    return MI.getOperand(0).getMBB();
+  case I8085::JZ:
+  case I8085::JNZ:
+  case I8085::JC:
+  case I8085::JNC:
+    return MI.getOperand(0).getMBB(); 
   }
 }
 
@@ -247,7 +228,10 @@ bool I8085InstrInfo::isBranchOffsetInRange(unsigned BranchOp,
   default:
     llvm_unreachable("unexpected opcode!");
   case I8085::JMP:
-  case I8085::CALL:
+  case I8085::JZ:
+  case I8085::JNZ:
+  case I8085::JC:
+  case I8085::JNC:
     return true;
   }
 }

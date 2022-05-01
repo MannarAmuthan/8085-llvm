@@ -834,7 +834,16 @@ let Constraints = "$src = $rd", Defs=[SREG]  in {
               (ins GR16: $src, GR16: $rr),
               "ADD_16\t$rd, $rr",
               [(set i16: $rd, (add i16: $src, i16: $rr))]>;
-
+  def SHL_8
+      : I8085InserterPseudo<(outs GR8: $rd),
+              (ins GR8: $src, GR8: $rr),
+              "SHL_8\t$rd, $rr",
+              [(set i8: $rd, (shl i8: $src, i8: $rr))]>;
+  def SRA_8
+      : I8085InserterPseudo<(outs GR8: $rd),
+              (ins GR8: $src, GR8: $rr),
+              "SRA_8\t$rd, $rr",
+              [(set i8: $rd, (sra i8: $src, i8: $rr))]>;
 }
 
 def SUB : I8085Pseudo<(outs), (ins GR8: $rs), "SUB $rs", []>;
@@ -846,7 +855,7 @@ def ADD_M : I8085Pseudo<(outs), (ins), "ADD M", []>;
 def ADI : I8085Pseudo<(outs), (ins i8imm: $val), "ADI $val", []>;
 
 
-let Constraints = "$src = $rd"  in {
+let Constraints = "$src = $rd", Defs=[SREG]  in {
 
   def AND_8
       : I8085Pseudo<(outs GR8: $rd),
@@ -898,21 +907,19 @@ let Constraints = "$src = $rd"  in {
       : I8085Pseudo<(outs GR8: $rd),
               (ins GR8: $src, i8imm: $val),
               "XORI_8\t$rd, $val",
-              [(set i8: $rd, (xor i8: $src, imm: $val))]>; 
-  def SHL_8
-      : I8085Pseudo<(outs GR8: $rd),
-              (ins GR8: $src, GR8: $rr),
-              "SHL_8\t$rd, $rr",
-              [(set i8: $rd, (shl i8: $src, i8: $rr))]>;
-  def SRA_8
-      : I8085Pseudo<(outs GR8: $rd),
-              (ins GR8: $src, GR8: $rr),
-              "SRA_8\t$rd, $rr",
-              [(set i8: $rd, (sra i8: $src, i8: $rr))]>;                                                                                          
+              [(set i8: $rd, (xor i8: $src, imm: $val))]>;                                                                                          
 }
 
 
+let Defs=[SREG,A], Uses=[A] in def DCR : I8085Pseudo<(outs), (ins GR8: $rs), "DCR $rs", []>;
+let Defs=[SREG,A], Uses=[A] in def INR : I8085Pseudo<(outs), (ins GR8: $rs), "INR $rs", []>;
 
+
+let Defs=[SREG,A], Uses=[A] in def RL_8 : I8085Pseudo<(outs), (ins GR8: $rs), "RL_8 $rs", []>;
+let Defs=[SREG,A], Uses=[A] in def RR_8 : I8085Pseudo<(outs), (ins GR8: $rs), "RR_8 $rs", []>;
+
+def RLC : I8085Pseudo<(outs), (ins), "RLC", []>;
+def RRC : I8085Pseudo<(outs), (ins), "RRC", []>;
 
 
 def ANA : I8085Pseudo<(outs), (ins GR8: $rs), "ANA $rs", []>;
@@ -945,7 +952,7 @@ def mspi : Operand<iPTR> {
 
 def LXI : I8085Pseudo<(outs GR8: $rd), (ins i16imm: $k), "LXI $rd, $k", []>;                  
 
-def DAD : I8085Pseudo<(outs), (ins), "DAD\tSP", []>;
+let Defs=[SREG] in def DAD : I8085Pseudo<(outs), (ins), "DAD\tSP", []>;
 
 def SPHL : I8085Pseudo<(outs), (ins), "SPHL", []>;                          
 

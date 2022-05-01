@@ -229,6 +229,45 @@ template <> bool I8085DAGToDAGISel::select<ISD::BR_CC>(SDNode *N) {
   return true;
 }
 
+template <> bool I8085DAGToDAGISel::select<ISD::SHL>(SDNode *N) {
+  SDLoc dl(N);
+  auto DL = CurDAG->getDataLayout();
+
+  SDValue LHS = N->getOperand(0);
+  SDValue RHS = N->getOperand(1);
+  
+  
+  if(LHS.getSimpleValueType() == MVT::i8 && RHS.getSimpleValueType() == MVT::i8){
+    unsigned Opc=I8085::SHL_8;
+    SDValue Ops[] = {LHS,RHS};
+    SDNode *ResNode = CurDAG->getMachineNode(Opc, dl,MVT::i8,Ops);
+    ReplaceUses(SDValue(N, 0), SDValue(ResNode, 0));
+    CurDAG->RemoveDeadNode(N);
+    return true;
+  }
+
+  return false;
+}
+
+template <> bool I8085DAGToDAGISel::select<ISD::SRA>(SDNode *N) {
+  SDLoc dl(N);
+  auto DL = CurDAG->getDataLayout();
+
+  SDValue LHS = N->getOperand(0);
+  SDValue RHS = N->getOperand(1);
+  
+  
+  if(LHS.getSimpleValueType() == MVT::i8 && RHS.getSimpleValueType() == MVT::i8){
+    unsigned Opc=I8085::SRA_8;
+    SDValue Ops[] = {LHS,RHS};
+    SDNode *ResNode = CurDAG->getMachineNode(Opc, dl,MVT::i8,Ops);
+    ReplaceUses(SDValue(N, 0), SDValue(ResNode, 0));
+    CurDAG->RemoveDeadNode(N);
+    return true;
+  }
+
+  return false;
+}
 
 void I8085DAGToDAGISel::Select(SDNode *N) {
   // If we have a custom node, we already have selected!
@@ -254,7 +293,11 @@ bool I8085DAGToDAGISel::trySelect(SDNode *N) {
   case ISD::SETCC:
     return select<ISD::SETCC>(N);
   case ISD::BR_CC:
-    return select<ISD::BR_CC>(N);  
+    return select<ISD::BR_CC>(N);
+  case ISD::SHL:
+    return select<ISD::SHL>(N);  
+  case ISD::SRA:
+    return select<ISD::SRA>(N);      
   default:
     return false;
   }

@@ -996,16 +996,16 @@ MachineBasicBlock *I8085TargetLowering::insertCond8Set(MachineInstr &MI,
 
   unsigned destReg = MI.getOperand(0).getReg();
 
-  BuildMI(MBB, dl, TII.get(I8085::MVI))
-        .addReg(tempRegOne, RegState::Define)
-        .addImm(1);
-
   BuildMI(MBB, dl, TII.get(I8085::MOV))
         .addReg(I8085::A, RegState::Define)
+        .addReg(operandOne);
+
+  BuildMI(MBB, dl, TII.get(I8085::CMP))
         .addReg(operandTwo);
 
-  BuildMI(MBB, dl, TII.get(I8085::SUB))
-        .addReg(operandOne);
+  BuildMI(MBB, dl, TII.get(I8085::MVI))
+        .addReg(tempRegOne, RegState::Define)
+        .addImm(1);      
 
   if(Opc == I8085::SET_EQ_8){
     BuildMI(MBB, dl, TII.get(I8085::JZ)).addMBB(trueMBB);
@@ -1123,14 +1123,14 @@ MachineBasicBlock *I8085TargetLowering::insertCond16Set(MachineInstr &MI,
 
   unsigned destReg = MI.getOperand(0).getReg();
 
-  BuildMI(MBB, dl, TII.get(I8085::MVI))
-        .addReg(tempRegOne, RegState::Define)
-        .addImm(1);
-
   BuildMI(MBB, dl, TII.get(I8085::SUB_16))
         .addReg(tempRegThree, RegState::Define)
         .addReg(operandOne)
         .addReg(operandTwo);
+
+  BuildMI(MBB, dl, TII.get(I8085::MVI))
+        .addReg(tempRegOne, RegState::Define)
+        .addImm(1);      
 
   if(Opc == I8085::SET_EQ_16){
     BuildMI(MBB, dl, TII.get(I8085::JZ)).addMBB(trueMBB);
@@ -1187,6 +1187,105 @@ MachineBasicBlock *I8085TargetLowering::insertCond16Set(MachineInstr &MI,
 }
 
 
+MachineBasicBlock *I8085TargetLowering::insertShift8Set(MachineInstr &MI,
+                                                  MachineBasicBlock *MBB) const {
+
+  int Opc = MI.getOpcode();
+  const I8085InstrInfo &TII = (const I8085InstrInfo &)*MI.getParent()
+                                ->getParent()
+                                ->getSubtarget()
+                                .getInstrInfo();
+
+  DebugLoc dl = MI.getDebugLoc();
+
+  // To "insert" a SELECT instruction, we insert the diamond
+  // control-flow pattern. The incoming instruction knows the
+  // destination vreg to set, the condition code register to branch
+  // on, the true/false values to select between, and a branch opcode
+  // to use.
+
+  MachineFunction *MF = MBB->getParent();
+  
+  const BasicBlock *LLVM_BB = MBB->getBasicBlock();
+  MachineBasicBlock *FallThrough = MBB->getFallThrough();
+
+  // If the current basic block falls through to another basic block,
+  // we must insert an unconditional branch to the fallthrough destination
+  // if we are to insert basic blocks at the prior fallthrough point.
+  if (FallThrough != nullptr) {
+    BuildMI(MBB, dl, TII.get(I8085::JMP)).addMBB(FallThrough);
+  }
+
+  MachineBasicBlock *continuationMBB = MF->CreateMachineBasicBlock(LLVM_BB);
+  MachineBasicBlock *shiftLoopMBB = MF->CreateMachineBasicBlock(LLVM_BB);
+
+  MachineFunction::iterator I;
+  for (I = MF->begin(); I != MF->end() && &(*I) != MBB; ++I)
+    ;
+  if (I != MF->end())
+    ++I;
+  MF->insert(I, continuationMBB);
+  MF->insert(I, shiftLoopMBB);
+
+  // Transfer remaining instructions and all successors of the current
+  // block to the block which will contain the Phi node for the
+  // select.
+  continuationMBB->splice(continuationMBB->begin(), MBB,
+                  std::next(MachineBasicBlock::iterator(MI)), MBB->end());
+
+  continuationMBB->transferSuccessorsAndUpdatePHIs(MBB);
+
+  unsigned destReg = MI.getOperand(0).getReg();
+  unsigned operandOne = MI.getOperand(1).getReg();
+  unsigned operandTwo = MI.getOperand(2).getReg();
+  
+  
+  unsigned counterTempReg = MF->getRegInfo().createVirtualRegister(getRegClassFor(MVT::i8));
+  unsigned tempHolder = MF->getRegInfo().createVirtualRegister(getRegClassFor(MVT::i8));
+
+
+  BuildMI(MBB, dl, TII.get(I8085::MOV))
+        .addReg(counterTempReg, RegState::Define)
+        .addReg(operandTwo);
+
+  BuildMI(MBB, dl, TII.get(I8085::MOV))
+        .addReg(tempHolder, RegState::Define)
+        .addReg(operandOne);      
+
+  BuildMI(MBB, dl, TII.get(I8085::JMP)).addMBB(shiftLoopMBB);
+  
+  MBB->addSuccessor(shiftLoopMBB);
+
+  if(Opc == I8085::SHL_8){
+    BuildMI(shiftLoopMBB, dl, TII.get(I8085::RL_8))
+          .addReg(tempHolder);
+  }
+  if(Opc == I8085::SRA_8){
+    BuildMI(shiftLoopMBB, dl, TII.get(I8085::RR_8))
+          .addReg(tempHolder);
+  }
+
+
+  BuildMI(shiftLoopMBB, dl, TII.get(I8085::DCR))
+        .addReg(counterTempReg);
+
+  BuildMI(shiftLoopMBB, dl, TII.get(I8085::JZ))
+            .addMBB(continuationMBB);
+
+  BuildMI(shiftLoopMBB, dl, TII.get(I8085::JNZ))
+            .addMBB(shiftLoopMBB);          
+
+  shiftLoopMBB->addSuccessor(continuationMBB);
+
+  BuildMI(*continuationMBB, continuationMBB->begin(), dl, TII.get(I8085::MOV))
+      .addReg(destReg, RegState::Define)
+      .addReg(tempHolder);
+
+  MI.eraseFromParent();
+  return continuationMBB;
+}
+
+
 MachineBasicBlock *I8085TargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
                                                MachineBasicBlock *MBB) const {
   int Opc = MI.getOpcode();
@@ -1208,6 +1307,9 @@ MachineBasicBlock *I8085TargetLowering::EmitInstrWithCustomInserter(MachineInstr
   case I8085::SET_GE_16:
   case I8085::SET_LE_16:
     return insertCond16Set(MI, MBB);  
+  case I8085::SHL_8:
+  case I8085::SRA_8:
+    return insertShift8Set(MI, MBB);      
   }
 
   assert( false &&
