@@ -189,6 +189,9 @@ private:
 
   MachineBasicBlock *insertCond8Set(MachineInstr &MI, MachineBasicBlock *MBB) const;
   MachineBasicBlock *insertSigned8Cond(MachineInstr &MI, MachineBasicBlock *MBB) const;
+  MachineBasicBlock *insertSameSigned8Cond(MachineInstr &MI, MachineBasicBlock *MBB) const;
+  MachineBasicBlock *insertDifferentSigned8Cond(MachineInstr &MI, MachineBasicBlock *MBB) const;
+  
 
   MachineBasicBlock *insertCond16Set(MachineInstr &MI, MachineBasicBlock *MBB) const; 
   MachineBasicBlock *insertShift8Set(MachineInstr &MI, MachineBasicBlock *BB) const;                                          
