@@ -26,6 +26,63 @@ def SET_LE_8 : I8085InserterPseudo<(outs GR8: $dst),
 
 }
 
+let Constraints = "$lhs = $dst" , Uses=[SREG] in {
+
+def SET_UGT_8 : I8085InserterPseudo<(outs GR8: $dst),
+                        (ins GR8: $lhs,GR8: $rhs),
+                        "SET_UGT_8\t$dst, $lhs, $rhs", []>;
+
+def SET_UGE_8 : I8085InserterPseudo<(outs GR8: $dst),
+                        (ins GR8: $lhs,GR8: $rhs),
+                        "SET_UGE_8\t$dst, $lhs, $rhs", []>;
+
+def SET_ULT_8 : I8085InserterPseudo<(outs GR8: $dst),
+                        (ins GR8: $lhs,GR8: $rhs),
+                        "SET_ULT_8\t$dst, $lhs, $rhs", []>;
+
+def SET_ULE_8 : I8085InserterPseudo<(outs GR8: $dst),
+                        (ins GR8: $lhs,GR8: $rhs),
+                        "SET_ULE_8\t$dst, $lhs, $rhs", []>;   
+
+}
+
+let Constraints = "$lhs = $dst" , Uses=[SREG] in {
+
+def SET_SAME_SIGN_GT_8 : I8085Pseudo<(outs GR8: $dst),
+                        (ins GR8: $lhs,GR8: $rhs),
+                        "SET_SAME_SIGN_GT_8\t$dst, $lhs, $rhs", []>;
+
+def SET_SAME_SIGN_GE_8 : I8085Pseudo<(outs GR8: $dst),
+                        (ins GR8: $lhs,GR8: $rhs),
+                        "SET_SAME_SIGN_GE_8\t$dst, $lhs, $rhs", []>;
+
+def SET_SAME_SIGN_LT_8 : I8085Pseudo<(outs GR8: $dst),
+                        (ins GR8: $lhs,GR8: $rhs),
+                        "SET_SAME_SIGN_LT_8\t$dst, $lhs, $rhs", []>;
+
+def SET_SAME_SIGN_LE_8 : I8085Pseudo<(outs GR8: $dst),
+                        (ins GR8: $lhs,GR8: $rhs),
+                        "SET_SAME_SIGN_LE_8\t$dst, $lhs, $rhs", []>; 
+
+def SET_DIFF_SIGN_GT_8 : I8085Pseudo<(outs GR8: $dst),
+                        (ins GR8: $lhs,GR8: $rhs),
+                        "SET_DIFF_SIGN_GT_8\t$dst, $lhs, $rhs", []>;
+
+def SET_DIFF_SIGN_GE_8 : I8085Pseudo<(outs GR8: $dst),
+                        (ins GR8: $lhs,GR8: $rhs),
+                        "SET_DIFF_SIGN_GE_8\t$dst, $lhs, $rhs", []>;
+
+def SET_DIFF_SIGN_LT_8 : I8085Pseudo<(outs GR8: $dst),
+                        (ins GR8: $lhs,GR8: $rhs),
+                        "SET_DIFF_SIGN_LT_8\t$dst, $lhs, $rhs", []>;
+
+def SET_DIFF_SIGN_LE_8 : I8085Pseudo<(outs GR8: $dst),
+                        (ins GR8: $lhs,GR8: $rhs),
+                        "SET_DIFF_SIGN_LE_8\t$dst, $lhs, $rhs", []>;                         
+
+}
+
+
 let Constraints = "$lhs = $dst" , Uses=[SREG]  in {
 def SET_NE_16 : I8085InserterPseudo<(outs GR8: $dst),
                         (ins GR16: $lhs,GR16: $rhs),
@@ -69,6 +126,10 @@ let isBarrier = 1, isBranch = 1, isTerminator = 1 , Uses=[SREG]  in {
    def JNC :  I8085Pseudo<(outs),(ins addressTarget: $label),"JNC\t$label", []>;
 
    def JC :  I8085Pseudo<(outs),(ins addressTarget: $label),"JC\t$label", []>;
+
+   def JP :  I8085Pseudo<(outs),(ins addressTarget: $label),"JP\t$label", []>;
+
+   def JM :  I8085Pseudo<(outs),(ins addressTarget: $label),"JM\t$label", []>;
 }
 
 let Constraints = "$src = $dst" in {

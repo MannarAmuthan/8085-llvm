@@ -137,9 +137,25 @@ unsigned get8Opc(ISD::CondCode CC){
           Opc = I8085::SET_GT_8;
           break;
 
+      case ISD::SETULT:
+          Opc = I8085::SET_ULT_8;
+          break;
+
+      case ISD::SETUGE:
+          Opc = I8085::SET_UGE_8;
+          break;
+
+      case ISD::SETULE:
+          Opc = I8085::SET_ULE_8;
+          break;
+
+      case ISD::SETUGT:
+          Opc = I8085::SET_UGT_8;
+          break;
+
       case ISD::SETLT:
           Opc = I8085::SET_LT_8;
-          break;
+          break;    
   }
   return Opc;
 }
