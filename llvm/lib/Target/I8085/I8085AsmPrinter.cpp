@@ -64,15 +64,24 @@ public:
 
   void emitStartOfAsmFile(Module &M) override;
 
+  void emitBasicBlockStart(const MachineBasicBlock &MBB) override;
+
 private:
   const MCRegisterInfo &MRI;
   bool EmittedStructorSymbolAttrs = false;
 };
 
+void I8085AsmPrinter::emitBasicBlockStart(const MachineBasicBlock &MBB) {
+  const llvm::MachineFunction *MF = MBB.getParent();
+  MCContext &Ctx = MF->getContext();
+  
+  OutStreamer->emitLabel(Ctx.getOrCreateSymbol("LBB" +Twine(MF->getFunctionNumber()) +Twine(MBB.getNumber())));
+}
+
 void I8085AsmPrinter::printOperand(const MachineInstr *MI, unsigned OpNo,
                                  raw_ostream &O) {
   const MachineOperand &MO = MI->getOperand(OpNo);
-
+  MO.dump();
   switch (MO.getType()) {
   case MachineOperand::MO_Register:
     O << I8085InstPrinter::getPrettyRegisterName(MO.getReg(), MRI);

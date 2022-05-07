@@ -231,6 +231,9 @@ MachineBasicBlock *I8085TargetLowering::insertSigned8Cond(MachineInstr &MI,
   BuildMI(MBB, dl, TII.get(I8085::XRA))
         .addReg(operandTwo);
   
+  BuildMI(MBB, dl, TII.get(I8085::ANI))
+        .addImm(128);      
+  
   BuildMI(MBB, dl, TII.get(I8085::JZ))
         .addMBB(samesignMBB);
 
@@ -239,22 +242,22 @@ MachineBasicBlock *I8085TargetLowering::insertSigned8Cond(MachineInstr &MI,
     
   
   if(Opc == I8085::SET_GT_8 ){
-    BuildMI(samesignMBB, dl, TII.get(I8085::SET_SAME_SIGN_GT_8)) .addReg(tempRegOne, RegState::Define).addReg(operandOne).addReg(operandTwo);
+    BuildMI(samesignMBB, dl, TII.get(I8085::SET_UGT_8)) .addReg(tempRegOne, RegState::Define).addReg(operandOne).addReg(operandTwo);
     BuildMI(diffsignMBB, dl, TII.get(I8085::SET_DIFF_SIGN_GT_8)).addReg(tempRegTwo, RegState::Define).addReg(operandOne).addReg(operandTwo); 
   }
 
   else if(Opc == I8085::SET_LT_8){
-    BuildMI(samesignMBB, dl, TII.get(I8085::SET_SAME_SIGN_LT_8)) .addReg(tempRegOne, RegState::Define).addReg(operandOne).addReg(operandTwo);
+    BuildMI(samesignMBB, dl, TII.get(I8085::SET_ULT_8)) .addReg(tempRegOne, RegState::Define).addReg(operandOne).addReg(operandTwo);
     BuildMI(diffsignMBB, dl, TII.get(I8085::SET_DIFF_SIGN_LT_8)).addReg(tempRegTwo, RegState::Define).addReg(operandOne).addReg(operandTwo);   
   }
 
   else if(Opc == I8085::SET_GE_8 ){
-    BuildMI(samesignMBB, dl, TII.get(I8085::SET_SAME_SIGN_GE_8)) .addReg(tempRegOne, RegState::Define).addReg(operandOne).addReg(operandTwo);
+    BuildMI(samesignMBB, dl, TII.get(I8085::SET_UGE_8)) .addReg(tempRegOne, RegState::Define).addReg(operandOne).addReg(operandTwo);
     BuildMI(diffsignMBB, dl, TII.get(I8085::SET_DIFF_SIGN_GE_8)).addReg(tempRegTwo, RegState::Define).addReg(operandOne).addReg(operandTwo);  
   }
 
   else if(Opc == I8085::SET_LE_8 ){
-    BuildMI(samesignMBB, dl, TII.get(I8085::SET_SAME_SIGN_LE_8)) .addReg(tempRegOne, RegState::Define).addReg(operandOne).addReg(operandTwo);
+    BuildMI(samesignMBB, dl, TII.get(I8085::SET_ULE_8)) .addReg(tempRegOne, RegState::Define).addReg(operandOne).addReg(operandTwo);
     BuildMI(diffsignMBB, dl, TII.get(I8085::SET_DIFF_SIGN_LE_8)).addReg(tempRegTwo, RegState::Define).addReg(operandOne).addReg(operandTwo); 
   }
 
@@ -277,124 +280,6 @@ MachineBasicBlock *I8085TargetLowering::insertSigned8Cond(MachineInstr &MI,
   MI.eraseFromParent();
   return continMBB;
 }
-
-MachineBasicBlock *I8085TargetLowering::insertSameSigned8Cond(MachineInstr &MI,
-                                                  MachineBasicBlock *MBB) const {
-
-  int Opc = MI.getOpcode();
-  const I8085InstrInfo &TII = (const I8085InstrInfo &)*MI.getParent()
-                                ->getParent()
-                                ->getSubtarget()
-                                .getInstrInfo();
-
-  DebugLoc dl = MI.getDebugLoc();
-
-  // To "insert" a SELECT instruction, we insert the diamond
-  // control-flow pattern. The incoming instruction knows the
-  // destination vreg to set, the condition code register to branch
-  // on, the true/false values to select between, and a branch opcode
-  // to use.
-
-  MachineFunction *MF = MBB->getParent();
-  
-  const BasicBlock *LLVM_BB = MBB->getBasicBlock();
-  MachineBasicBlock *FallThrough = MBB->getFallThrough();
-
-  // If the current basic block falls through to another basic block,
-  // we must insert an unconditional branch to the fallthrough destination
-  // if we are to insert basic blocks at the prior fallthrough point.
-  if (FallThrough != nullptr) {
-    BuildMI(MBB, dl, TII.get(I8085::JMP)).addMBB(FallThrough);
-  }
-
-  MachineBasicBlock *continMBB = MF->CreateMachineBasicBlock(LLVM_BB);
-  MachineBasicBlock *positiveMBB = MF->CreateMachineBasicBlock(LLVM_BB);
-  MachineBasicBlock *negativeMBB = MF->CreateMachineBasicBlock(LLVM_BB);
-
-  MachineFunction::iterator I;
-  for (I = MF->begin(); I != MF->end() && &(*I) != MBB; ++I)
-    ;
-  if (I != MF->end())
-    ++I;
-  MF->insert(I, continMBB);
-  MF->insert(I, positiveMBB);
-  MF->insert(I, negativeMBB);
-
-  // Transfer remaining instructions and all successors of the current
-  // block to the block which will contain the Phi node for the
-  // select.
-  continMBB->splice(continMBB->begin(), MBB,
-                  std::next(MachineBasicBlock::iterator(MI)), MBB->end());
-
-  continMBB->transferSuccessorsAndUpdatePHIs(MBB);
-
-  unsigned operandOne = MI.getOperand(1).getReg(); 
-  unsigned operandTwo = MI.getOperand(2).getReg();
-  
-  
-  unsigned tempRegOne = MF->getRegInfo().createVirtualRegister(getRegClassFor(MVT::i8));
-  unsigned tempRegTwo = MF->getRegInfo().createVirtualRegister(getRegClassFor(MVT::i8));
-
-
-
-  unsigned destReg = MI.getOperand(0).getReg();
-
-  BuildMI(MBB, dl, TII.get(I8085::MOV))
-        .addReg(I8085::A, RegState::Define)
-        .addReg(operandOne);
-
-  BuildMI(MBB, dl, TII.get(I8085::ANA))
-        .addReg(operandTwo);
-  
-  BuildMI(MBB, dl, TII.get(I8085::ANI))
-        .addImm(127);   
-  
-  BuildMI(MBB, dl, TII.get(I8085::JZ))
-        .addMBB(negativeMBB);
-
-  BuildMI(MBB, dl, TII.get(I8085::JNZ))
-        .addMBB(positiveMBB);        
-  
-  if(Opc == I8085::SET_SAME_SIGN_GT_8 ){
-    BuildMI(positiveMBB, dl, TII.get(I8085::SET_UGT_8)).addReg(tempRegOne, RegState::Define).addReg(operandOne).addReg(operandTwo);
-    BuildMI(negativeMBB, dl, TII.get(I8085::SET_UGT_8)).addReg(tempRegTwo, RegState::Define).addReg(operandTwo).addReg(operandOne); 
-  }
-
-  else if(Opc == I8085::SET_SAME_SIGN_LT_8){
-    BuildMI(positiveMBB, dl, TII.get(I8085::SET_ULT_8)).addReg(tempRegOne, RegState::Define).addReg(operandOne).addReg(operandTwo);
-    BuildMI(negativeMBB, dl, TII.get(I8085::SET_ULT_8)).addReg(tempRegTwo, RegState::Define).addReg(operandTwo).addReg(operandOne);   
-  }
-
-  else if(Opc == I8085::SET_SAME_SIGN_GE_8){
-    BuildMI(positiveMBB, dl, TII.get(I8085::SET_UGE_8)).addReg(tempRegOne, RegState::Define).addReg(operandOne).addReg(operandTwo);
-    BuildMI(negativeMBB, dl, TII.get(I8085::SET_UGE_8)).addReg(tempRegTwo, RegState::Define).addReg(operandTwo).addReg(operandOne);  
-  }
-
-  else if(Opc == I8085::SET_SAME_SIGN_LE_8 ){
-    BuildMI(positiveMBB, dl, TII.get(I8085::SET_ULE_8)).addReg(tempRegOne, RegState::Define).addReg(operandOne).addReg(operandTwo);
-    BuildMI(negativeMBB, dl, TII.get(I8085::SET_ULE_8)).addReg(tempRegTwo, RegState::Define).addReg(operandTwo).addReg(operandOne);
-  }
-
-  BuildMI(positiveMBB, dl, TII.get(I8085::JMP)) .addMBB(continMBB);
-  BuildMI(negativeMBB, dl, TII.get(I8085::JMP)) .addMBB(continMBB); 
-
-  
-  MBB->addSuccessor(positiveMBB);
-  MBB->addSuccessor(negativeMBB);
-
-  positiveMBB->addSuccessor(continMBB);
-  negativeMBB->addSuccessor(continMBB);
-  
-  BuildMI(*continMBB, continMBB->begin(), dl, TII.get(I8085::PHI),destReg)
-      .addReg(tempRegOne)
-      .addMBB(positiveMBB)
-      .addReg(tempRegTwo)
-      .addMBB(negativeMBB);
-
-  MI.eraseFromParent();
-  return continMBB;
-}
-
 
 MachineBasicBlock *I8085TargetLowering::insertDifferentSigned8Cond(MachineInstr &MI,
                                                   MachineBasicBlock *MBB) const {
@@ -461,7 +346,7 @@ MachineBasicBlock *I8085TargetLowering::insertDifferentSigned8Cond(MachineInstr 
         .addReg(operandOne);
   
   BuildMI(MBB, dl, TII.get(I8085::ANI))
-        .addImm(127);   
+        .addImm(128);   
   
   BuildMI(MBB, dl, TII.get(I8085::JZ))
         .addMBB(firstOperandPosMBB);

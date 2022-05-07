@@ -18,6 +18,7 @@
 
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/IR/Mangler.h"
+#include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -88,10 +89,13 @@ void I8085MCInstLower::lowerInstruction(const MachineInstr &MI,
       MCOp = lowerSymbolOperand(
           MO, Printer.GetExternalSymbolSymbol(MO.getSymbolName()));
       break;
-    case MachineOperand::MO_MachineBasicBlock:
-      MCOp = MCOperand::createExpr(
-          MCSymbolRefExpr::create(MO.getMBB()->getSymbol(), Ctx));
-      break;
+    case MachineOperand::MO_MachineBasicBlock:{
+        const llvm::MachineFunction *MF = MO.getMBB()->getParent();
+        MCContext &ctx = MF->getContext();
+        MCOp = MCOperand::createExpr(
+        MCSymbolRefExpr::create(ctx.getOrCreateSymbol("LBB" +Twine(MF->getFunctionNumber()) +Twine(MO.getMBB()->getNumber())), Ctx));
+        break;
+    }
     case MachineOperand::MO_RegisterMask:
       continue;
     case MachineOperand::MO_BlockAddress:
