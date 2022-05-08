@@ -29,7 +29,7 @@ define i16 @loadtest16() #0  {
 ; CHECK: LXI H, 2
 ; CHECK: DAD	SP
 ; CHECK: MOV M, E
-; CHECK: ret
+; CHECK: RET
 
   %1 = alloca i16, align 1
   store i16 105, i16* %1, align 1
@@ -65,7 +65,7 @@ define i8 @loadtest8()  {
 ; CHECK: DAD	SP
 ; CHECK: MOV M, C
 ; CHECK: MOV	A, B
-; CHECK: ret
+; CHECK: RET
   %1 = alloca i8, align 1
   store i8 55, i8* %1, align 1
   %2 = load i8, i8* %1, align 1

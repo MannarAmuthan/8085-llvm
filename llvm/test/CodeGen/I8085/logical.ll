@@ -19,7 +19,7 @@ define i8 @functionone(i8,i8) {
 ; CHECK: ORA C
 ; CHECK: MOV	D, A
 ; CHECK: MOV	A, D
-; CHECK: ret
+; CHECK: RET
   %3 = xor i8 %0, %1
   %4 = and i8 %3, %1
   %5 = or i8 %4, %0
@@ -81,7 +81,7 @@ define i16 @functiontwo(i16,i16) {
 ; CHECK: MOV	A, B
 ; CHECK: ORA D
 ; CHECK: MOV	B, A
-; CHECK: ret
+; CHECK: RET
 
   %3 = xor i16 %0, %1 
   %4 = and i16 %3, %1
@@ -110,7 +110,7 @@ define i8 @functionthree(i8,i8) {
 ; CHECK: XRI 111
 ; CHECK: MOV	B, A
 ; CHECK: MOV	A, B
-; CHECK: ret    
+; CHECK: RET    
   %3 = xor i8 %0, %1
   %4 = and i8 %3, 40
   %5 = or i8 %4, 80
@@ -162,7 +162,7 @@ define i16 @functionfour(i16,i16) {
 ; CHECK: MOV	A, B
 ; CHECK: XRA D
 ; CHECK: MOV	B, A
-; CHECK: ret
+; CHECK: RET
 
   %3 = xor i16 %0, %1 
   %4 = and i16 %3, 40000 

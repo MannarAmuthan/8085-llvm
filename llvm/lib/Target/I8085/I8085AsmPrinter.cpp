@@ -211,40 +211,10 @@ const MCExpr *I8085AsmPrinter::lowerConstant(const Constant *CV) {
 }
 
 void I8085AsmPrinter::emitXXStructor(const DataLayout &DL, const Constant *CV) {
-  // if (!EmittedStructorSymbolAttrs) {
-  //   OutStreamer->emitRawComment(
-  //       " Emitting these undefined symbol references causes us to link the"
-  //       " libgcc code that runs our constructors/destructors");
-  //   OutStreamer->emitRawComment(" This matches GCC's behavior");
 
-  //   MCSymbol *CtorsSym = OutContext.getOrCreateSymbol("__do_global_ctors");
-  //   OutStreamer->emitSymbolAttribute(CtorsSym, MCSA_Global);
-
-  //   MCSymbol *DtorsSym = OutContext.getOrCreateSymbol("__do_global_dtors");
-  //   OutStreamer->emitSymbolAttribute(DtorsSym, MCSA_Global);
-
-  //   EmittedStructorSymbolAttrs = true;
-  // }
-
-  // AsmPrinter::emitXXStructor(DL, CV);
 }
 
 bool I8085AsmPrinter::doFinalization(Module &M) {
-  // MCSymbol *DoCopyData = OutContext.getOrCreateSymbol("__do_copy_data");
-  // MCSymbol *DoClearBss = OutContext.getOrCreateSymbol("__do_clear_bss");
-
-  // // FIXME: We can disable __do_copy_data if there are no static RAM variables.
-
-  // OutStreamer->emitRawComment(
-  //     " Declaring this symbol tells the CRT that it should");
-  // OutStreamer->emitRawComment(
-  //     "copy all variables from program memory to RAM on startup");
-  // OutStreamer->emitSymbolAttribute(DoCopyData, MCSA_Global);
-
-  // OutStreamer->emitRawComment(
-  //     " Declaring this symbol tells the CRT that it should");
-  // OutStreamer->emitRawComment("clear the zeroed data section on startup");
-  // OutStreamer->emitSymbolAttribute(DoClearBss, MCSA_Global);
 
   return AsmPrinter::doFinalization(M);
 }
@@ -254,38 +224,6 @@ void I8085AsmPrinter::emitStartOfAsmFile(Module &M) {
   const I8085Subtarget *SubTM = (const I8085Subtarget *)TM.getSubtargetImpl();
   if (!SubTM)
     return;
-
-  // // Emit __tmp_reg__.
-  // OutStreamer->emitAssignment(
-  //     MMI->getContext().getOrCreateSymbol(StringRef("__tmp_reg__")),
-  //     MCConstantExpr::create(SubTM->getRegTmpIndex(), MMI->getContext()));
-  // // Emit __zero_reg__.
-  // OutStreamer->emitAssignment(
-  //     MMI->getContext().getOrCreateSymbol(StringRef("__zero_reg__")),
-  //     MCConstantExpr::create(SubTM->getRegZeroIndex(), MMI->getContext()));
-  // // Emit __SREG__.
-  // OutStreamer->emitAssignment(
-  //     MMI->getContext().getOrCreateSymbol(StringRef("__SREG__")),
-  //     MCConstantExpr::create(SubTM->getIORegSREG(), MMI->getContext()));
-  // // Emit __SP_H__ if available.
-  // if (!SubTM->hasSmallStack())
-  //   OutStreamer->emitAssignment(
-  //       MMI->getContext().getOrCreateSymbol(StringRef("__SP_H__")),
-  //       MCConstantExpr::create(SubTM->getIORegSPH(), MMI->getContext()));
-  // // Emit __SP_L__.
-  // OutStreamer->emitAssignment(
-  //     MMI->getContext().getOrCreateSymbol(StringRef("__SP_L__")),
-  //     MCConstantExpr::create(SubTM->getIORegSPL(), MMI->getContext()));
-  // // Emit __EIND__ if available.
-  // if (SubTM->hasEIJMPCALL())
-  //   OutStreamer->emitAssignment(
-  //       MMI->getContext().getOrCreateSymbol(StringRef("__EIND__")),
-  //       MCConstantExpr::create(SubTM->getIORegEIND(), MMI->getContext()));
-  // // Emit __RAMPZ__ if available.
-  // if (SubTM->hasELPM())
-  //   OutStreamer->emitAssignment(
-  //       MMI->getContext().getOrCreateSymbol(StringRef("__RAMPZ__")),
-  //       MCConstantExpr::create(SubTM->getIORegRAMPZ(), MMI->getContext()));
 }
 
 } // end of namespace llvm

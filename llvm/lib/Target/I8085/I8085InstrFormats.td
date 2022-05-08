@@ -576,3 +576,16 @@ class I8085InserterPseudo<dag outs, dag ins, string asmstr, list<dag> pattern>
       let usesCustomInserter = 1;
 }
 
+
+class I8085Inst8<dag outs, dag ins, string asmstr, list<dag> pattern>
+    : I8085Inst<outs, ins, asmstr, pattern> {
+  field bits<8> Inst;
+  let Size = 1;
+}
+
+
+class I8085LegalInst8<bits<8> opcode, dag outs, dag ins, string asmstr, list<dag> pattern>
+    : I8085Inst8<outs, ins, asmstr, pattern> {
+  let Inst = opcode;
+}
+

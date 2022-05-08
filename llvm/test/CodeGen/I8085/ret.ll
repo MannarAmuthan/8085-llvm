@@ -2,7 +2,7 @@
 
 define void @retvoid(i8* %x) {
 ; CHECK-LABEL: retvoid:
-; CHECK: ret
+; CHECK: RET
   ret void
 }
 
@@ -10,6 +10,6 @@ define void @retvoid(i8* %x) {
 define i8 @reteight() #0 {
 ; CHECK-LABEL: reteight:
 ; CHECK: MVI	A, 56
-; CHECK: ret
+; CHECK: RET
   ret i8 56
 }

@@ -46,7 +46,7 @@ define i16 @add_sub_1(i16,i16) {
 ; CHECK: MOV	A, B
 ; CHECK: SBB D
 ; CHECK: MOV	B, A
-; CHECK: ret
+; CHECK: RET
 
   %3 = add i16 %0, %1
   %4 = add i16 %3, %3
@@ -100,7 +100,7 @@ define i16 @add_sub_2(i16,i16) {
 ; CHECK: MOV	A, B
 ; CHECK: ADC D
 ; CHECK: MOV	B, A
-; CHECK: ret
+; CHECK: RET
 
   %3 = add i16 %0, %1 
   %4 = sub i16 %3, 10000 
@@ -125,7 +125,7 @@ define i8 @add_sub_3(i8,i8) {
 ; CHECK: ADD B
 ; CHECK: MOV	C, A
 ; CHECK: MOV	A, C
-; CHECK: ret
+; CHECK: RET
 
   %3 = add i8 %0, %1 ; 48
   %4 = sub i8 100, %3 ; 52
@@ -164,6 +164,7 @@ define i8 @add_sub_4(i8,i8) {
 ; CHECK: DAD	SP
 ; CHECK: MOV M, C
 ; CHECK: MOV	A, C
+; CHECK: RET
 
   %3 = alloca i8, align 1
   store i8 100, i8* %3, align 1

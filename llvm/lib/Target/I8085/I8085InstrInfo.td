@@ -367,11 +367,11 @@ let Defs = [SP, SREG], Uses = [SP] in {
 //===----------------------------------------------------------------------===//
 // Return instructions.
 //===----------------------------------------------------------------------===//
-let isTerminator = 1, isReturn = 1, isBarrier = 1 in {
-  def RET : F16<0b1001010100001000, (outs), (ins), "ret", [(I8085retflag)]>;
+// let isTerminator = 1, isReturn = 1, isBarrier = 1 in {
+//   def RET : F16<0b1001010100001000, (outs), (ins), "ret", [(I8085retflag)]>;
 
-  def RETI : F16<0b1001010100011000, (outs), (ins), "reti", [(I8085retiflag)]>;
-}
+//   def RETI : F16<0b1001010100011000, (outs), (ins), "reti", [(I8085retiflag)]>;
+// }
 
 //===----------------------------------------------------------------------===//
 // Data transfer instructions
@@ -1018,6 +1018,10 @@ def addressTarget : Operand<OtherVT> {
 let isCall = 1 in {                                                                                                 
 let Uses = [SP] in def CALL : I8085Pseudo<(outs), (ins rcalltarget_13:$k),
                                        "CALL $k", [(I8085call imm:$k)]>;
+}
+
+let isTerminator = 1, isReturn = 1, isBarrier = 1 in {
+  def RET : I8085LegalInst8<0b11001001, (outs), (ins), "RET", [(I8085retflag)]>;
 }
 
 def : Pat<(I8085call(i16 tglobaladdr:$dst)), (CALL tglobaladdr:$dst)>;

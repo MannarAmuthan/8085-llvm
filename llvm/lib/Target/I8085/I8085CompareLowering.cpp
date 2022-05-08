@@ -134,8 +134,8 @@ MachineBasicBlock *I8085TargetLowering::insertCond8Set(MachineInstr &MI,
 
   else if(Opc == I8085::SET_ULE_8 ){
     BuildMI(MBB, dl, TII.get(I8085::JZ)).addMBB(trueMBB);
-    BuildMI(MBB, dl, TII.get(I8085::JP)).addMBB(falseMBB);
-    BuildMI(MBB, dl, TII.get(I8085::JMP)).addMBB(trueMBB); 
+    BuildMI(MBB, dl, TII.get(I8085::JC)).addMBB(trueMBB);
+    BuildMI(MBB, dl, TII.get(I8085::JMP)).addMBB(falseMBB); 
   }
 
   
