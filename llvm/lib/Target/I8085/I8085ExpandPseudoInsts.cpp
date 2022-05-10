@@ -174,11 +174,11 @@ bool I8085ExpandPseudo::expand<I8085::LOAD_16>(Block &MBB, BlockIt MBBI) {
 
 
   buildMI(MBB, MBBI,  I8085::MVI)
-        .addReg(highReg)
+        .addReg(highReg, RegState::Define)
         .addImm(high(amount));
 
   buildMI(MBB, MBBI,  I8085::MVI)
-        .addReg(lowReg)
+        .addReg(lowReg, RegState::Define)
         .addImm(low(amount));
 
   MI.eraseFromParent();
@@ -215,7 +215,7 @@ bool I8085ExpandPseudo::expand<I8085::STORE_16>(Block &MBB, BlockIt MBBI) {
 }
 
 template <>
-bool I8085ExpandPseudo::expand<I8085::GROW_STACK_BY>(Block &MBB, BlockIt MBBI) {
+bool I8085ExpandPseudo::expand<I8085::SHRINK_STACK_BY>(Block &MBB, BlockIt MBBI) {
   const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
   MachineInstr &MI = *MBBI;
 
@@ -236,7 +236,7 @@ bool I8085ExpandPseudo::expand<I8085::GROW_STACK_BY>(Block &MBB, BlockIt MBBI) {
 uint16_t twos_complement(uint16_t val) { return -(unsigned int)val;}
 
 template <>
-bool I8085ExpandPseudo::expand<I8085::SHRINK_STACK_BY>(Block &MBB, BlockIt MBBI) {
+bool I8085ExpandPseudo::expand<I8085::GROW_STACK_BY>(Block &MBB, BlockIt MBBI) {
   const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
   MachineInstr &MI = *MBBI;
 
@@ -275,7 +275,7 @@ bool I8085ExpandPseudo::expand<I8085::LOAD_8_WITH_ADDR>(Block &MBB, BlockIt MBBI
   /* Store the register value pointed by HL reg */
   
   buildMI(MBB, MBBI, I8085::MOV_FROM_M)
-      .addReg(destReg);
+      .addReg(destReg,RegState::Define);
   
   MI.eraseFromParent();
   return true;
@@ -320,14 +320,14 @@ bool I8085ExpandPseudo::expand<I8085::ANDI_8>(Block &MBB, BlockIt MBBI) {
   int64_t immValue = MI.getOperand(2).getImm();    
   
   buildMI(MBB, MBBI, I8085::MOV)
-      .addReg(I8085::A)
+      .addReg(I8085::A,RegState::Define)
       .addReg(operandOne);
 
   buildMI(MBB, MBBI, I8085::ANI)
       .addImm(immValue);
 
   buildMI(MBB, MBBI, I8085::MOV)
-      .addReg(destReg)
+      .addReg(destReg,RegState::Define)
       .addReg(I8085::A);
 
   MI.eraseFromParent();
@@ -344,14 +344,14 @@ bool I8085ExpandPseudo::expand<I8085::ORI_8>(Block &MBB, BlockIt MBBI) {
   int64_t immValue = MI.getOperand(2).getImm();    
   
   buildMI(MBB, MBBI, I8085::MOV)
-      .addReg(I8085::A)
+      .addReg(I8085::A,RegState::Define)
       .addReg(operandOne);
 
   buildMI(MBB, MBBI, I8085::ORI)
       .addImm(immValue);
 
   buildMI(MBB, MBBI, I8085::MOV)
-      .addReg(destReg)
+      .addReg(destReg,RegState::Define)
       .addReg(I8085::A);
 
   MI.eraseFromParent();
@@ -368,14 +368,14 @@ bool I8085ExpandPseudo::expand<I8085::XORI_8>(Block &MBB, BlockIt MBBI) {
   int64_t immValue = MI.getOperand(2).getImm();    
   
   buildMI(MBB, MBBI, I8085::MOV)
-      .addReg(I8085::A)
+      .addReg(I8085::A,RegState::Define)
       .addReg(operandOne);
 
   buildMI(MBB, MBBI, I8085::XRI)
       .addImm(immValue);
 
   buildMI(MBB, MBBI, I8085::MOV)
-      .addReg(destReg)
+      .addReg(destReg,RegState::Define)
       .addReg(I8085::A);
 
   MI.eraseFromParent();
@@ -394,14 +394,14 @@ bool I8085ExpandPseudo::expand<I8085::AND_8>(Block &MBB, BlockIt MBBI) {
   uint16_t operandTwo = MI.getOperand(2).getReg();    
   
   buildMI(MBB, MBBI, I8085::MOV)
-      .addReg(I8085::A)
+      .addReg(I8085::A,RegState::Define)
       .addReg(operandOne);
 
   buildMI(MBB, MBBI, I8085::ANA)
       .addReg(operandTwo);
 
   buildMI(MBB, MBBI, I8085::MOV)
-      .addReg(destReg)
+      .addReg(destReg,RegState::Define)
       .addReg(I8085::A);
 
   MI.eraseFromParent();
@@ -418,14 +418,14 @@ bool I8085ExpandPseudo::expand<I8085::OR_8>(Block &MBB, BlockIt MBBI) {
   uint16_t operandTwo = MI.getOperand(2).getReg();    
   
   buildMI(MBB, MBBI, I8085::MOV)
-      .addReg(I8085::A)
+      .addReg(I8085::A,RegState::Define)
       .addReg(operandOne);
 
   buildMI(MBB, MBBI, I8085::ORA)
       .addReg(operandTwo);
 
   buildMI(MBB, MBBI, I8085::MOV)
-      .addReg(destReg)
+      .addReg(destReg,RegState::Define)
       .addReg(I8085::A);
 
   MI.eraseFromParent();
@@ -442,14 +442,14 @@ bool I8085ExpandPseudo::expand<I8085::XOR_8>(Block &MBB, BlockIt MBBI) {
   uint16_t operandTwo = MI.getOperand(2).getReg();    
   
   buildMI(MBB, MBBI, I8085::MOV)
-      .addReg(I8085::A)
+      .addReg(I8085::A,RegState::Define)
       .addReg(operandOne);
 
   buildMI(MBB, MBBI, I8085::XRA)
       .addReg(operandTwo);
 
   buildMI(MBB, MBBI, I8085::MOV)
-      .addReg(destReg)
+      .addReg(destReg,RegState::Define)
       .addReg(I8085::A);
 
   MI.eraseFromParent();
@@ -691,7 +691,7 @@ template <> bool I8085ExpandPseudo::expand<I8085::SET_EQ_8>(Block &MBB, BlockIt 
   bool DstIsDead=MI.getOperand(0).isDead();
 
   buildMI(MBB, MBBI, I8085::MOV)
-    .addReg(I8085::A)
+    .addReg(I8085::A,RegState::Define)
     .addReg(destReg);
 
   buildMI(MBB, MBBI, I8085::SUB)
@@ -700,7 +700,7 @@ template <> bool I8085ExpandPseudo::expand<I8085::SET_EQ_8>(Block &MBB, BlockIt 
   buildMI(MBB, MBBI, I8085::CMA);  
 
   buildMI(MBB, MBBI, I8085::MOV)
-    .addReg(destReg)
+    .addReg(destReg,RegState::Define)
     .addReg(I8085::A);
   
   MI.eraseFromParent();
@@ -717,14 +717,14 @@ template <> bool I8085ExpandPseudo::expand<I8085::SET_NE_8>(Block &MBB, BlockIt 
   bool DstIsDead=MI.getOperand(0).isDead();
 
   buildMI(MBB, MBBI, I8085::MOV)
-    .addReg(I8085::A)
+    .addReg(I8085::A,RegState::Define)
     .addReg(destReg);
 
   buildMI(MBB, MBBI, I8085::SUB)
     .addReg(operandTwo);
 
   buildMI(MBB, MBBI, I8085::MOV)
-    .addReg(destReg)
+    .addReg(destReg,RegState::Define)
     .addReg(I8085::A);
   
   MI.eraseFromParent();
@@ -756,7 +756,7 @@ template <> bool I8085ExpandPseudo::expand<I8085::SET_EQ_16>(Block &MBB, BlockIt
   buildMI(MBB, MBBI, I8085::CMA);
 
   buildMI(MBB, MBBI, I8085::MOV)
-    .addReg(destReg)
+    .addReg(destReg,RegState::Define)
     .addReg(I8085::A);
   
   MI.eraseFromParent();
@@ -786,7 +786,7 @@ template <> bool I8085ExpandPseudo::expand<I8085::SET_NE_16>(Block &MBB, BlockIt
     .addReg(operandTwo);
 
   buildMI(MBB, MBBI, I8085::MOV)
-    .addReg(destReg)
+    .addReg(destReg,RegState::Define)
     .addReg(I8085::A);
   
   MI.eraseFromParent();
@@ -801,7 +801,7 @@ template <> bool I8085ExpandPseudo::expand<I8085::JMP_8_IF>(Block &MBB, BlockIt 
 
 
   buildMI(MBB, MBBI, I8085::MOV)
-    .addReg(I8085::A)
+    .addReg(I8085::A,RegState::Define)
     .addReg(operand);
 
   buildMI(MBB, MBBI, I8085::ORI)
@@ -826,11 +826,11 @@ template <> bool I8085ExpandPseudo::expand<I8085::SEXT8TO16>(Block &MBB, BlockIt
   if(destReg==I8085::DE){  destLow=I8085::E;  destHigh=I8085::D; }
   
   buildMI(MBB, MBBI, I8085::MOV)
-    .addReg(I8085::A)
+    .addReg(I8085::A,RegState::Define)
     .addReg(operand);
 
   buildMI(MBB, MBBI, I8085::MOV)
-    .addReg(destLow)
+    .addReg(destLow,RegState::Define)
     .addReg(I8085::A);
 
   buildMI(MBB, MBBI, I8085::ADI)
@@ -841,7 +841,7 @@ template <> bool I8085ExpandPseudo::expand<I8085::SEXT8TO16>(Block &MBB, BlockIt
     .addReg(I8085::A);  // will result in FFh if CF set, 0 else
 
   buildMI(MBB, MBBI, I8085::MOV)
-    .addReg(destHigh)
+    .addReg(destHigh,RegState::Define)
     .addReg(I8085::A);  
      
   MI.eraseFromParent();
@@ -855,14 +855,14 @@ template <> bool I8085ExpandPseudo::expand<I8085::RL_8>(Block &MBB, BlockIt MBBI
   unsigned reg = MI.getOperand(0).getReg();
 
   buildMI(MBB, MBBI, I8085::MOV)
-    .addReg(I8085::A)
+    .addReg(I8085::A,RegState::Define)
     .addReg(reg);
 
   buildMI(MBB, MBBI, I8085::ADD)
     .addReg(I8085::A);
 
   buildMI(MBB, MBBI, I8085::MOV)
-    .addReg(reg)
+    .addReg(reg,RegState::Define)
     .addReg(I8085::A);
 
   MI.eraseFromParent();
@@ -877,7 +877,7 @@ template <> bool I8085ExpandPseudo::expand<I8085::RR_8>(Block &MBB, BlockIt MBBI
   unsigned reg = MI.getOperand(0).getReg();
 
   buildMI(MBB, MBBI, I8085::MOV)
-    .addReg(I8085::A)
+    .addReg(I8085::A,RegState::Define)
     .addReg(reg);
 
   buildMI(MBB, MBBI, I8085::RRC);
@@ -886,9 +886,111 @@ template <> bool I8085ExpandPseudo::expand<I8085::RR_8>(Block &MBB, BlockIt MBBI
     .addImm(127);
 
   buildMI(MBB, MBBI, I8085::MOV)
-    .addReg(reg)
+    .addReg(reg,RegState::Define)
     .addReg(I8085::A);
 
+  MI.eraseFromParent();
+  return true;
+}
+
+
+template <> bool I8085ExpandPseudo::expand<I8085::JMP_16_IF_NOT_EQUAL>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+  
+  unsigned operandOne = MI.getOperand(0).getReg();
+  unsigned operandTwo = MI.getOperand(1).getReg();
+
+  unsigned opOneLow,opOneHigh;
+  unsigned opTwoLow,opTwoHigh;
+
+  if(operandOne==I8085::BC){  opOneLow=I8085::C;  opOneHigh=I8085::B; }
+  if(operandOne==I8085::DE){  opOneLow=I8085::E;  opOneHigh=I8085::D; }
+
+  if(operandTwo==I8085::BC){  opTwoLow=I8085::C;  opTwoHigh=I8085::B; }
+  if(operandTwo==I8085::DE){  opTwoLow=I8085::E;  opTwoHigh=I8085::D; }
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(I8085::A,RegState::Define)
+    .addReg(opOneHigh);
+
+  buildMI(MBB, MBBI, I8085::CMP)
+    .addReg(opTwoHigh);
+
+  buildMI(MBB, MBBI, I8085::JNZ)
+    .addMBB(MI.getOperand(2).getMBB());
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(I8085::A,RegState::Define)
+    .addReg(opOneLow);
+
+  buildMI(MBB, MBBI, I8085::CMP)
+    .addReg(opTwoLow);
+
+  buildMI(MBB, MBBI, I8085::JNZ)
+    .addMBB(MI.getOperand(2).getMBB());
+  
+  MI.eraseFromParent();
+  return true;
+}
+
+
+
+template <> bool I8085ExpandPseudo::expand<I8085::JMP_16_IF_SAME_SIGN>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+  
+  unsigned operandOne = MI.getOperand(0).getReg();
+  unsigned operandTwo = MI.getOperand(1).getReg();
+
+  unsigned opOneLow,opOneHigh;
+  unsigned opTwoLow,opTwoHigh;
+
+  if(operandOne==I8085::BC){  opOneLow=I8085::C;  opOneHigh=I8085::B; }
+  if(operandOne==I8085::DE){  opOneLow=I8085::E;  opOneHigh=I8085::D; }
+
+  if(operandTwo==I8085::BC){  opTwoLow=I8085::C;  opTwoHigh=I8085::B; }
+  if(operandTwo==I8085::DE){  opTwoLow=I8085::E;  opTwoHigh=I8085::D; }
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(I8085::A,RegState::Define)
+    .addReg(opOneHigh);
+
+  buildMI(MBB, MBBI, I8085::XRA)
+    .addReg(opTwoHigh);
+
+  buildMI(MBB, MBBI, I8085::ANI)
+        .addImm(128);  
+
+  buildMI(MBB, MBBI, I8085::JZ)
+    .addMBB(MI.getOperand(2).getMBB());
+  
+  MI.eraseFromParent();
+  return true;
+}
+
+template <> bool I8085ExpandPseudo::expand<I8085::JMP_16_IF_POSITIVE>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+  
+  unsigned operandOne = MI.getOperand(0).getReg();
+
+  unsigned opOneLow,opOneHigh;
+
+  if(operandOne==I8085::BC){  opOneLow=I8085::C;  opOneHigh=I8085::B; }
+  if(operandOne==I8085::DE){  opOneLow=I8085::E;  opOneHigh=I8085::D; }
+
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(I8085::A,RegState::Define)
+    .addReg(opOneHigh);
+
+  buildMI(MBB, MBBI, I8085::ANI)
+        .addImm(128);  
+
+  buildMI(MBB, MBBI, I8085::JZ)
+    .addMBB(MI.getOperand(1).getMBB());
+  
   MI.eraseFromParent();
   return true;
 }
@@ -902,6 +1004,10 @@ bool I8085ExpandPseudo::expandMI(Block &MBB, BlockIt MBBI) {
     return expand<Op>(MBB, MI)
 
   switch (Opcode) {
+    
+    EXPAND(I8085::JMP_16_IF_POSITIVE);
+    EXPAND(I8085::JMP_16_IF_SAME_SIGN);
+    EXPAND(I8085::JMP_16_IF_NOT_EQUAL);
     EXPAND(I8085::JMP_8_IF);
     EXPAND(I8085::SEXT8TO16);
     EXPAND(I8085::RL_8);

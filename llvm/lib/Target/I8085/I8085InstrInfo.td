@@ -952,18 +952,19 @@ def mspi : Operand<iPTR> {
 
 def LXI : I8085Pseudo<(outs GR8: $rd), (ins i16imm: $k), "LXI $rd, $k", []>;                  
 
-let Defs=[SREG] in def DAD : I8085Pseudo<(outs), (ins), "DAD\tSP", []>;
+let Uses = [H,L] in {
+  let Defs=[SREG,H,L] in def DAD : I8085Pseudo<(outs), (ins), "DAD\tSP", []>;
 
-def SPHL : I8085Pseudo<(outs), (ins), "SPHL", []>;                          
+  def SPHL : I8085Pseudo<(outs), (ins), "SPHL", []>;                          
 
-def SHLD : I8085Pseudo<(outs), (ins i16imm: $k), "SHLD $k", []>;   
+  def SHLD : I8085Pseudo<(outs), (ins i16imm: $k), "SHLD $k", []>;   
 
-def LHLD : I8085Pseudo<(outs), (ins i16imm: $k), "LHLD $k", []>;                      
- 
-def MOV_M  : I8085Pseudo<(outs), (ins GR8: $rs), "MOV M, $rs", []>;
+  def LHLD : I8085Pseudo<(outs), (ins i16imm: $k), "LHLD $k", []>;                      
+  
+  def MOV_M  : I8085Pseudo<(outs), (ins GR8: $rs), "MOV M, $rs", []>;
 
-
-def MOV_FROM_M  : I8085Pseudo<(outs), (ins GR8: $rd), "MOV $rd, M", []>;            
+  def MOV_FROM_M  : I8085Pseudo<(outs GR8: $rd), (ins), "MOV $rd, M", []>;  
+}          
 
 
 def GROW_STACK_BY 
@@ -979,7 +980,7 @@ def SHRINK_STACK_BY
             "SHRINK_STACK_BY $amount",
             []>;               
 
-
+let Uses=[A] in {
 def LOAD_16 : I8085Pseudo<(outs GR16: $dst),
                        (ins i16imm: $src),
                        "LOAD_16\t$dst, $src", [(set i16
@@ -1007,7 +1008,7 @@ def LOAD_16_WITH_ADDR : I8085Pseudo<(outs GR16: $dst),
 def LOAD_8_WITH_ADDR : I8085Pseudo<(outs GR8: $dst),
                        (ins mspi: $src),
                        "LOAD\t$dst, $src", [(set i8: $dst, (load addr: $src))]>;                                                                                                                      
-
+}
 
 
 def addressTarget : Operand<OtherVT> {

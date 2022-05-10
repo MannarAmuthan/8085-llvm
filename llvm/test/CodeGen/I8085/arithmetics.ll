@@ -1,4 +1,4 @@
-; RUN: llc -mattr=i8085,sram < %s -march=i8085  | FileCheck %s
+; RUN: llc -mattr=i8085,sram < %s -march=i8085  -verify-machineinstrs | FileCheck %s
 
 define i16 @add_sub_1(i16,i16) {
 ; CHECK-LABEL:   add_sub_1:
@@ -138,33 +138,28 @@ define i8 @add_sub_3(i8,i8) {
 
 define i8 @add_sub_4(i8,i8) {
 ; CHECK-LABEL:   add_sub_4:
-; CHECK: LXI H, 0
-; CHECK: DAD	SP
-; CHECK: MOV	A, L
-; CHECK: MVI	L, 2
-; CHECK: SUB L
-; CHECK: MOV	L, A
-; CHECK: MOV	A, H
-; CHECK: MVI	H, 0
-; CHECK: SBB H
-; CHECK: MOV	H, A
-; CHECK: SPHL
-; CHECK: MVI	B, 100
-; CHECK: LXI H, 1
-; CHECK: DAD	SP
-; CHECK: MOV M, B
-; CHECK: LXI H, 4
-; CHECK: DAD	SP
-; CHECK: MOV B, M
-; CHECK: MVI	C, -95
-; CHECK: MOV	A, C
-; CHECK: SUB B
-; CHECK: MOV	C, A
-; CHECK: LXI H, 0
-; CHECK: DAD	SP
-; CHECK: MOV M, C
-; CHECK: MOV	A, C
-; CHECK: RET
+; CHECK:	LXI H, 65534
+; CHECK:	DAD	SP
+; CHECK:	SPHL
+; CHECK:	MVI	B, 100
+; CHECK:	LXI H, 1
+; CHECK:	DAD	SP
+; CHECK:	MOV M, B
+; CHECK:	LXI H, 4
+; CHECK:	DAD	SP
+; CHECK:	MOV B, M
+; CHECK:	MVI	C, -95
+; CHECK:	MOV	A, C
+; CHECK:	SUB B
+; CHECK:	MOV	C, A
+; CHECK:	LXI H, 0
+; CHECK:	DAD	SP
+; CHECK:	MOV M, C
+; CHECK:	MOV	A, C
+; CHECK:	LXI H, 2
+; CHECK:	DAD	SP
+; CHECK:	SPHL
+; CHECK:	RET
 
   %3 = alloca i8, align 1
   store i8 100, i8* %3, align 1

@@ -1056,14 +1056,29 @@ MachineBasicBlock *I8085TargetLowering::EmitInstrWithCustomInserter(MachineInstr
   case I8085::SET_DIFF_SIGN_LT_8:
   case I8085::SET_DIFF_SIGN_GE_8:
   case I8085::SET_DIFF_SIGN_LE_8:
-    return insertDifferentSigned8Cond(MI,MBB);   
+    return insertDifferentSigned8Cond(MI,MBB);
+
   case I8085::SET_NE_16:
   case I8085::SET_EQ_16:
+    return insertEqualityCond16Set(MI,MBB);
+
+  case I8085::SET_UGT_16:
+  case I8085::SET_ULT_16:
+  case I8085::SET_UGE_16:
+  case I8085::SET_ULE_16:
+    return insertCond16Set(MI, MBB); 
+
   case I8085::SET_GT_16:
   case I8085::SET_LT_16:
   case I8085::SET_GE_16:
   case I8085::SET_LE_16:
-    return insertCond16Set(MI, MBB);  
+    return insertSignedCond16Set(MI, MBB);   
+
+  case I8085::SET_DIFF_SIGN_LT_16:
+  case I8085::SET_DIFF_SIGN_GT_16:
+    return insertDifferentSignedCond16Set(MI, MBB); 
+
+  
   case I8085::SHL_8:
   case I8085::SRA_8:
     return insertShift8Set(MI, MBB);      

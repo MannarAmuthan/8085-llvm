@@ -186,6 +186,22 @@ unsigned get16Opc(ISD::CondCode CC){
       case ISD::SETLT:
           Opc = I8085::SET_LT_16;
           break;
+
+      case ISD::SETULT:
+          Opc = I8085::SET_ULT_16;
+          break;
+
+      case ISD::SETUGE:
+          Opc = I8085::SET_UGE_16;
+          break;
+
+      case ISD::SETULE:
+          Opc = I8085::SET_ULE_16;
+          break;
+
+      case ISD::SETUGT:
+          Opc = I8085::SET_UGT_16;
+          break;    
   }
   return Opc;
 }
