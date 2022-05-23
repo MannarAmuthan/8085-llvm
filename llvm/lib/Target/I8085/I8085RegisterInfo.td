@@ -65,12 +65,12 @@ def R28 : I8085Reg<28, "r28", [], ["yl"]>, DwarfRegNum<[28]>;
 def R29 : I8085Reg<29, "r29", [], ["yh"]>, DwarfRegNum<[29]>;
 def R30 : I8085Reg<30, "r30", [], ["zl"]>, DwarfRegNum<[30]>;
 def R31 : I8085Reg<31, "r31", [], ["zh"]>, DwarfRegNum<[31]>;
-def SPL : I8085Reg<32, "SPL">, DwarfRegNum<[32]>;
-def SPH : I8085Reg<33, "SPH">, DwarfRegNum<[33]>;
+// def SPL : I8085Reg<32, "SPL">, DwarfRegNum<[32]>;
+// def SPH : I8085Reg<33, "SPH">, DwarfRegNum<[33]>;
 
 let SubRegIndices = [sub_lo, sub_hi], CoveredBySubRegs = 1 in {
   // 16 bit GPR pairs.
-  def SP : I8085Reg<32, "SP", [SPL, SPH]>, DwarfRegNum<[32]>;
+  // def SP : I8085Reg<32, "SP", [SPL, SPH]>, DwarfRegNum<[32]>;
 
   // The pointer registers (X,Y,Z) are a special case because they
   // are printed as a `high:low` pair when a DREG is expected,
@@ -216,13 +216,10 @@ def PTRDISPREGS : RegisterClass<"I8085", [i16], 8, (add R31R30, R29R28), ptr>;
 def ZREG : RegisterClass<"I8085", [i16], 8, (add R31R30)>;
 
 // Register class used for the stack read pseudo instruction.
-def GPRSP : RegisterClass<"I8085", [i16], 8, (add SP)>;
+
 
 // Status register.
-def SREG : I8085Reg<14, "FLAGS">, DwarfRegNum<[88]>;
-def CCR : RegisterClass<"I8085", [i8], 8, (add SREG)> {
-  let CopyCost = -1; // Don't allow copying of status registers
-}
+
 
 
 
@@ -237,13 +234,20 @@ def H : I8085Reg<115, "H">, DwarfRegNum<[115]>;
 def L : I8085Reg<116, "L">, DwarfRegNum<[116]>;
 
 
+def SP : I8085Reg<166, "SP">, DwarfRegNum<[166]>;
+
 let SubRegIndices = [sub_lo, sub_hi], CoveredBySubRegs = 1 in {
 def BC : I8085Reg<111, "C:B", [B, C]>, DwarfRegNum<[111]>;
 def DE : I8085Reg<113, "E:D", [D, E]>, DwarfRegNum<[113]>; 
 }
 
+def GPRSP : RegisterClass<"I8085", [i16], 8, (add SP)>;
 
+def SREG : I8085Reg<14, "FLAGS">, DwarfRegNum<[88]>;
 
+def CCR : RegisterClass<"I8085", [i8], 8, (add SREG)> {
+  let CopyCost = -1; // Don't allow copying of status registers
+}
 
 def GR8 : RegisterClass<"I8085", [i8], 8,
                         (

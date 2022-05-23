@@ -42,8 +42,8 @@ def RetCC_I8085_BUILTIN : CallingConv<[
 def ArgCC_I8085_Vararg : CallingConv<[
   // i8 are always passed through the stack with a byte slot and byte alignment.
   CCIfType<[i8], CCAssignToStack<1, 1>>,
+  CCIfType<[i16], CCAssignToStack<2, 1>>,
   // i16 are always passed through the stack with an alignment of 1.
-  CCAssignToStack<2, 1>
 ]>;
 
 //===----------------------------------------------------------------------===//

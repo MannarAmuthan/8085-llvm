@@ -674,7 +674,7 @@ template <> bool I8085ExpandPseudo::expand<I8085::SUB_16>(Block &MBB, BlockIt MB
       .addReg(opHigh);
 
   buildMI(MBB, MBBI, I8085::MOV)
-      .addReg(destHigh, RegState::Define)
+      .addReg(destHigh, RegState::Define | getDeadRegState(DstIsDead))
       .addReg(I8085::A);
 
   MI.eraseFromParent();
@@ -995,6 +995,38 @@ template <> bool I8085ExpandPseudo::expand<I8085::JMP_16_IF_POSITIVE>(Block &MBB
   return true;
 }
 
+template <> bool I8085ExpandPseudo::expand<I8085::STORE_8_AT_OFFSET_WITH_SP>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned srcReg = MI.getOperand(0).getReg();
+  int64_t offsetToStore = MI.getOperand(1).getImm();
+  
+  buildMI(MBB, MBBI, I8085::STORE_8)
+    .addReg(I8085::SP)
+    .addImm(offsetToStore)
+    .addReg(srcReg);
+  
+  MI.eraseFromParent();
+  return true;
+}
+
+template <> bool I8085ExpandPseudo::expand<I8085::STORE_16_AT_OFFSET_WITH_SP>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned srcReg = MI.getOperand(0).getReg();
+  int64_t offsetToStore = MI.getOperand(1).getImm();
+  
+  buildMI(MBB, MBBI, I8085::STORE_16)
+    .addReg(I8085::SP)
+    .addImm(offsetToStore)
+    .addReg(srcReg);
+  
+  MI.eraseFromParent();
+  return true;
+}
+
 bool I8085ExpandPseudo::expandMI(Block &MBB, BlockIt MBBI) {
   MachineInstr &MI = *MBBI;
   int Opcode = MBBI->getOpcode();
@@ -1004,7 +1036,8 @@ bool I8085ExpandPseudo::expandMI(Block &MBB, BlockIt MBBI) {
     return expand<Op>(MBB, MI)
 
   switch (Opcode) {
-    
+    EXPAND(I8085::STORE_16_AT_OFFSET_WITH_SP);
+    EXPAND(I8085::STORE_8_AT_OFFSET_WITH_SP);
     EXPAND(I8085::JMP_16_IF_POSITIVE);
     EXPAND(I8085::JMP_16_IF_SAME_SIGN);
     EXPAND(I8085::JMP_16_IF_NOT_EQUAL);

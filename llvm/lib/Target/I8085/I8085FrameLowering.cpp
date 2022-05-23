@@ -26,6 +26,7 @@
 #include "llvm/IR/Function.h"
 
 #include <vector>
+#include <iostream>
 
 namespace llvm {
 
@@ -130,15 +131,6 @@ static void restoreStatusRegister(MachineFunction &MF, MachineBasicBlock &MBB) {
   const I8085Subtarget &STI = MF.getSubtarget<I8085Subtarget>();
   const I8085InstrInfo &TII = *STI.getInstrInfo();
 
-  // Emit special epilogue code to restore R1, R0 and SREG in interrupt/signal
-  // handlers at the very end of the function, just before reti.
-  if (AFI->isInterruptOrSignalHandler()) {
-    // BuildMI(MBB, MBBI, DL, TII.get(I8085::POPRd), I8085::R0);
-    // BuildMI(MBB, MBBI, DL, TII.get(I8085::OUTARr))
-    //     .addImm(STI.getIORegSREG())
-    //     .addReg(I8085::R0, RegState::Kill);
-    // BuildMI(MBB, MBBI, DL, TII.get(I8085::POPWRd), I8085::R1R0);
-  }
 }
 
 void I8085FrameLowering::emitEpilogue(MachineFunction &MF,
@@ -275,35 +267,6 @@ bool I8085FrameLowering::restoreCalleeSavedRegisters(
   return true;
 }
 
-/// Replace pseudo store instructions that pass arguments through the stack with
-/// real instructions.
-static void fixStackStores(MachineBasicBlock &MBB,
-                           MachineBasicBlock::iterator StartMI,
-                           const TargetInstrInfo &TII, Register FP) {
-  // Iterate through the BB until we hit a call instruction or we reach the end.
-  for (MachineInstr &MI :
-       llvm::make_early_inc_range(llvm::make_range(StartMI, MBB.end()))) {
-    if (MI.isCall())
-      break;
-
-    unsigned Opcode = MI.getOpcode();
-
-    // Only care of pseudo store instructions where SP is the base pointer.
-    if (Opcode != I8085::STORE_8)
-      continue;
-
-    // assert(MI.getOperand(0).getReg() == I8085::SP &&
-    //        "Invalid register, should be SP!");
-
-    // Replace this instruction with a regular store. Use Y as the base
-    // pointer since it is guaranteed to contain a copy of SP.
-    unsigned STOpc = I8085::STORE_8;
-    
-    MI.setDesc(TII.get(STOpc));
-    MI.getOperand(0).setReg(FP);
-  }
-}
-
 MachineBasicBlock::iterator I8085FrameLowering::eliminateCallFramePseudoInstr(
     MachineFunction &MF, MachineBasicBlock &MBB,
     MachineBasicBlock::iterator MI) const {
@@ -311,10 +274,8 @@ MachineBasicBlock::iterator I8085FrameLowering::eliminateCallFramePseudoInstr(
   const I8085InstrInfo &TII = *STI.getInstrInfo();
 
   // There is nothing to insert when the call frame memory is allocated during
-  // function entry. Delete the call frame pseudo and replace all pseudo stores
-  // with real store instructions.
+  // function entry. Delete the call frame pseudo
   if (hasReservedCallFrame(MF)) {
-    fixStackStores(MBB, MI, TII, I8085::R29R28);
     return MBB.erase(MI);
   }
 
@@ -332,7 +293,6 @@ MachineBasicBlock::iterator I8085FrameLowering::eliminateCallFramePseudoInstr(
         BuildMI(MBB, MI, DL, TII.get(I8085::GROW_STACK_BY))
             .addImm(Amount);
 
-      fixStackStores(MBB, MI, TII, I8085::L);
     } else {
       assert(Opcode == TII.getCallFrameDestroyOpcode());
 
@@ -351,10 +311,10 @@ void I8085FrameLowering::determineCalleeSaves(MachineFunction &MF,
   TargetFrameLowering::determineCalleeSaves(MF, SavedRegs, RS);
 
   // If we have a frame pointer, the Y register needs to be saved as well.
-  if (hasFP(MF)) {
-    SavedRegs.set(I8085::H);
-    SavedRegs.set(I8085::L);
-  }
+  // if (hasFP(MF)) {
+  //   SavedRegs.set(I8085::H);
+  //   SavedRegs.set(I8085::L);
+  // }
 }
 /// The frame analyzer pass.
 ///
@@ -394,11 +354,6 @@ struct I8085FrameAnalyzer : public MachineFunctionPass {
     for (const MachineBasicBlock &BB : MF) {
       for (const MachineInstr &MI : BB) {
         int Opcode = MI.getOpcode();
-
-        if ((Opcode != I8085::LDDRdPtrQ) && (Opcode != I8085::LDDWRdPtrQ) &&
-            (Opcode != I8085::STDPtrQRr) && (Opcode != I8085::STDWPtrQRr)) {
-          continue;
-        }
 
         for (const MachineOperand &MO : MI.operands()) {
           if (!MO.isFI()) {

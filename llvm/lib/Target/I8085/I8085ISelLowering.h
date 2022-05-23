@@ -49,11 +49,6 @@ enum NodeType {
   ASRLO,   ///< Lower 8-bit of word arithmetic shift right.
   ROR,     ///< Bit rotate right.
   ROL,     ///< Bit rotate left.
-  LSLLOOP, ///< A loop of single logical shift left instructions.
-  LSRLOOP, ///< A loop of single logical shift right instructions.
-  ROLLOOP, ///< A loop of single left bit rotate instructions.
-  RORLOOP, ///< A loop of single right bit rotate instructions.
-  ASRLOOP, ///< A loop of single arithmetic shift right instructions.
   /// I8085 conditional branches. Operand 0 is the chain operand, operand 1
   /// is the block to branch if condition is true, operand 2 is the
   /// condition code, and operand 3 is the flag operand produced by a CMP
@@ -71,7 +66,7 @@ enum NodeType {
   /// is condition code and operand 3 is flag operand.
   SELECT_CC,
 
-  INC_STACK_BY
+  STORE_OFFSET_SP
 };
 
 } // end of namespace I8085ISD

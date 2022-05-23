@@ -249,10 +249,6 @@ template <> bool I8085DAGToDAGISel::select<ISD::BR_CC>(SDNode *N) {
   }
   SDNode *SETccNode=CurDAG->getMachineNode(Opc, dl,MVT::i8,{LHS,RHS});
 
-  if(SETccNode->getSimpleValueType(0) == MVT::i16){
-    JumpOpc=I8085::JMP_16_IF;
-  }
-
   SDValue Ops[] = {SDValue(SETccNode, 0),JumpTo,Chain};
   
   SDNode *ResNode = CurDAG->getMachineNode(JumpOpc, dl,MVT::Other,Ops);

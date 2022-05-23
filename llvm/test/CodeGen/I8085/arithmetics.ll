@@ -1,4 +1,4 @@
-; RUN: llc -mattr=i8085,sram < %s -march=i8085  -verify-machineinstrs | FileCheck %s
+; RUN: llc -mattr=i8085,sram < %s -march=i8085 | FileCheck %s
 
 define i16 @add_sub_1(i16,i16) {
 ; CHECK-LABEL:   add_sub_1:

@@ -164,17 +164,6 @@ bool I8085AsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
   (void)MO;
   assert(MO.isReg() && "Unexpected inline asm memory operand");
 
-  // TODO: We should be able to look up the alternative name for
-  // the register if it's given.
-  // TableGen doesn't expose a way of getting retrieving names
-  // for registers.
-  if (MI->getOperand(OpNum).getReg() == I8085::R31R30) {
-    O << "Z";
-  } else {
-    assert(MI->getOperand(OpNum).getReg() == I8085::R29R28 &&
-           "Wrong register class for memory operand.");
-    O << "Y";
-  }
 
   // If NumOpRegs == 2, then we assume it is product of a FrameIndex expansion
   // and the second operand is an Imm.
@@ -220,10 +209,7 @@ bool I8085AsmPrinter::doFinalization(Module &M) {
 }
 
 void I8085AsmPrinter::emitStartOfAsmFile(Module &M) {
-  const I8085TargetMachine &TM = (const I8085TargetMachine &)MMI->getTarget();
-  const I8085Subtarget *SubTM = (const I8085Subtarget *)TM.getSubtargetImpl();
-  if (!SubTM)
-    return;
+
 }
 
 } // end of namespace llvm

@@ -53,25 +53,7 @@ I8085RegisterInfo::getCallPreservedMask(const MachineFunction &MF,
 BitVector I8085RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   BitVector Reserved(getNumRegs());
 
-
-  Reserved.set(I8085::R0);
-  Reserved.set(I8085::R1);
-  Reserved.set(I8085::R1R0);
-
-  // Reserve the stack pointer.
-  Reserved.set(I8085::SPL);
-  Reserved.set(I8085::SPH);
   Reserved.set(I8085::SP);
-
-
-  if (MF.getSubtarget<I8085Subtarget>().hasTinyEncoding()) {
-    // Reserve 8-bit registers R2~R15, Rtmp(R16) and Zero(R17).
-    for (unsigned Reg = I8085::R2; Reg <= I8085::R17; Reg++)
-      Reserved.set(Reg);
-    // Reserve 16-bit registers R3R2~R18R17.
-    for (unsigned Reg = I8085::R3R2; Reg <= I8085::R18R17; Reg++)
-      Reserved.set(Reg);
-  }
 
   Reserved.set(I8085::A);
   Reserved.set(I8085::H);
@@ -117,15 +99,6 @@ void I8085RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   int FrameIndex = MI.getOperand(FIOperandNum).getIndex();
   int Offset = MFI.getObjectOffset(FrameIndex);
 
-  // std::cout << "############" << "\n";
-  // MI.dump();
-  // std::cout << Offset << "\n";
-  // std::cout << MFI.getStackSize() << "\n";
-  // std::cout << TFI->getOffsetOfLocalArea() << "\n";
-  // std::cout << FIOperandNum << "\n";
-  // std::cout << MI.getOperand(FIOperandNum + 1).getImm() << "\n";
-
-
   // Add one to the offset because SP points to an empty slot.
   // Offset += MFI.getStackSize() - TFI->getOffsetOfLocalArea() + 1;
 
@@ -133,27 +106,19 @@ void I8085RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   // Fold incoming offset.
   Offset += MI.getOperand(FIOperandNum + 1).getImm();
 
-  // std::cout << Offset << "\n";
-  // std::cout << "############" << "\n";
   
 
   // If the offset is too big we have to adjust and restore the frame pointer
   // to materialize a valid load/store with displacement.
   //: TODO: consider using only one adiw/sbiw chain for more than one frame
   //: index
-  
-  MI.getOperand(FIOperandNum).ChangeToRegister(I8085::L, false);
+
+  MI.getOperand(FIOperandNum).ChangeToRegister(I8085::SP, false);
   assert(isUInt<6>(Offset) && "Offset is out of range");
   MI.getOperand(FIOperandNum + 1).ChangeToImmediate(Offset);
 }
 
 Register I8085RegisterInfo::getFrameRegister(const MachineFunction &MF) const {
-  const TargetFrameLowering *TFI = MF.getSubtarget().getFrameLowering();
-  if (TFI->hasFP(MF)) {
-    // The Y pointer register
-    return I8085::L;
-  }
-
   return I8085::SP;
 }
 

@@ -60,9 +60,19 @@ void I8085InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
     }
   } else {
 
-    Opc = I8085::MOV;
-    BuildMI(MBB, MI, DL, get(Opc), DestReg)
-        .addReg(SrcReg, getKillRegState(KillSrc));
+  unsigned destLow,destHigh;
+  if(DestReg==I8085::BC){  destLow=I8085::C;  destHigh=I8085::B; }
+  if(DestReg==I8085::DE){  destLow=I8085::E;  destHigh=I8085::D; }
+
+  unsigned srcLow,srcHigh;
+  if(SrcReg==I8085::BC){  srcLow=I8085::C;  srcHigh=I8085::B; }
+  if(SrcReg==I8085::DE){  srcLow=I8085::E;  srcHigh=I8085::D; }
+
+  Opc = I8085::MOV;
+  BuildMI(MBB, MI, DL, get(Opc), destHigh)
+        .addReg(srcHigh, getKillRegState(KillSrc));
+  BuildMI(MBB, MI, DL, get(Opc), destLow)
+        .addReg(srcLow, getKillRegState(KillSrc));    
   }
 }
 
