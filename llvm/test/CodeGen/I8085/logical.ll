@@ -1,4 +1,4 @@
-; RUN: llc -mattr=i8085,sram < %s -march=i8085 | FileCheck %s
+; RUN: llc -mattr=i8085,sram < %s -march=i8085 -verify-machineinstrs  | FileCheck %s
 
 define i8 @functionone(i8,i8) {
 ; CHECK-LABEL:   functionone: 
@@ -28,60 +28,55 @@ define i8 @functionone(i8,i8) {
 
 define i16 @functiontwo(i16,i16) {
 ; CHECK-LABEL:   functiontwo:   
-; CHECK: LXI H, 0
-; CHECK: DAD	SP
-; CHECK: MOV	A, L
-; CHECK: MVI	L, 2
-; CHECK: SUB L
-; CHECK: MOV	L, A
-; CHECK: MOV	A, H
-; CHECK: MVI	H, 0
-; CHECK: SBB H
-; CHECK: MOV	H, A
-; CHECK: SPHL
-; CHECK: LXI H, 7
-; CHECK: DAD	SP
-; CHECK: MOV D, M
-; CHECK: LXI H, 6
-; CHECK: DAD	SP
-; CHECK: MOV E, M
-; CHECK: LXI H, 5
-; CHECK: DAD	SP
-; CHECK: MOV B, M
-; CHECK: LXI H, 4
-; CHECK: DAD	SP
-; CHECK: MOV C, M
-; CHECK: LXI H, 1
-; CHECK: DAD	SP
-; CHECK: MOV M, B
-; CHECK: LXI H, 0
-; CHECK: DAD	SP
-; CHECK: MOV M, C
-; CHECK: MOV	A, C
-; CHECK: XRA E
-; CHECK: MOV	C, A
-; CHECK: MOV	A, B
-; CHECK: XRA D
-; CHECK: MOV	B, A
-; CHECK: MOV	A, C
-; CHECK: ANA E
-; CHECK: MOV	C, A
-; CHECK: MOV	A, B
-; CHECK: ANA D
-; CHECK: MOV	B, A
-; CHECK: LXI H, 1
-; CHECK: DAD	SP
-; CHECK: MOV D, M
-; CHECK: LXI H, 0
-; CHECK: DAD	SP
-; CHECK: MOV E, M
-; CHECK: MOV	A, C
-; CHECK: ORA E
-; CHECK: MOV	C, A
-; CHECK: MOV	A, B
-; CHECK: ORA D
-; CHECK: MOV	B, A
-; CHECK: RET
+; CHECK:  LXI H, 65534
+; CHECK:	DAD	SP
+; CHECK:	SPHL
+; CHECK:	LXI H, 7
+; CHECK:	DAD	SP
+; CHECK:	MOV D, M
+; CHECK:	LXI H, 6
+; CHECK:	DAD	SP
+; CHECK:	MOV E, M
+; CHECK:	LXI H, 5
+; CHECK:	DAD	SP
+; CHECK:	MOV B, M
+; CHECK:	LXI H, 4
+; CHECK:	DAD	SP
+; CHECK:	MOV C, M
+; CHECK:	LXI H, 1
+; CHECK:	DAD	SP
+; CHECK:	MOV M, B
+; CHECK:	LXI H, 0
+; CHECK:	DAD	SP
+; CHECK:	MOV M, C
+; CHECK:	MOV	A, C
+; CHECK:	XRA E
+; CHECK:	MOV	C, A
+; CHECK:	MOV	A, B
+; CHECK:	XRA D
+; CHECK:	MOV	B, A
+; CHECK:	MOV	A, C
+; CHECK:	ANA E
+; CHECK:	MOV	C, A
+; CHECK:	MOV	A, B
+; CHECK:	ANA D
+; CHECK:	MOV	B, A
+; CHECK:	LXI H, 1
+; CHECK:	DAD	SP
+; CHECK:	MOV D, M
+; CHECK:	LXI H, 0
+; CHECK:	DAD	SP
+; CHECK:	MOV E, M
+; CHECK:	MOV	A, C
+; CHECK:	ORA E
+; CHECK:	MOV	C, A
+; CHECK:	MOV	A, B
+; CHECK:	ORA D
+; CHECK:	MOV	B, A
+; CHECK:	LXI H, 2
+; CHECK:	DAD	SP
+; CHECK:	SPHL
+; CHECK:	RET
 
   %3 = xor i16 %0, %1 
   %4 = and i16 %3, %1

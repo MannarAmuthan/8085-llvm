@@ -1,4 +1,4 @@
-; RUN: llc -mattr=i8085,sram < %s -march=i8085  | FileCheck %s
+; RUN: llc -mattr=i8085,sram < %s -march=i8085 -verify-machineinstrs  | FileCheck %s
 
 define i16 @argpass16(i16,i16,i16) #0  {
 ; CHECK-LABEL:   argpass16:     
