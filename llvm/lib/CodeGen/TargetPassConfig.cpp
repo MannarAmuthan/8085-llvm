@@ -138,6 +138,11 @@ static cl::opt<RunOutliner> EnableMachineOutliner(
                           "Disable all outlining"),
                // Sentinel value for unspecified option.
                clEnumValN(RunOutliner::AlwaysOutline, "", "")));
+// Disable the pass to fix unwind information. Whether the pass is included in
+// the pipeline is controlled via the target options, this option serves as
+// manual override.
+static cl::opt<bool> DisableCFIFixup("disable-cfi-fixup", cl::Hidden,
+                                     cl::desc("Disable the CFI fixup pass"));
 // Enable or disable FastISel. Both options are needed, because
 // FastISel is enabled by default with -fast, and we wish to be
 // able to enable or disable fast-isel independently from -O0.
@@ -254,6 +259,11 @@ static cl::opt<bool> EnableMachineFunctionSplitter(
 static cl::opt<bool> DisableExpandReductions(
     "disable-expand-reductions", cl::init(false), cl::Hidden,
     cl::desc("Disable the expand reduction intrinsics pass from running"));
+
+/// Disable the select optimization pass.
+static cl::opt<bool> DisableSelectOptimize(
+    "disable-select-optimize", cl::init(true), cl::Hidden,
+    cl::desc("Disable the select-optimization pass from running"));
 
 /// Allow standard passes to be disabled by command line options. This supports
 /// simple binary flags that either suppress the pass or do nothing.
@@ -489,6 +499,7 @@ CGPassBuilderOption llvm::getCGPassBuilderOption() {
   SET_BOOLEAN_OPTION(DisableConstantHoisting)
   SET_BOOLEAN_OPTION(DisableCGP)
   SET_BOOLEAN_OPTION(DisablePartialLibcallInlining)
+  SET_BOOLEAN_OPTION(DisableSelectOptimize)
   SET_BOOLEAN_OPTION(PrintLSR)
   SET_BOOLEAN_OPTION(PrintISelInput)
   SET_BOOLEAN_OPTION(PrintGCInfo)
@@ -930,6 +941,10 @@ void TargetPassConfig::addIRPasses() {
 
   if (getOptLevel() != CodeGenOpt::None)
     addPass(createTLSVariableHoistPass());
+
+  // Convert conditional moves to conditional jumps when profitable.
+  if (getOptLevel() != CodeGenOpt::None && !DisableSelectOptimize)
+    addPass(createSelectOptimizePass());
 }
 
 /// Turn exception handling constructs into something the code generators can
@@ -1274,6 +1289,9 @@ void TargetPassConfig::addMachinePasses() {
              EnableMachineFunctionSplitter) {
     addPass(createMachineFunctionSplitterPass());
   }
+
+  if (!DisableCFIFixup && TM->Options.EnableCFIFixup)
+    addPass(createCFIFixup());
 
   // Add passes that directly emit MI after all other MI passes.
   addPreEmitPass2();

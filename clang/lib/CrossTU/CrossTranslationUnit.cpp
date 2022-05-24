@@ -220,14 +220,9 @@ createCrossTUIndexString(const llvm::StringMap<std::string> &Index) {
   return Result.str();
 }
 
-bool containsConst(const VarDecl *VD, const ASTContext &ACtx) {
+bool shouldImport(const VarDecl *VD, const ASTContext &ACtx) {
   CanQualType CT = ACtx.getCanonicalType(VD->getType());
-  if (!CT.isConstQualified()) {
-    const RecordType *RTy = CT->getAs<RecordType>();
-    if (!RTy || !RTy->hasConstFields())
-      return false;
-  }
-  return true;
+  return CT.isConstQualified() && VD->getType().isTrivialType(ACtx);
 }
 
 static bool hasBodyOrInit(const FunctionDecl *D, const FunctionDecl *&DefD) {
@@ -804,6 +799,19 @@ CrossTranslationUnitContext::getMacroExpansionContextForSourceLocation(
     const clang::SourceLocation &ToLoc) const {
   // FIXME: Implement: Record such a context for every imported ASTUnit; lookup.
   return llvm::None;
+}
+
+bool CrossTranslationUnitContext::isImportedAsNew(const Decl *ToDecl) const {
+  if (!ImporterSharedSt)
+    return false;
+  return ImporterSharedSt->isNewDecl(const_cast<Decl *>(ToDecl));
+}
+
+bool CrossTranslationUnitContext::hasError(const Decl *ToDecl) const {
+  if (!ImporterSharedSt)
+    return false;
+  return static_cast<bool>(
+      ImporterSharedSt->getImportDeclErrorIfAny(const_cast<Decl *>(ToDecl)));
 }
 
 } // namespace cross_tu

@@ -478,9 +478,11 @@ add_entrypoint_object(
   DEPENDS
     .common_constants
     libc.src.__support.FPUtil.fputil
+    libc.src.__support.FPUtil.polyeval
     libc.include.math
   COMPILE_OPTIONS
     -O3
+    -mfma
 )
 
 add_entrypoint_object(
@@ -491,9 +493,11 @@ add_entrypoint_object(
     ../exp2f.h
   DEPENDS
     libc.src.__support.FPUtil.fputil
+    libc.src.__support.FPUtil.polyeval
     libc.include.math
   COMPILE_OPTIONS
     -O3
+    -mfma
 )
 
 add_entrypoint_object(
@@ -505,9 +509,12 @@ add_entrypoint_object(
   DEPENDS
     .common_constants
     libc.src.__support.FPUtil.fputil
+    libc.src.__support.FPUtil.multiply_add
+    libc.src.__support.FPUtil.polyeval
     libc.include.math
   COMPILE_OPTIONS
     -O3
+    -mfma
 )
 
 add_entrypoint_object(
@@ -671,8 +678,11 @@ add_entrypoint_object(
   DEPENDS
     .common_constants
     libc.src.__support.FPUtil.fputil
+    libc.src.__support.FPUtil.multiply_add
+    libc.src.__support.FPUtil.polyeval
   COMPILE_OPTIONS
     -O3
+    -mfma
 )
 
 add_entrypoint_object(
@@ -684,8 +694,11 @@ add_entrypoint_object(
   DEPENDS
     .common_constants
     libc.src.__support.FPUtil.fputil
+    libc.src.__support.FPUtil.multiply_add
+    libc.src.__support.FPUtil.polyeval
   COMPILE_OPTIONS
     -O3
+    -mfma
 )
 
 add_entrypoint_object(
@@ -697,8 +710,10 @@ add_entrypoint_object(
   DEPENDS
     .common_constants
     libc.src.__support.FPUtil.fputil
+    libc.src.__support.FPUtil.polyeval
     COMPILE_OPTIONS
     -O3
+    -mfma
 )
 
 add_entrypoint_object(
@@ -710,8 +725,11 @@ add_entrypoint_object(
   DEPENDS
     .common_constants
     libc.src.__support.FPUtil.fputil
+    libc.src.__support.FPUtil.multiply_add
+    libc.src.__support.FPUtil.polyeval
   COMPILE_OPTIONS
     -O3
+    -mfma
 )
 
 add_entrypoint_object(
@@ -1073,7 +1091,9 @@ add_object_library(
   HDRS
     dp_trig.h
   DEPENDS
-    libc.src.__support.FPUtil.fputil
+    libc.src.__support.FPUtil.fputil #FPBits and ManipulationFunction
+    libc.src.__support.FPUtil.xfloat
+    libc.src.__support.CPP.uint
   COMPILE_OPTIONS
    -O3
 )

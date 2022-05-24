@@ -480,6 +480,8 @@ private:
       return "InitializingStructuredBinding";
     case CodeSynthesisContext::MarkingClassDllexported:
       return "MarkingClassDllexported";
+    case CodeSynthesisContext::BuildingBuiltinDumpStructCall:
+      return "BuildingBuiltinDumpStructCall";
     }
     return "";
   }
@@ -1078,6 +1080,7 @@ void PrintPreambleAction::ExecuteAction() {
   case Language::OpenCLCXX:
   case Language::CUDA:
   case Language::HIP:
+  case Language::HLSL:
     break;
 
   case Language::Unknown:

@@ -409,7 +409,8 @@ public:
 
   /// Creates an operation with the given fields.
   Operation *create(Location loc, StringAttr opName, ValueRange operands,
-                    TypeRange types, ArrayRef<NamedAttribute> attributes = {},
+                    TypeRange types = {},
+                    ArrayRef<NamedAttribute> attributes = {},
                     BlockRange successors = {},
                     MutableArrayRef<std::unique_ptr<Region>> regions = {});
 
@@ -475,7 +476,7 @@ public:
 
   /// Overload to create or fold a zero result operation.
   template <typename OpTy, typename... Args>
-  typename std::enable_if<OpTy::template hasTrait<OpTrait::ZeroResult>(),
+  typename std::enable_if<OpTy::template hasTrait<OpTrait::ZeroResults>(),
                           OpTy>::type
   createOrFold(Location location, Args &&...args) {
     auto op = create<OpTy>(location, std::forward<Args>(args)...);

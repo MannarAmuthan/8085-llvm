@@ -1768,7 +1768,7 @@ void Parser::ParseOpenMPEndAssumesDirective(SourceLocation Loc) {
 /// Parsing of simple OpenMP clauses like 'default' or 'proc_bind'.
 ///
 ///    default-clause:
-///         'default' '(' 'none' | 'shared'  | 'firstprivate' ')
+///         'default' '(' 'none' | 'shared'  | 'private' | 'firstprivate' ')
 ///
 ///    proc_bind-clause:
 ///         'proc_bind' '(' 'master' | 'close' | 'spread' ')
@@ -3108,7 +3108,8 @@ OMPClause *Parser::ParseOpenMPUsesAllocatorClause(OpenMPDirectiveKind DKind) {
 ///       in_reduction-clause | allocator-clause | allocate-clause |
 ///       acq_rel-clause | acquire-clause | release-clause | relaxed-clause |
 ///       depobj-clause | destroy-clause | detach-clause | inclusive-clause |
-///       exclusive-clause | uses_allocators-clause | use_device_addr-clause
+///       exclusive-clause | uses_allocators-clause | use_device_addr-clause |
+///       has_device_addr
 ///
 OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
                                      OpenMPClauseKind CKind, bool FirstClause) {
@@ -3290,6 +3291,7 @@ OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
   case OMPC_use_device_ptr:
   case OMPC_use_device_addr:
   case OMPC_is_device_ptr:
+  case OMPC_has_device_addr:
   case OMPC_allocate:
   case OMPC_nontemporal:
   case OMPC_inclusive:
@@ -3584,7 +3586,7 @@ OMPClause *Parser::ParseOpenMPInteropClause(OpenMPClauseKind Kind,
 /// Parsing of simple OpenMP clauses like 'default' or 'proc_bind'.
 ///
 ///    default-clause:
-///         'default' '(' 'none' | 'shared' | 'firstprivate' ')'
+///         'default' '(' 'none' | 'shared' | 'private' | 'firstprivate' ')'
 ///
 ///    proc_bind-clause:
 ///         'proc_bind' '(' 'master' | 'close' | 'spread' ')'
@@ -3602,10 +3604,14 @@ OMPClause *Parser::ParseOpenMPSimpleClause(OpenMPClauseKind Kind,
   if (!Val || ParseOnly)
     return nullptr;
   if (getLangOpts().OpenMP < 51 && Kind == OMPC_default &&
-      static_cast<DefaultKind>(Val.getValue().Type) ==
-          OMP_DEFAULT_firstprivate) {
+      (static_cast<DefaultKind>(Val.getValue().Type) == OMP_DEFAULT_private ||
+       static_cast<DefaultKind>(Val.getValue().Type) ==
+           OMP_DEFAULT_firstprivate)) {
     Diag(Val.getValue().LOpen, diag::err_omp_invalid_dsa)
-        << getOpenMPClauseName(OMPC_firstprivate)
+        << getOpenMPClauseName(static_cast<DefaultKind>(Val.getValue().Type) ==
+                                       OMP_DEFAULT_private
+                                   ? OMPC_private
+                                   : OMPC_firstprivate)
         << getOpenMPClauseName(OMPC_default) << "5.1";
     return nullptr;
   }
@@ -4449,6 +4455,8 @@ bool Parser::ParseOpenMPVarList(OpenMPDirectiveKind DKind,
 ///       'use_device_addr' '(' list ')'
 ///    is_device_ptr-clause:
 ///       'is_device_ptr' '(' list ')'
+///    has_device_addr-clause:
+///       'has_device_addr' '(' list ')'
 ///    allocate-clause:
 ///       'allocate' '(' [ allocator ':' ] list ')'
 ///    nontemporal-clause:

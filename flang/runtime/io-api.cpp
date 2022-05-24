@@ -337,6 +337,21 @@ Cookie IONAME(BeginOpenNewUnit)( // OPEN(NEWUNIT=j)
       unit, false /*was an existing file*/, sourceFile, sourceLine);
 }
 
+Cookie IONAME(BeginWait)(ExternalUnit unitNumber, AsynchronousId id) {
+  // TODO: add and use sourceFile & sourceLine here
+  Terminator oom;
+  // TODO: add and use sourceFile & sourceLine here
+  auto &io{
+      New<NoopStatementState>{oom}(nullptr, 0).release()->ioStatementState()};
+  if (id != 0 && !ExternalFileUnit::LookUp(unitNumber)) {
+    io.GetIoErrorHandler().SetPendingError(IostatBadWaitUnit);
+  }
+  return &io;
+}
+Cookie IONAME(BeginWaitAll)(ExternalUnit unitNumber) {
+  return IONAME(BeginWait)(unitNumber, 0 /*no ID=*/);
+}
+
 Cookie IONAME(BeginClose)(
     ExternalUnit unitNumber, const char *sourceFile, int sourceLine) {
   if (ExternalFileUnit * unit{ExternalFileUnit::LookUpForClose(unitNumber)}) {
@@ -475,15 +490,14 @@ static bool YesOrNo(const char *keyword, std::size_t length, const char *what,
 bool IONAME(SetAdvance)(
     Cookie cookie, const char *keyword, std::size_t length) {
   IoStatementState &io{*cookie};
-  bool nonAdvancing{
-      !YesOrNo(keyword, length, "ADVANCE", io.GetIoErrorHandler())};
+  IoErrorHandler &handler{io.GetIoErrorHandler()};
+  bool nonAdvancing{!YesOrNo(keyword, length, "ADVANCE", handler)};
   if (nonAdvancing && io.GetConnectionState().access == Access::Direct) {
-    io.GetIoErrorHandler().SignalError(
-        "Non-advancing I/O attempted on direct access file");
+    handler.SignalError("Non-advancing I/O attempted on direct access file");
   } else {
     io.mutableModes().nonAdvancing = nonAdvancing;
   }
-  return true;
+  return !handler.InError();
 }
 
 bool IONAME(SetBlank)(Cookie cookie, const char *keyword, std::size_t length) {
@@ -543,9 +557,9 @@ bool IONAME(SetDelim)(Cookie cookie, const char *keyword, std::size_t length) {
 
 bool IONAME(SetPad)(Cookie cookie, const char *keyword, std::size_t length) {
   IoStatementState &io{*cookie};
-  io.mutableModes().pad =
-      YesOrNo(keyword, length, "PAD", io.GetIoErrorHandler());
-  return true;
+  IoErrorHandler &handler{io.GetIoErrorHandler()};
+  io.mutableModes().pad = YesOrNo(keyword, length, "PAD", handler);
+  return !handler.InError();
 }
 
 bool IONAME(SetPos)(Cookie cookie, std::int64_t pos) {
@@ -713,27 +727,23 @@ bool IONAME(SetAction)(Cookie cookie, const char *keyword, std::size_t length) {
 bool IONAME(SetAsynchronous)(
     Cookie cookie, const char *keyword, std::size_t length) {
   IoStatementState &io{*cookie};
-  auto *open{io.get_if<OpenStatementState>()};
-  if (!open) {
-    io.GetIoErrorHandler().Crash(
-        "SetAsynchronous() called when not in an OPEN statement");
-  } else if (open->completedOperation()) {
-    io.GetIoErrorHandler().Crash(
-        "SetAsynchronous() called after GetNewUnit() for an OPEN statement");
+  IoErrorHandler &handler{io.GetIoErrorHandler()};
+  bool isYes{YesOrNo(keyword, length, "ASYNCHRONOUS", handler)};
+  if (auto *open{io.get_if<OpenStatementState>()}) {
+    if (open->completedOperation()) {
+      handler.Crash(
+          "SetAsynchronous() called after GetNewUnit() for an OPEN statement");
+    }
+    open->unit().set_mayAsynchronous(isYes);
+  } else if (ExternalFileUnit * unit{io.GetExternalFileUnit()}) {
+    if (isYes && !unit->mayAsynchronous()) {
+      handler.SignalError(IostatBadAsynchronous);
+    }
+  } else {
+    handler.Crash("SetAsynchronous() called when not in an OPEN or external "
+                  "I/O statement");
   }
-  static const char *keywords[]{"YES", "NO", nullptr};
-  switch (IdentifyValue(keyword, length, keywords)) {
-  case 0:
-    open->unit().set_mayAsynchronous(true);
-    return true;
-  case 1:
-    open->unit().set_mayAsynchronous(false);
-    return true;
-  default:
-    open->SignalError(IostatErrorInKeyword, "Invalid ASYNCHRONOUS='%.*s'",
-        static_cast<int>(length), keyword);
-    return false;
-  }
+  return !handler.InError();
 }
 
 bool IONAME(SetCarriagecontrol)(
@@ -1176,7 +1186,7 @@ bool IONAME(InputCharacter)(
 }
 
 bool IONAME(InputAscii)(Cookie cookie, char *x, std::size_t length) {
-  return IONAME(InputCharacter(cookie, x, length, 1));
+  return IONAME(InputCharacter)(cookie, x, length, 1);
 }
 
 bool IONAME(OutputLogical)(Cookie cookie, bool truth) {
@@ -1275,4 +1285,54 @@ enum Iostat IONAME(EndIoStatement)(Cookie cookie) {
   IoStatementState &io{*cookie};
   return static_cast<enum Iostat>(io.EndIoStatement());
 }
+
+template <typename INT>
+static enum Iostat CheckUnitNumberInRangeImpl(INT unit, bool handleError,
+    char *ioMsg, std::size_t ioMsgLength, const char *sourceFile,
+    int sourceLine) {
+  static_assert(sizeof(INT) >= sizeof(ExternalUnit),
+      "only intended to be used when the INT to ExternalUnit conversion is "
+      "narrowing");
+  if (unit != static_cast<ExternalUnit>(unit)) {
+    Terminator oom{sourceFile, sourceLine};
+    IoErrorHandler errorHandler{oom};
+    if (handleError) {
+      errorHandler.HasIoStat();
+      if (ioMsg) {
+        errorHandler.HasIoMsg();
+      }
+    }
+    // Only provide the bad unit number in the message if SignalError can print
+    // it accurately. Otherwise, the generic IostatUnitOverflow message will be
+    // used.
+    if (static_cast<std::intmax_t>(unit) == unit) {
+      errorHandler.SignalError(IostatUnitOverflow,
+          "UNIT number %jd is out of range", static_cast<std::intmax_t>(unit));
+    } else {
+      errorHandler.SignalError(IostatUnitOverflow);
+    }
+    if (ioMsg) {
+      errorHandler.GetIoMsg(ioMsg, ioMsgLength);
+    }
+    return static_cast<enum Iostat>(errorHandler.GetIoStat());
+  }
+  return IostatOk;
+}
+
+enum Iostat IONAME(CheckUnitNumberInRange64)(std::int64_t unit,
+    bool handleError, char *ioMsg, std::size_t ioMsgLength,
+    const char *sourceFile, int sourceLine) {
+  return CheckUnitNumberInRangeImpl(
+      unit, handleError, ioMsg, ioMsgLength, sourceFile, sourceLine);
+}
+
+#ifdef __SIZEOF_INT128__
+enum Iostat IONAME(CheckUnitNumberInRange128)(common::int128_t unit,
+    bool handleError, char *ioMsg, std::size_t ioMsgLength,
+    const char *sourceFile, int sourceLine) {
+  return CheckUnitNumberInRangeImpl(
+      unit, handleError, ioMsg, ioMsgLength, sourceFile, sourceLine);
+}
+#endif
+
 } // namespace Fortran::runtime::io

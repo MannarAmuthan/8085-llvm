@@ -149,6 +149,7 @@ Expr<SomeType> Parenthesize(Expr<SomeType> &&);
 
 Expr<SomeReal> GetComplexPart(
     const Expr<SomeComplex> &, bool isImaginary = false);
+Expr<SomeReal> GetComplexPart(Expr<SomeComplex> &&, bool isImaginary = false);
 
 template <int KIND>
 Expr<SomeComplex> MakeComplex(Expr<Type<TypeCategory::Real, KIND>> &&re,
@@ -219,16 +220,22 @@ auto UnwrapConvertedExpr(B &x) -> common::Constify<A, B> * {
   } else if constexpr (std::is_same_v<Ty, Expr<SomeType>>) {
     return common::visit(
         [](auto &x) { return UnwrapConvertedExpr<A>(x); }, x.u);
-  } else if constexpr (!common::HasMember<A, TypelessExpression>) {
-    using Result = ResultType<A>;
-    if constexpr (std::is_same_v<Ty, Expr<Result>> ||
-        std::is_same_v<Ty, Expr<SomeKind<Result::category>>>) {
+  } else {
+    using DesiredResult = ResultType<A>;
+    if constexpr (std::is_same_v<Ty, Expr<DesiredResult>> ||
+        std::is_same_v<Ty, Expr<SomeKind<DesiredResult::category>>>) {
       return common::visit(
           [](auto &x) { return UnwrapConvertedExpr<A>(x); }, x.u);
-    } else if constexpr (std::is_same_v<Ty, Parentheses<Result>> ||
-        std::is_same_v<Ty, Convert<Result, Result::category>>) {
-      return common::visit(
-          [](auto &x) { return UnwrapConvertedExpr<A>(x); }, x.left().u);
+    } else {
+      using ThisResult = ResultType<B>;
+      if constexpr (std::is_same_v<Ty, Expr<ThisResult>>) {
+        return common::visit(
+            [](auto &x) { return UnwrapConvertedExpr<A>(x); }, x.u);
+      } else if constexpr (std::is_same_v<Ty, Parentheses<ThisResult>> ||
+          std::is_same_v<Ty, Convert<ThisResult, DesiredResult::category>>) {
+        return common::visit(
+            [](auto &x) { return UnwrapConvertedExpr<A>(x); }, x.left().u);
+      }
     }
   }
   return nullptr;
@@ -412,6 +419,27 @@ const Symbol *UnwrapWholeSymbolOrComponentDataRef(const A &x) {
       return &p->get();
     } else if (const Component * c{std::get_if<Component>(&dataRef->u)}) {
       if (c->base().Rank() == 0) {
+        return &c->GetLastSymbol();
+      }
+    }
+  }
+  return nullptr;
+}
+
+// If an expression is a whole symbol or a whole component designator,
+// potentially followed by an image selector, extract and return that symbol,
+// else null.
+template <typename A>
+const Symbol *UnwrapWholeSymbolOrComponentOrCoarrayRef(const A &x) {
+  if (auto dataRef{ExtractDataRef(x)}) {
+    if (const SymbolRef * p{std::get_if<SymbolRef>(&dataRef->u)}) {
+      return &p->get();
+    } else if (const Component * c{std::get_if<Component>(&dataRef->u)}) {
+      if (c->base().Rank() == 0) {
+        return &c->GetLastSymbol();
+      }
+    } else if (const CoarrayRef * c{std::get_if<CoarrayRef>(&dataRef->u)}) {
+      if (c->subscript().empty()) {
         return &c->GetLastSymbol();
       }
     }
@@ -894,6 +922,8 @@ template <typename A> bool IsAllocatableOrPointer(const A &x) {
 // Like IsAllocatableOrPointer, but accepts pointer function results as being
 // pointers.
 bool IsAllocatableOrPointerObject(const Expr<SomeType> &, FoldingContext &);
+
+bool IsAllocatableDesignator(const Expr<SomeType> &);
 
 // Procedure and pointer detection predicates
 bool IsProcedure(const Expr<SomeType> &);

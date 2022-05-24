@@ -485,6 +485,9 @@ void CodeGenFunction::FinishFunction(SourceLocation EndLoc) {
         std::max((uint64_t)LargestVectorWidth,
                  VT->getPrimitiveSizeInBits().getKnownMinSize());
 
+  if (CurFnInfo->getMaxVectorWidth() > LargestVectorWidth)
+    LargestVectorWidth = CurFnInfo->getMaxVectorWidth();
+
   // Add the required-vector-width attribute. This contains the max width from:
   // 1. min-vector-width attribute used in the source program.
   // 2. Any builtins used that have a vector width specified.
@@ -777,7 +780,7 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
     if (SanOpts.hasOneOf(SanitizerKind::HWAddress |
                          SanitizerKind::KernelHWAddress))
       Fn->addFnAttr(llvm::Attribute::SanitizeHWAddress);
-    if (SanOpts.has(SanitizerKind::MemTag))
+    if (SanOpts.has(SanitizerKind::MemtagStack))
       Fn->addFnAttr(llvm::Attribute::SanitizeMemTag);
     if (SanOpts.has(SanitizerKind::Thread))
       Fn->addFnAttr(llvm::Attribute::SanitizeThread);
@@ -2547,16 +2550,13 @@ void CodeGenFunction::checkTargetFeatures(SourceLocation Loc,
   llvm::StringMap<bool> CallerFeatureMap;
   CGM.getContext().getFunctionFeatureMap(CallerFeatureMap, FD);
   if (BuiltinID) {
-    StringRef FeatureList(
-        CGM.getContext().BuiltinInfo.getRequiredFeatures(BuiltinID));
-    // Return if the builtin doesn't have any required features.
-    if (FeatureList.empty())
-      return;
-    assert(!FeatureList.contains(' ') && "Space in feature list");
-    TargetFeatures TF(CallerFeatureMap);
-    if (!TF.hasRequiredFeatures(FeatureList))
+    StringRef FeatureList(CGM.getContext().BuiltinInfo.getRequiredFeatures(BuiltinID));
+    if (!Builtin::evaluateRequiredTargetFeatures(
+        FeatureList, CallerFeatureMap)) {
       CGM.getDiags().Report(Loc, diag::err_builtin_needs_feature)
-          << TargetDecl->getDeclName() << FeatureList;
+          << TargetDecl->getDeclName()
+          << FeatureList;
+    }
   } else if (!TargetDecl->isMultiVersion() &&
              TargetDecl->hasAttr<TargetAttr>()) {
     // Get the required features for the callee.

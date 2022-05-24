@@ -255,6 +255,10 @@ void tools::AddLinkerInputs(const ToolChain &TC, const InputInfoList &Inputs,
       continue;
     }
 
+    // In some error cases, the input could be Nothing; skip those.
+    if (II.isNothing())
+      continue;
+
     // Otherwise, this is a linker input argument.
     const Arg &A = II.getInputArg();
 
@@ -424,6 +428,13 @@ std::string tools::getCPUName(const Driver &D, const ArgList &Args,
 
     return TargetCPUName;
   }
+  case llvm::Triple::csky:
+    if (const Arg *A = Args.getLastArg(options::OPT_mcpu_EQ))
+      return A->getValue();
+    else if (const Arg *A = Args.getLastArg(options::OPT_march_EQ))
+      return A->getValue();
+    else
+      return "ck810";
   case llvm::Triple::riscv32:
   case llvm::Triple::riscv64:
     if (const Arg *A = Args.getLastArg(options::OPT_mcpu_EQ))
@@ -475,9 +486,9 @@ llvm::StringRef tools::getLTOParallelism(const ArgList &Args, const Driver &D) {
   return LtoJobsArg->getValue();
 }
 
-// CloudABI uses -ffunction-sections and -fdata-sections by default.
+// CloudABI and PS4/PS5 use -ffunction-sections and -fdata-sections by default.
 bool tools::isUseSeparateSections(const llvm::Triple &Triple) {
-  return Triple.getOS() == llvm::Triple::CloudABI;
+  return Triple.getOS() == llvm::Triple::CloudABI || Triple.isPS();
 }
 
 void tools::addLTOOptions(const ToolChain &ToolChain, const ArgList &Args,
@@ -619,15 +630,6 @@ void tools::addLTOOptions(const ToolChain &ToolChain, const ArgList &Args,
                                          Path));
   }
 
-  // Pass an option to enable/disable the new pass manager.
-  if (auto *A = Args.getLastArg(options::OPT_flegacy_pass_manager,
-                                options::OPT_fno_legacy_pass_manager)) {
-    if (A->getOption().matches(options::OPT_flegacy_pass_manager))
-      CmdArgs.push_back("-plugin-opt=legacy-pass-manager");
-    else
-      CmdArgs.push_back("-plugin-opt=new-pass-manager");
-  }
-
   // Setup statistics file output.
   SmallString<128> StatsFile = getStatsFileName(Args, Output, Input, D);
   if (!StatsFile.empty())
@@ -666,6 +668,17 @@ void tools::addOpenMPRuntimeSpecificRPath(const ToolChain &TC,
     CmdArgs.push_back("-rpath");
     CmdArgs.push_back(Args.MakeArgString(DefaultLibPath));
   }
+}
+
+void tools::addOpenMPRuntimeLibraryPath(const ToolChain &TC,
+                                        const ArgList &Args,
+                                        ArgStringList &CmdArgs) {
+  // Default to clang lib / lib64 folder, i.e. the same location as device
+  // runtime.
+  SmallString<256> DefaultLibPath =
+      llvm::sys::path::parent_path(TC.getDriver().Dir);
+  llvm::sys::path::append(DefaultLibPath, Twine("lib") + CLANG_LIBDIR_SUFFIX);
+  CmdArgs.push_back(Args.MakeArgString("-L" + DefaultLibPath));
 }
 
 void tools::addArchSpecificRPath(const ToolChain &TC, const ArgList &Args,
@@ -723,12 +736,35 @@ bool tools::addOpenMPRuntime(ArgStringList &CmdArgs, const ToolChain &TC,
   if (IsOffloadingHost)
     CmdArgs.push_back("-lomptarget");
 
+  if (IsOffloadingHost && TC.getDriver().isUsingLTO(/* IsOffload */ true))
+    CmdArgs.push_back("-lomptarget.devicertl");
+
   addArchSpecificRPath(TC, Args, CmdArgs);
 
   if (RTKind == Driver::OMPRT_OMP)
     addOpenMPRuntimeSpecificRPath(TC, Args, CmdArgs);
+  addOpenMPRuntimeLibraryPath(TC, Args, CmdArgs);
 
   return true;
+}
+
+void tools::addFortranRuntimeLibs(llvm::opt::ArgStringList &CmdArgs) {
+  CmdArgs.push_back("-lFortran_main");
+  CmdArgs.push_back("-lFortranRuntime");
+  CmdArgs.push_back("-lFortranDecimal");
+}
+
+void tools::addFortranRuntimeLibraryPath(const ToolChain &TC,
+                                         const llvm::opt::ArgList &Args,
+                                         ArgStringList &CmdArgs) {
+  // Default to the <driver-path>/../lib directory. This works fine on the
+  // platforms that we have tested so far. We will probably have to re-fine
+  // this in the future. In particular, on some platforms, we may need to use
+  // lib64 instead of lib.
+  SmallString<256> DefaultLibPath =
+      llvm::sys::path::parent_path(TC.getDriver().Dir);
+  llvm::sys::path::append(DefaultLibPath, "lib");
+  CmdArgs.push_back(Args.MakeArgString("-L" + DefaultLibPath));
 }
 
 static void addSanitizerRuntime(const ToolChain &TC, const ArgList &Args,
@@ -995,6 +1031,19 @@ bool tools::addSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
   if (SanArgs.hasCrossDsoCfi() && !AddExportDynamic)
     CmdArgs.push_back("--export-dynamic-symbol=__cfi_check");
 
+  if (SanArgs.hasMemTag()) {
+    if (!TC.getTriple().isAndroid()) {
+      TC.getDriver().Diag(diag::err_drv_unsupported_opt_for_target)
+          << "-fsanitize=memtag*" << TC.getTriple().str();
+    }
+    CmdArgs.push_back(
+        Args.MakeArgString("--android-memtag-mode=" + SanArgs.getMemtagMode()));
+    if (SanArgs.hasMemtagHeap())
+      CmdArgs.push_back("--android-memtag-heap");
+    if (SanArgs.hasMemtagStack())
+      CmdArgs.push_back("--android-memtag-stack");
+  }
+
   return !StaticRuntimes.empty() || !NonWholeStaticRuntimes.empty();
 }
 
@@ -1237,30 +1286,31 @@ tools::ParsePICArgs(const ToolChain &ToolChain, const ArgList &Args) {
             O.matches(options::OPT_fPIE) || O.matches(options::OPT_fPIC);
       } else {
         PIE = PIC = false;
-        if (EffectiveTriple.isPS4()) {
+        if (EffectiveTriple.isPS()) {
           Arg *ModelArg = Args.getLastArg(options::OPT_mcmodel_EQ);
           StringRef Model = ModelArg ? ModelArg->getValue() : "";
           if (Model != "kernel") {
             PIC = true;
-            ToolChain.getDriver().Diag(diag::warn_drv_ps4_force_pic)
-                << LastPICArg->getSpelling();
+            ToolChain.getDriver().Diag(diag::warn_drv_ps_force_pic)
+                << LastPICArg->getSpelling()
+                << (EffectiveTriple.isPS4() ? "PS4" : "PS5");
           }
         }
       }
     }
   }
 
-  // Introduce a Darwin and PS4-specific hack. If the default is PIC, but the
-  // PIC level would've been set to level 1, force it back to level 2 PIC
+  // Introduce a Darwin and PS4/PS5-specific hack. If the default is PIC, but
+  // the PIC level would've been set to level 1, force it back to level 2 PIC
   // instead.
-  if (PIC && (Triple.isOSDarwin() || EffectiveTriple.isPS4()))
+  if (PIC && (Triple.isOSDarwin() || EffectiveTriple.isPS()))
     IsPICLevelTwo |= ToolChain.isPICDefault();
 
   // This kernel flags are a trump-card: they will disable PIC/PIE
   // generation, independent of the argument order.
   if (KernelOrKext &&
       ((!EffectiveTriple.isiOS() || EffectiveTriple.isOSVersionLT(6)) &&
-       !EffectiveTriple.isWatchOS()))
+       !EffectiveTriple.isWatchOS() && !EffectiveTriple.isDriverKit()))
     PIC = PIE = false;
 
   if (Arg *A = Args.getLastArg(options::OPT_mdynamic_no_pic)) {
@@ -1765,9 +1815,9 @@ bool tools::GetSDLFromOffloadArchive(
 
     std::string UnbundleArg("-unbundle");
     std::string TypeArg("-type=a");
-    std::string InputArg("-inputs=" + ArchiveOfBundles);
+    std::string InputArg("-input=" + ArchiveOfBundles);
     std::string OffloadArg("-targets=" + std::string(DeviceTriple));
-    std::string OutputArg("-outputs=" + OutputLib);
+    std::string OutputArg("-output=" + OutputLib);
 
     const char *UBProgram = DriverArgs.MakeArgString(
         T.getToolChain().GetProgramPath("clang-offload-bundler"));
@@ -2060,5 +2110,19 @@ void tools::addOpenMPDeviceRTL(const Driver &D,
     if (!FoundBCLibrary)
       D.Diag(diag::err_drv_omp_offload_target_missingbcruntime)
           << LibOmpTargetName << ArchPrefix;
+  }
+}
+void tools::addHIPRuntimeLibArgs(const ToolChain &TC,
+                                 const llvm::opt::ArgList &Args,
+                                 llvm::opt::ArgStringList &CmdArgs) {
+  if (Args.hasArg(options::OPT_hip_link) &&
+      !Args.hasArg(options::OPT_nostdlib) &&
+      !Args.hasArg(options::OPT_no_hip_rt)) {
+    TC.AddHIPRuntimeLibArgs(Args, CmdArgs);
+  } else {
+    // Claim "no HIP libraries" arguments if any
+    for (auto Arg : Args.filtered(options::OPT_no_hip_rt)) {
+      Arg->claim();
+    }
   }
 }

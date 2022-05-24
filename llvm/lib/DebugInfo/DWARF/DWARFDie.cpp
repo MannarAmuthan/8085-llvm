@@ -291,7 +291,7 @@ struct DWARFTypePrinter {
       }
       Word = true;
       StringRef Name = NamePtr;
-      static constexpr StringRef MangledPrefix = "_STN";
+      static constexpr StringRef MangledPrefix = "_STN|";
       if (Name.startswith(MangledPrefix)) {
         Name = Name.drop_front(MangledPrefix.size());
         auto Separator = Name.find('|');
@@ -397,27 +397,10 @@ struct DWARFTypePrinter {
         DWARFDie T = resolveReferencedType(C);
         Sep();
         if (T.getTag() == DW_TAG_enumeration_type) {
-          auto V = C.find(DW_AT_const_value);
-          bool FoundEnumerator = false;
-          for (const DWARFDie &Enumerator : T) {
-            auto EV = Enumerator.find(DW_AT_const_value);
-            if (V && EV &&
-                V->getAsSignedConstant() == EV->getAsSignedConstant()) {
-              if (T.find(DW_AT_enum_class)) {
-                appendQualifiedName(T);
-                OS << "::";
-              } else
-                appendScopes(T.getParent());
-              OS << Enumerator.getShortName();
-              FoundEnumerator = true;
-              break;
-            }
-          }
-          if (FoundEnumerator)
-            continue;
           OS << '(';
           appendQualifiedName(T);
           OS << ')';
+          auto V = C.find(DW_AT_const_value);
           OS << to_string(*V->getAsSignedConstant());
           continue;
         }
@@ -1114,6 +1097,66 @@ void DWARFDie::getCallerFrame(uint32_t &CallFile, uint32_t &CallLine,
   CallLine = toUnsigned(find(DW_AT_call_line), 0);
   CallColumn = toUnsigned(find(DW_AT_call_column), 0);
   CallDiscriminator = toUnsigned(find(DW_AT_GNU_discriminator), 0);
+}
+
+Optional<uint64_t> DWARFDie::getTypeSize(uint64_t PointerSize) {
+  if (auto SizeAttr = find(DW_AT_byte_size))
+    if (Optional<uint64_t> Size = SizeAttr->getAsUnsignedConstant())
+      return Size;
+
+  switch (getTag()) {
+  case DW_TAG_pointer_type:
+  case DW_TAG_reference_type:
+  case DW_TAG_rvalue_reference_type:
+    return PointerSize;
+  case DW_TAG_ptr_to_member_type: {
+    if (DWARFDie BaseType = getAttributeValueAsReferencedDie(DW_AT_type))
+      if (BaseType.getTag() == DW_TAG_subroutine_type)
+        return 2 * PointerSize;
+    return PointerSize;
+  }
+  case DW_TAG_const_type:
+  case DW_TAG_immutable_type:
+  case DW_TAG_volatile_type:
+  case DW_TAG_restrict_type:
+  case DW_TAG_typedef: {
+    if (DWARFDie BaseType = getAttributeValueAsReferencedDie(DW_AT_type))
+      return BaseType.getTypeSize(PointerSize);
+    break;
+  }
+  case DW_TAG_array_type: {
+    DWARFDie BaseType = getAttributeValueAsReferencedDie(DW_AT_type);
+    if (!BaseType)
+      return None;
+    Optional<uint64_t> BaseSize = BaseType.getTypeSize(PointerSize);
+    if (!BaseSize)
+      return None;
+    uint64_t Size = *BaseSize;
+    for (DWARFDie Child : *this) {
+      if (Child.getTag() != DW_TAG_subrange_type)
+        continue;
+
+      if (auto ElemCountAttr = Child.find(DW_AT_count))
+        if (Optional<uint64_t> ElemCount =
+                ElemCountAttr->getAsUnsignedConstant())
+          Size *= *ElemCount;
+      if (auto UpperBoundAttr = Child.find(DW_AT_upper_bound))
+        if (Optional<int64_t> UpperBound =
+                UpperBoundAttr->getAsSignedConstant()) {
+          int64_t LowerBound = 0;
+          if (auto LowerBoundAttr = Child.find(DW_AT_lower_bound))
+            LowerBound = LowerBoundAttr->getAsSignedConstant().getValueOr(0);
+          Size *= *UpperBound - LowerBound + 1;
+        }
+    }
+    return Size;
+  }
+  default:
+    if (DWARFDie BaseType = getAttributeValueAsReferencedDie(DW_AT_type))
+      return BaseType.getTypeSize(PointerSize);
+    break;
+  }
+  return None;
 }
 
 /// Helper to dump a DIE with all of its parents, but no siblings.

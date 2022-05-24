@@ -84,7 +84,9 @@ function generate-cmake-base() {
           -DCMAKE_BUILD_TYPE=RelWithDebInfo \
           -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}" \
           -DLIBCXX_ENABLE_WERROR=YES \
-          -DLLVM_LIT_ARGS="-sv --show-unsupported --xunit-xml-output test-results.xml" \
+          -DLIBCXXABI_ENABLE_WERROR=YES \
+          -DLIBUNWIND_ENABLE_WERROR=YES \
+          -DLLVM_LIT_ARGS="-sv --show-unsupported --xunit-xml-output test-results.xml --timeout=1200" \
           "${@}"
 }
 
@@ -265,6 +267,14 @@ generic-static)
                    -DLIBUNWIND_TEST_CONFIG="llvm-libunwind-static.cfg.in"
     check-runtimes
 ;;
+generic-merged)
+    clean
+    generate-cmake -C "${MONOREPO_ROOT}/libcxx/cmake/caches/Generic-merged.cmake" \
+                   -DLIBCXX_TEST_CONFIG="llvm-libc++-shared.cfg.in" \
+                   -DLIBCXXABI_TEST_CONFIG="llvm-libc++abi-merged.cfg.in" \
+                   -DLIBUNWIND_TEST_CONFIG="llvm-libunwind-merged.cfg.in"
+    check-runtimes
+;;
 generic-clang-13)
     export CC=clang-13
     export CXX=clang++-13
@@ -286,7 +296,9 @@ generic-gcc)
     export CXX=g++-11
     clean
     generate-cmake -DLIBUNWIND_TEST_CONFIG="llvm-libunwind-shared.cfg.in" \
-                   -DLIBCXX_ENABLE_WERROR=NO
+                   -DLIBCXX_ENABLE_WERROR=NO \
+                   -DLIBCXXABI_ENABLE_WERROR=NO \
+                   -DLIBUNWIND_ENABLE_WERROR=NO
     check-runtimes
 ;;
 generic-gcc-cxx11)
@@ -295,7 +307,9 @@ generic-gcc-cxx11)
     clean
     generate-cmake -C "${MONOREPO_ROOT}/libcxx/cmake/caches/Generic-cxx11.cmake" \
                    -DLIBUNWIND_TEST_CONFIG="llvm-libunwind-shared.cfg.in" \
-                   -DLIBCXX_ENABLE_WERROR=NO
+                   -DLIBCXX_ENABLE_WERROR=NO \
+                   -DLIBCXXABI_ENABLE_WERROR=NO \
+                   -DLIBUNWIND_ENABLE_WERROR=NO
     check-runtimes
 ;;
 generic-asan)
@@ -328,9 +342,9 @@ generic-with_llvm_unwinder)
                    -DLIBUNWIND_TEST_CONFIG="llvm-libunwind-shared.cfg.in"
     check-runtimes
 ;;
-generic-singlethreaded)
+generic-no-threads)
     clean
-    generate-cmake -C "${MONOREPO_ROOT}/libcxx/cmake/caches/Generic-singlethreaded.cmake" \
+    generate-cmake -C "${MONOREPO_ROOT}/libcxx/cmake/caches/Generic-no-threads.cmake" \
                    -DLIBUNWIND_TEST_CONFIG="llvm-libunwind-shared.cfg.in"
     check-runtimes
 ;;
@@ -486,7 +500,7 @@ legacy-project-build)
           -GNinja -DCMAKE_MAKE_PROGRAM="${NINJA}" \
           -DCMAKE_BUILD_TYPE=RelWithDebInfo \
           -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}" \
-          -DLLVM_LIT_ARGS="-sv --show-unsupported --xunit-xml-output test-results.xml" \
+          -DLLVM_LIT_ARGS="-sv --show-unsupported --xunit-xml-output test-results.xml --timeout=1200" \
           -DLIBCXX_CXX_ABI=libcxxabi
     check-runtimes
 ;;
@@ -570,6 +584,15 @@ mingw-static)
           -C "${MONOREPO_ROOT}/libcxx/cmake/caches/MinGW.cmake" \
           -DLIBCXX_ENABLE_SHARED=OFF \
           -DLIBUNWIND_ENABLE_SHARED=OFF
+    echo "+++ Running the libc++ tests"
+    ${NINJA} -vC "${BUILD_DIR}" check-cxx
+;;
+mingw-dll-i686)
+    clean
+    generate-cmake \
+          -DCMAKE_C_COMPILER=i686-w64-mingw32-clang \
+          -DCMAKE_CXX_COMPILER=i686-w64-mingw32-clang++ \
+          -C "${MONOREPO_ROOT}/libcxx/cmake/caches/MinGW.cmake"
     echo "+++ Running the libc++ tests"
     ${NINJA} -vC "${BUILD_DIR}" check-cxx
 ;;

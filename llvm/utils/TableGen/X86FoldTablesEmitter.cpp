@@ -18,6 +18,7 @@
 #include "llvm/TableGen/TableGenBackend.h"
 
 using namespace llvm;
+using namespace X86Disassembler;
 
 namespace {
 
@@ -51,27 +52,32 @@ const char *ExplicitUnalign[] = {"MOVDQU", "MOVUPS", "MOVUPD",
 
 // For manually mapping instructions that do not match by their encoding.
 const ManualMapEntry ManualMapSet[] = {
-    { "ADD16ri_DB",       "ADD16mi",         NO_UNFOLD  },
-    { "ADD16ri8_DB",      "ADD16mi8",        NO_UNFOLD  },
-    { "ADD16rr_DB",       "ADD16mr",         NO_UNFOLD  },
-    { "ADD32ri_DB",       "ADD32mi",         NO_UNFOLD  },
-    { "ADD32ri8_DB",      "ADD32mi8",        NO_UNFOLD  },
-    { "ADD32rr_DB",       "ADD32mr",         NO_UNFOLD  },
-    { "ADD64ri32_DB",     "ADD64mi32",       NO_UNFOLD  },
-    { "ADD64ri8_DB",      "ADD64mi8",        NO_UNFOLD  },
-    { "ADD64rr_DB",       "ADD64mr",         NO_UNFOLD  },
-    { "ADD8ri_DB",        "ADD8mi",          NO_UNFOLD  },
-    { "ADD8rr_DB",        "ADD8mr",          NO_UNFOLD  },
-    { "ADD16rr_DB",       "ADD16rm",         NO_UNFOLD  },
-    { "ADD32rr_DB",       "ADD32rm",         NO_UNFOLD  },
-    { "ADD64rr_DB",       "ADD64rm",         NO_UNFOLD  },
-    { "ADD8rr_DB",        "ADD8rm",          NO_UNFOLD  },
-    { "PUSH16r",          "PUSH16rmm",       UNFOLD },
-    { "PUSH32r",          "PUSH32rmm",       UNFOLD },
-    { "PUSH64r",          "PUSH64rmm",       UNFOLD },
-    { "TAILJMPr",         "TAILJMPm",        UNFOLD },
-    { "TAILJMPr64",       "TAILJMPm64",      UNFOLD },
-    { "TAILJMPr64_REX",   "TAILJMPm64_REX",  UNFOLD },
+    { "ADD16ri_DB",         "ADD16mi",         NO_UNFOLD  },
+    { "ADD16ri8_DB",        "ADD16mi8",        NO_UNFOLD  },
+    { "ADD16rr_DB",         "ADD16mr",         NO_UNFOLD  },
+    { "ADD32ri_DB",         "ADD32mi",         NO_UNFOLD  },
+    { "ADD32ri8_DB",        "ADD32mi8",        NO_UNFOLD  },
+    { "ADD32rr_DB",         "ADD32mr",         NO_UNFOLD  },
+    { "ADD64ri32_DB",       "ADD64mi32",       NO_UNFOLD  },
+    { "ADD64ri8_DB",        "ADD64mi8",        NO_UNFOLD  },
+    { "ADD64rr_DB",         "ADD64mr",         NO_UNFOLD  },
+    { "ADD8ri_DB",          "ADD8mi",          NO_UNFOLD  },
+    { "ADD8rr_DB",          "ADD8mr",          NO_UNFOLD  },
+    { "ADD16rr_DB",         "ADD16rm",         NO_UNFOLD  },
+    { "ADD32rr_DB",         "ADD32rm",         NO_UNFOLD  },
+    { "ADD64rr_DB",         "ADD64rm",         NO_UNFOLD  },
+    { "ADD8rr_DB",          "ADD8rm",          NO_UNFOLD  },
+    { "MMX_MOVD64from64rr", "MMX_MOVQ64mr",    UNFOLD },
+    { "MMX_MOVD64grr",      "MMX_MOVD64mr",    UNFOLD },
+    { "MOVLHPSrr",          "MOVHPSrm",        NO_UNFOLD  },
+    { "PUSH16r",            "PUSH16rmm",       UNFOLD },
+    { "PUSH32r",            "PUSH32rmm",       UNFOLD },
+    { "PUSH64r",            "PUSH64rmm",       UNFOLD },
+    { "TAILJMPr",           "TAILJMPm",        UNFOLD },
+    { "TAILJMPr64",         "TAILJMPm64",      UNFOLD },
+    { "TAILJMPr64_REX",     "TAILJMPm64_REX",  UNFOLD },
+    { "VMOVLHPSZrr",        "VMOVHPSZ128rm",   NO_UNFOLD  },
+    { "VMOVLHPSrr",         "VMOVHPSrm",       NO_UNFOLD  },
 };
 
 
@@ -212,42 +218,6 @@ static inline uint64_t getValueFromBitsInit(const BitsInit *B) {
   return Value;
 }
 
-// Return the size of the register operand
-static inline unsigned int getRegOperandSize(const Record *RegRec) {
-  if (RegRec->isSubClassOf("RegisterOperand"))
-    RegRec = RegRec->getValueAsDef("RegClass");
-  if (RegRec->isSubClassOf("RegisterClass"))
-    return RegRec->getValueAsListOfDefs("RegTypes")[0]->getValueAsInt("Size");
-
-  llvm_unreachable("Register operand's size not known!");
-}
-
-// Return the size of the memory operand
-static inline unsigned getMemOperandSize(const Record *MemRec) {
-  if (MemRec->isSubClassOf("Operand")) {
-    StringRef Name =
-        MemRec->getValueAsDef("ParserMatchClass")->getValueAsString("Name");
-    if (Name == "Mem8")
-      return 8;
-    if (Name == "Mem16")
-      return 16;
-    if (Name == "Mem32")
-      return 32;
-    if (Name == "Mem64")
-      return 64;
-    if (Name == "Mem80")
-      return 80;
-    if (Name == "Mem128")
-      return 128;
-    if (Name == "Mem256")
-      return 256;
-    if (Name == "Mem512")
-      return 512;
-  }
-
-  llvm_unreachable("Memory operand's size not known!");
-}
-
 // Return true if the instruction defined as a register flavor.
 static inline bool hasRegisterFormat(const Record *Inst) {
   const BitsInit *FormBits = Inst->getValueAsBitsInit("FormBits");
@@ -270,22 +240,6 @@ static inline bool isNOREXRegClass(const Record *Op) {
   return Op->getName().contains("_NOREX");
 }
 
-static inline bool isRegisterOperand(const Record *Rec) {
-  return Rec->isSubClassOf("RegisterClass") ||
-         Rec->isSubClassOf("RegisterOperand") ||
-         Rec->isSubClassOf("PointerLikeRegClass");
-}
-
-static inline bool isMemoryOperand(const Record *Rec) {
-  return Rec->isSubClassOf("Operand") &&
-         Rec->getValueAsString("OperandType") == "OPERAND_MEMORY";
-}
-
-static inline bool isImmediateOperand(const Record *Rec) {
-  return Rec->isSubClassOf("Operand") &&
-         Rec->getValueAsString("OperandType") == "OPERAND_IMMEDIATE";
-}
-
 // Get the alternative instruction pointed by "FoldGenRegForm" field.
 static inline const CodeGenInstruction *
 getAltRegInst(const CodeGenInstruction *I, const RecordKeeper &Records,
@@ -303,10 +257,11 @@ getAltRegInst(const CodeGenInstruction *I, const RecordKeeper &Records,
 // matches the EVEX instruction of this object.
 class IsMatch {
   const CodeGenInstruction *MemInst;
+  unsigned Variant;
 
 public:
-  IsMatch(const CodeGenInstruction *Inst, const RecordKeeper &Records)
-      : MemInst(Inst) {}
+  IsMatch(const CodeGenInstruction *Inst, unsigned V)
+      : MemInst(Inst), Variant(V) {}
 
   bool operator()(const CodeGenInstruction *RegInst) {
     X86Disassembler::RecognizableInstrBase RegRI(*RegInst);
@@ -321,6 +276,16 @@ public:
     // Instruction's format - The register form's "Form" field should be
     // the opposite of the memory form's "Form" field.
     if (!areOppositeForms(RegRI.Form, MemRI.Form))
+      return false;
+
+    // X86 encoding is crazy, e.g
+    //
+    // f3 0f c7 30       vmxon   (%rax)
+    // f3 0f c7 f0       senduipi        %rax
+    //
+    // This two instruction have similiar encoding fields but are unrelated
+    if (X86Disassembler::getMnemonic(MemInst, Variant) !=
+        X86Disassembler::getMnemonic(RegInst, Variant))
       return false;
 
     // Return false if one (at least) of the encoding fields of both
@@ -506,7 +471,10 @@ void X86FoldTablesEmitter::updateTables(const CodeGenInstruction *RegInstr,
     for (unsigned i = RegOutSize, e = RegInstr->Operands.size(); i < e; i++) {
       Record *RegOpRec = RegInstr->Operands[i].Rec;
       Record *MemOpRec = MemInstr->Operands[i].Rec;
-      if (isRegisterOperand(RegOpRec) && isMemoryOperand(MemOpRec)) {
+      // PointerLikeRegClass: For instructions like TAILJMPr, TAILJMPr64, TAILJMPr64_REX
+      if ((isRegisterOperand(RegOpRec) ||
+           RegOpRec->isSubClassOf("PointerLikeRegClass")) &&
+          isMemoryOperand(MemOpRec)) {
         switch (i) {
         case 0:
           addEntryWithFlags(Table0, RegInstr, MemInstr, S, 0);
@@ -581,6 +549,8 @@ void X86FoldTablesEmitter::run(formatted_raw_ostream &OS) {
     }
   }
 
+  Record *AsmWriter = Target.getAsmWriter();
+  unsigned Variant = AsmWriter->getValueAsInt("Variant");
   // For each memory form instruction, try to find its register form
   // instruction.
   for (const CodeGenInstruction *MemInst : MemInsts) {
@@ -596,7 +566,7 @@ void X86FoldTablesEmitter::run(formatted_raw_ostream &OS) {
     // opcode.
     std::vector<const CodeGenInstruction *> &OpcRegInsts = RegInstsIt->second;
 
-    auto Match = find_if(OpcRegInsts, IsMatch(MemInst, Records));
+    auto Match = find_if(OpcRegInsts, IsMatch(MemInst, Variant));
     if (Match != OpcRegInsts.end()) {
       const CodeGenInstruction *RegInst = *Match;
       // If the matched instruction has it's "FoldGenRegForm" set, map the

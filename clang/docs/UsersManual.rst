@@ -1219,23 +1219,22 @@ for generating PCH files:
 Using a PCH File
 ^^^^^^^^^^^^^^^^
 
-A PCH file can then be used as a prefix header when a :option:`-include`
+A PCH file can then be used as a prefix header when a ``-include-pch``
 option is passed to ``clang``:
 
 .. code-block:: console
 
-  $ clang -include test.h test.c -o test
+  $ clang -include-pch test.h.pch test.c -o test
 
-The ``clang`` driver will first check if a PCH file for ``test.h`` is
+The ``clang`` driver will check if the PCH file ``test.h.pch`` is
 available; if so, the contents of ``test.h`` (and the files it includes)
-will be processed from the PCH file. Otherwise, Clang falls back to
-directly processing the content of ``test.h``. This mirrors the behavior
-of GCC.
+will be processed from the PCH file. Otherwise, Clang will report an error.
 
 .. note::
 
   Clang does *not* automatically use PCH files for headers that are directly
-  included within a source file. For example:
+  included within a source file or indirectly via :option:`-include`.
+  For example:
 
   .. code-block:: console
 
@@ -1246,7 +1245,7 @@ of GCC.
 
   In this example, ``clang`` will not automatically use the PCH file for
   ``test.h`` since ``test.h`` was included directly in the source file and not
-  specified on the command line using :option:`-include`.
+  specified on the command line using ``-include-pch``.
 
 Relocatable PCH Files
 ^^^^^^^^^^^^^^^^^^^^^
@@ -2576,12 +2575,6 @@ using the ``llvm-cxxmap`` and ``llvm-profdata merge`` tools.
 
 .. note::
 
-  Profile data remapping support is currently only implemented for LLVM's
-  new pass manager, which can be enabled with
-  ``-fexperimental-new-pass-manager``.
-
-.. note::
-
   Profile data remapping is currently only supported for C++ mangled names
   following the Itanium C++ ABI mangling scheme. This covers all C++ targets
   supported by Clang other than Windows.
@@ -3127,6 +3120,34 @@ compile.
 More information about the standard types and functions is provided in :ref:`the
 section on the OpenCL Header <opencl_header>`.
 
+.. _opencl_cl_ext:
+
+.. option:: -cl-ext
+
+Enables/Disables support of OpenCL extensions and optional features. All OpenCL
+targets set a list of extensions that they support. Clang allows to amend this using
+the ``-cl-ext`` flag with a comma-separated list of extensions prefixed with
+``'+'`` or ``'-'``. The syntax: ``-cl-ext=<(['-'|'+']<extension>[,])+>``,  where
+extensions can be either one of `the OpenCL published extensions
+<https://www.khronos.org/registry/OpenCL>`_
+or any vendor extension. Alternatively, ``'all'`` can be used to enable
+or disable all known extensions.
+
+Example disabling double support for the 64-bit SPIR-V target:
+
+   .. code-block:: console
+
+     $ clang -target spirv64 -cl-ext=-cl_khr_fp64 test.cl
+
+Enabling all extensions except double support in R600 AMD GPU can be done using:
+
+   .. code-block:: console
+
+     $ clang -target r600 -cl-ext=-all,+cl_khr_fp16 test.cl
+
+Note that some generic targets e.g. SPIR/SPIR-V enable all extensions/features in
+clang by default.
+
 OpenCL Targets
 --------------
 
@@ -3174,9 +3195,8 @@ Generic Targets
     $ clang -target spir test.cl -emit-llvm -c
     $ clang -target spir64 test.cl -emit-llvm -c
 
-  All known OpenCL extensions are supported in the SPIR targets. Clang will
-  generate SPIR v1.2 compatible IR for OpenCL versions up to 2.0 and SPIR v2.0
-  for OpenCL v2.0 or C++ for OpenCL.
+  Clang will generate SPIR v1.2 compatible IR for OpenCL versions up to 2.0 and
+  SPIR v2.0 for OpenCL v2.0 or C++ for OpenCL.
 
 - x86 is used by some implementations that are x86 compatible and currently
   remains for backwards compatibility (with older implementations prior to
@@ -3189,6 +3209,12 @@ Generic Targets
   This target does not support multiple memory segments and, therefore, the fake
   address space map can be added using the :ref:`-ffake-address-space-map
   <opencl_fake_address_space_map>` flag.
+
+  All known OpenCL extensions and features are set to supported in the generic targets,
+  however :option:`-cl-ext` flag can be used to toggle individual extensions and
+  features.
+
+
 
 .. _opencl_header:
 
