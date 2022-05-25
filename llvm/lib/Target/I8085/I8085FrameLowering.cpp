@@ -80,44 +80,6 @@ void I8085FrameLowering::emitPrologue(MachineFunction &MF,
   if(FrameSize) {
       BuildMI(MBB, MBBI, DL, TII.get(I8085::GROW_STACK_BY))
           .addImm(FrameSize);
-
-      // BuildMI(MBB, MBBI, DL, TII.get(I8085::LXI))
-      //     .addReg(I8085::H, RegState::Define)
-      //     .addImm(0);
-
-      // BuildMI(MBB, MBBI, DL, TII.get(I8085::DAD));
-  
-      // BuildMI(MBB, MBBI, DL, TII.get(I8085::MOV))
-      //     .addReg(I8085::A, RegState::Define)
-      //     .addReg(I8085::L);
-      
-      // BuildMI(MBB, MBBI, DL, TII.get(I8085::MVI))
-      //     .addReg(I8085::L, RegState::Define)
-      //     .addImm(FrameSize);
-
-      // BuildMI(MBB, MBBI, DL, TII.get(I8085::SUB))
-      //     .addReg(I8085::L);
-
-      // BuildMI(MBB, MBBI, DL, TII.get(I8085::MOV))
-      //     .addReg(I8085::L, RegState::Define)
-      //     .addReg(I8085::A);
-
-      // BuildMI(MBB, MBBI, DL, TII.get(I8085::MOV))
-      //     .addReg(I8085::A, RegState::Define)
-      //     .addReg(I8085::H);
-
-      // BuildMI(MBB, MBBI, DL, TII.get(I8085::MVI))
-      //     .addReg(I8085::H, RegState::Define)
-      //     .addImm(0);    
-
-      // BuildMI(MBB, MBBI, DL, TII.get(I8085::SBB))
-      //     .addReg(I8085::H);
-
-      // BuildMI(MBB, MBBI, DL, TII.get(I8085::MOV))
-      //     .addReg(I8085::H, RegState::Define)
-      //     .addReg(I8085::A);       
-      
-      // BuildMI(MBB, MBBI, DL, TII.get(I8085::SPHL));
       
   }
 }

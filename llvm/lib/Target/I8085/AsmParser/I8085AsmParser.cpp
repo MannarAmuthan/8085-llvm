@@ -107,7 +107,13 @@ public:
 /// An parsed I8085 assembly operand.
 class I8085Operand : public MCParsedAsmOperand {
   typedef MCParsedAsmOperand Base;
-  enum KindTy { k_Immediate, k_Register, k_Token, k_Memri } Kind;
+  enum KindTy { 
+      k_Immediate, 
+      k_Register, 
+      k_Token, 
+      k_Memri 
+    } 
+  Kind;
 
 public:
   I8085Operand(StringRef Tok, SMLoc const &S)

@@ -84,25 +84,6 @@ def I8085Swap : SDNode<"I8085ISD::SWAP", SDTIntUnaryOp>;
 // I8085 Operands, Complex Patterns and Transformations Definitions.
 //===----------------------------------------------------------------------===//
 
-def imm8_neg_XFORM : SDNodeXForm<imm, [{
-                                   return CurDAG->getTargetConstant(
-                                       -N->getAPIntValue(), SDLoc(N), MVT::i8);
-                                 }]>;
-
-def imm16_neg_XFORM
-    : SDNodeXForm<imm, [{
-                    return CurDAG->getTargetConstant(-N->getAPIntValue(),
-                                                     SDLoc(N), MVT::i16);
-                  }]>;
-
-def imm0_63_neg : PatLeaf<(imm), [{
-                            int64_t val = -N->getSExtValue();
-                            return val >= 0 && val < 64;
-                          }],
-                          imm16_neg_XFORM>;
-
-def uimm6 : PatLeaf<(imm), [{ return isUInt<6>(N->getZExtValue()); }]>;
-
 
 // imm_com8_XFORM - Return the complement of a imm_com8 value
 def imm_com8_XFORM
@@ -119,53 +100,7 @@ def imm_com8_XFORM
 def imm_com8_asmoperand : AsmOperandClass { let Name = "ImmCom8"; }
 def imm_com8 : Operand<i8> { let ParserMatchClass = imm_com8_asmoperand; }
 
-def ioaddr_XFORM
-    : SDNodeXForm<imm, [{
-                    uint8_t offset = Subtarget->getIORegisterOffset();
-                    return CurDAG->getTargetConstant(
-                        uint8_t(N->getZExtValue()) - offset, SDLoc(N), MVT::i8);
-                  }]>;
 
-def iobitpos8_XFORM
-    : SDNodeXForm<imm, [{
-                    return CurDAG->getTargetConstant(
-                        Log2_32(uint8_t(N->getZExtValue())), SDLoc(N), MVT::i8);
-                  }]>;
-
-def iobitposn8_XFORM : SDNodeXForm<imm, [{
-                                     return CurDAG->getTargetConstant(
-                                         Log2_32(uint8_t(~N->getZExtValue())),
-                                         SDLoc(N), MVT::i8);
-                                   }]>;
-
-def ioaddr8 : PatLeaf<(imm), [{
-                        uint8_t offset = Subtarget->getIORegisterOffset();
-                        uint64_t val = N->getZExtValue() - offset;
-                        return val < 0x40;
-                      }],
-                      ioaddr_XFORM>;
-
-def lowioaddr8 : PatLeaf<(imm), [{
-                           uint8_t offset = Subtarget->getIORegisterOffset();
-                           uint64_t val = N->getZExtValue() - offset;
-                           return val < 0x20;
-                         }],
-                         ioaddr_XFORM>;
-
-def ioaddr16 : PatLeaf<(imm), [{
-                         uint8_t offset = Subtarget->getIORegisterOffset();
-                         uint64_t val = N->getZExtValue() - offset;
-                         return val < 0x3f;
-                       }],
-                       ioaddr_XFORM>;
-
-def iobitpos8
-    : PatLeaf<(imm), [{ return isPowerOf2_32(uint8_t(N->getZExtValue())); }],
-              iobitpos8_XFORM>;
-
-def iobitposn8
-    : PatLeaf<(imm), [{ return isPowerOf2_32(uint8_t(~N->getZExtValue())); }],
-              iobitposn8_XFORM>;
 
 def MemriAsmOperand : AsmOperandClass {
   let Name = "Memri";
@@ -214,22 +149,7 @@ def imm_arith6 : Operand<i16> {
   let EncoderMethod = "encodeImm<I8085::fixup_6_adiw, 0>";
 }
 
-/// An 8-bit immediate inside an instruction with the same format
-/// as the `LDI` instruction (the `FRdK` format).
-def imm_ldi8 : Operand<i8> {
-  let EncoderMethod = "encodeImm<I8085::fixup_ldi, 0>";
-}
 
-/// A 5-bit port number used in SBIC and friends (the `FIOBIT` format).
-def imm_port5 : Operand<i8> {
-  let EncoderMethod = "encodeImm<I8085::fixup_port5, 0>";
-}
-
-/// A 6-bit port number used in the `IN` instruction and friends (the
-/// `FIORdA` format.
-def imm_port6 : Operand<i8> {
-  let EncoderMethod = "encodeImm<I8085::fixup_port6, 0>";
-}
 
 // Addressing mode pattern reg+imm6
 def addr : ComplexPattern<iPTR, 2, "SelectAddr", [], [SDNPWantRoot]>;
@@ -249,15 +169,6 @@ def LDSTPtrReg : Operand<i16> {
   let ParserMatchClass = PtrRegAsmOperand;
 }
 
-// A special operand type for the LDD/STD instructions.
-// It behaves identically to the LD/ST version, except restricts
-// the pointer registers to Y and Z.
-def LDDSTDPtrReg : Operand<i16> {
-  let MIOperandInfo = (ops PTRDISPREGS);
-  let EncoderMethod = "encodeLDSTPtrReg";
-
-  let ParserMatchClass = PtrRegAsmOperand;
-}
 
 //===----------------------------------------------------------------------===//
 // I8085 predicates for subtarget features
@@ -266,67 +177,7 @@ def LDDSTDPtrReg : Operand<i16> {
 def HasSRAM : Predicate<"Subtarget->hasSRAM()">,
               AssemblerPredicate<(all_of FeatureSRAM)>;
 
-def HasJMPCALL : Predicate<"Subtarget->hasJMPCALL()">,
-                 AssemblerPredicate<(all_of FeatureJMPCALL)>;
 
-def HasIJMPCALL : Predicate<"Subtarget->hasIJMPCALL()">,
-                  AssemblerPredicate<(all_of FeatureIJMPCALL)>;
-
-def HasEIJMPCALL : Predicate<"Subtarget->hasEIJMPCALL()">,
-                   AssemblerPredicate<(all_of FeatureEIJMPCALL)>;
-
-def HasADDSUBIW : Predicate<"Subtarget->hasADDSUBIW()">,
-                  AssemblerPredicate<(all_of FeatureADDSUBIW)>;
-
-def HasSmallStack : Predicate<"Subtarget->HasSmallStack()">,
-                    AssemblerPredicate<(all_of FeatureSmallStack)>;
-
-def HasMOVW : Predicate<"Subtarget->hasMOVW()">,
-              AssemblerPredicate<(all_of FeatureMOVW)>;
-
-def HasLPM : Predicate<"Subtarget->hasLPM()">,
-             AssemblerPredicate<(all_of FeatureLPM)>;
-
-def HasLPMX : Predicate<"Subtarget->hasLPMX()">,
-              AssemblerPredicate<(all_of FeatureLPMX)>;
-
-def HasELPM : Predicate<"Subtarget->hasELPM()">,
-              AssemblerPredicate<(all_of FeatureELPM)>;
-
-def HasELPMX : Predicate<"Subtarget->hasELPMX()">,
-               AssemblerPredicate<(all_of FeatureELPMX)>;
-
-def HasSPM : Predicate<"Subtarget->hasSPM()">,
-             AssemblerPredicate<(all_of FeatureSPM)>;
-
-def HasSPMX : Predicate<"Subtarget->hasSPMX()">,
-              AssemblerPredicate<(all_of FeatureSPMX)>;
-
-def HasDES : Predicate<"Subtarget->hasDES()">,
-             AssemblerPredicate<(all_of FeatureDES)>;
-
-def SupportsRMW : Predicate<"Subtarget->supportsRMW()">,
-                  AssemblerPredicate<(all_of FeatureRMW)>;
-
-def SupportsMultiplication : Predicate<"Subtarget->supportsMultiplication()">,
-                             AssemblerPredicate<(all_of FeatureMultiplication)>;
-
-def HasBREAK : Predicate<"Subtarget->hasBREAK()">,
-               AssemblerPredicate<(all_of FeatureBREAK)>;
-
-def HasTinyEncoding : Predicate<"Subtarget->hasTinyEncoding()">,
-                      AssemblerPredicate<(all_of FeatureTinyEncoding)>;
-
-// I8085 specific condition code. These correspond to I8085_*_COND in
-// I8085InstrInfo.td. They must be kept in synch.
-def I8085_COND_EQ : PatLeaf<(i8 0)>;
-def I8085_COND_NE : PatLeaf<(i8 1)>;
-def I8085_COND_GE : PatLeaf<(i8 2)>;
-def I8085_COND_LT : PatLeaf<(i8 3)>;
-def I8085_COND_SH : PatLeaf<(i8 4)>;
-def I8085_COND_LO : PatLeaf<(i8 5)>;
-def I8085_COND_MI : PatLeaf<(i8 6)>;
-def I8085_COND_PL : PatLeaf<(i8 7)>;
 
 //===----------------------------------------------------------------------===//
 //===----------------------------------------------------------------------===//
@@ -363,111 +214,6 @@ let Defs = [SP], Uses = [SP] in {
                                     : $amt2)]>;
 }
 
-
-//===----------------------------------------------------------------------===//
-// Return instructions.
-//===----------------------------------------------------------------------===//
-// let isTerminator = 1, isReturn = 1, isBarrier = 1 in {
-//   def RET : F16<0b1001010100001000, (outs), (ins), "ret", [(I8085retflag)]>;
-
-//   def RETI : F16<0b1001010100011000, (outs), (ins), "reti", [(I8085retiflag)]>;
-// }
-
-//===----------------------------------------------------------------------===//
-// Data transfer instructions
-//===----------------------------------------------------------------------===//
-// 8 and 16-bit register move instructions.
-let hasSideEffects = 0 in {
-  def MOVRdRr : FRdRr<0b0010, 0b11,
-                      (outs GPR8
-                       : $rd),
-                      (ins GPR8
-                       : $rr),
-                      "mov\t$rd, $rr", []>;
-
-  def MOVWRdRr : FMOVWRdRr<(outs DREGS
-                            : $dst),
-                           (ins DREGS
-                            : $src),
-                           "movw\t$dst, $src", []>,
-                 Requires<[HasMOVW]>;
-}
-
-// Load immediate values into registers.
-let isReMaterializable = 1 in {
-  def LDIRdK : FRdK<0b1110,
-                    (outs LD8
-                     : $rd),
-                    (ins imm_ldi8
-                     : $k),
-                    "ldi\t$rd, $k", []>;
-
-  // LDIW Rd+1:Rd, K+1:K
-  //
-  // Expands to:
-  // ldi Rd,   K
-  // ldi Rd+1, K+1
-  def LDIWRdK : Pseudo<(outs DLDREGS
-                        : $dst),
-                       (ins i16imm
-                        : $src),
-                       "ldiw\t$dst, $src", []>;
-}
-
-// Load from data space into register.
-let canFoldAsLoad = 1, isReMaterializable = 1 in {
-  def LDSRdK : F32DM<0b0,
-                     (outs GPR8
-                      : $rd),
-                     (ins imm16
-                      : $k),
-                     "lds\t$rd, $k", [(set i8
-                                       : $rd, (load imm
-                                               : $k))]>,
-               Requires<[HasSRAM]>;
-
-  // LDSW Rd+1:Rd, K+1:K
-  //
-  // Expands to:
-  // lds Rd,  (K+1:K)
-  // lds Rd+1 (K+1:K) + 1
-  def LDSWRdK : Pseudo<(outs DREGS
-                        : $dst),
-                       (ins i16imm
-                        : $src),
-                       "ldsw\t$dst, $src", [(set i16
-                                             : $dst, (load imm
-                                                      : $src))]>,
-                Requires<[HasSRAM]>;
-}
-
-// Indirect loads.
-let canFoldAsLoad = 1, isReMaterializable = 1 in {
-  def LDRdPtr : FSTLD<0, 0b00,
-                      (outs GPR8
-                       : $reg),
-                      (ins LDSTPtrReg
-                       : $ptrreg),
-                      "ld\t$reg, $ptrreg", [(set GPR8
-                                             : $reg, (load i16
-                                                      : $ptrreg))]>,
-                Requires<[HasSRAM]>;
-
-  // LDW Rd+1:Rd, P
-  //
-  // Expands to:
-  // ld  Rd,   P
-  // ldd Rd+1, P+1
-  let Constraints = "@earlyclobber $reg" in def LDWRdPtr
-      : Pseudo<(outs DREGS
-                : $reg),
-               (ins PTRDISPREGS
-                : $ptrreg),
-               "ldw\t$reg, $ptrreg", [(set i16
-                                       : $reg, (load i16
-                                                : $ptrreg))]>,
-      Requires<[HasSRAM]>;
-}
 
 // Indirect loads (with postincrement or predecrement).
 let mayLoad = 1, hasSideEffects = 0,
@@ -955,7 +701,7 @@ def LXI : I8085Pseudo<(outs GR8: $rd), (ins i16imm: $k), "LXI $rd, $k", []>;
 let Uses = [H,L] in {
   let Defs=[SREG,H,L] in def DAD : I8085Pseudo<(outs), (ins), "DAD\tSP", []>;
 
-  let Defs=[SP] in def SPHL : I8085Pseudo<(outs), (ins), "SPHL", []>;                          
+  let Defs=[SP] in def SPHL : I8085LegalInst8<0b11111001,(outs), (ins), "SPHL", []>;                          
 
   def SHLD : I8085Pseudo<(outs), (ins i16imm: $k), "SHLD $k", []>;   
 

@@ -257,6 +257,25 @@ template <> bool I8085DAGToDAGISel::select<ISD::BR_CC>(SDNode *N) {
   return true;
 }
 
+template <> bool I8085DAGToDAGISel::select<ISD::BRCOND>(SDNode *N) {
+  SDLoc dl(N);
+  auto DL = CurDAG->getDataLayout();
+
+  SDValue Chain = N->getOperand(0);
+  SDValue selectCC = N->getOperand(1);
+  SDValue JumpTo = N->getOperand(2);
+  
+ 
+  unsigned JumpOpc=I8085::JMP_8_IF;
+
+  SDValue Ops[] = {selectCC.getValue(0),JumpTo,Chain};
+  
+  SDNode *ResNode = CurDAG->getMachineNode(JumpOpc, dl,MVT::Other,Ops);
+  ReplaceUses(SDValue(N, 0), SDValue(ResNode, 0));
+  CurDAG->RemoveDeadNode(N);
+  return true;
+}
+
 template <> bool I8085DAGToDAGISel::select<ISD::SHL>(SDNode *N) {
   SDLoc dl(N);
   auto DL = CurDAG->getDataLayout();
@@ -322,6 +341,8 @@ bool I8085DAGToDAGISel::trySelect(SDNode *N) {
     return select<ISD::SETCC>(N);
   case ISD::BR_CC:
     return select<ISD::BR_CC>(N);
+  case ISD::BRCOND:
+    return select<ISD::BRCOND>(N);
   case ISD::SHL:
     return select<ISD::SHL>(N);  
   case ISD::SRA:

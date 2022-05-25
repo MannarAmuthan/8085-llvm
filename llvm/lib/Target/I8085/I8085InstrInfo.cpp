@@ -203,17 +203,6 @@ unsigned I8085InstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {
   case TargetOpcode::KILL:
   case TargetOpcode::DBG_VALUE:
     return 0;
-  case TargetOpcode::INLINEASM:
-  case TargetOpcode::INLINEASM_BR: {
-    const MachineFunction &MF = *MI.getParent()->getParent();
-    const I8085TargetMachine &TM =
-        static_cast<const I8085TargetMachine &>(MF.getTarget());
-    const I8085Subtarget &STI = MF.getSubtarget<I8085Subtarget>();
-    const TargetInstrInfo &TII = *STI.getInstrInfo();
-
-    return TII.getInlineAsmLength(MI.getOperand(0).getSymbolName(),
-                                  *TM.getMCAsmInfo());
-  }
   }
 }
 
