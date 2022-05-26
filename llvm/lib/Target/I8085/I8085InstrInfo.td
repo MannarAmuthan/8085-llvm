@@ -77,24 +77,6 @@ def I8085rolLoop : SDNode<"I8085ISD::ROLLOOP", SDTIntShiftOp>;
 def I8085rorLoop : SDNode<"I8085ISD::RORLOOP", SDTIntShiftOp>;
 def I8085asrLoop : SDNode<"I8085ISD::ASRLOOP", SDTIntShiftOp>;
 
-// SWAP node.
-def I8085Swap : SDNode<"I8085ISD::SWAP", SDTIntUnaryOp>;
-
-
-def MemriAsmOperand : AsmOperandClass {
-  let Name = "Memri";
-  let ParserMethod = "parseMemriOperand";
-}
-
-/// Address operand for `reg+imm` used by STD and LDD.
-def memri : Operand<iPTR> {
-  let MIOperandInfo = (ops PTRDISPREGS, i16imm);
-
-  let PrintMethod = "printMemri";
-  let EncoderMethod = "encodeMemri";
-
-  let ParserMatchClass = MemriAsmOperand;
-}
 
 // Address operand for `SP+imm` used by STD{W}SPQRr
 def memspi : Operand<iPTR> { let MIOperandInfo = (ops GPRSP, i16imm); }
@@ -108,11 +90,6 @@ def rcalltarget_13 : Operand<i16> {
 
 // A 16-bit address (which can lead to an R_I8085_16 relocation).
 def imm16 : Operand<i16> { let EncoderMethod = "encodeImm<I8085::fixup_16, 2>"; }
-
-/// A 6-bit immediate used in the ADIW/SBIW instructions.
-// def imm_arith6 : Operand<i16> {
-//   let EncoderMethod = "encodeImm<I8085::fixup_6_adiw, 0>";
-// }
 
 
 
@@ -136,7 +113,7 @@ def addr : ComplexPattern<iPTR, 2, "SelectAddr", [], [SDNPWantRoot]>;
 // Pessimistically assume ADJCALLSTACKDOWN / ADJCALLSTACKUP will become
 // sub / add which can clobber SREG.
 let Defs = [SP], Uses = [SP] in {
-  def ADJCALLSTACKDOWN : Pseudo<(outs),
+  def ADJCALLSTACKDOWN : I8085Pseudo<(outs),
                                 (ins i16imm
                                  : $amt, i16imm
                                  : $amt2),
@@ -149,8 +126,7 @@ let Defs = [SP], Uses = [SP] in {
   // register allocator might use it in rare cases (for rematerialization, it
   // seems). hasSideEffects needs to be set to true so this instruction isn't
   // considered dead.
-  def ADJCALLSTACKUP
-      : Pseudo<(outs),
+  def ADJCALLSTACKUP : I8085Pseudo<(outs),
                (ins i16imm
                 : $amt1, i16imm
                 : $amt2),
@@ -160,35 +136,6 @@ let Defs = [SP], Uses = [SP] in {
 }
 
 
-// Store indirect with displacement operations.
-// STD P+q, Rr
-// Stores the value of Rr into the location addressed by pointer P with a
-// displacement of q. Does not modify P.
-def STDPtrQRr : FSTDLDD<1, (outs),
-                        (ins memri
-                         : $memri, GPR8
-                         : $reg),
-                        "std\t$memri, $reg", []>,
-                Requires<[]>;
-
-// STDW P+q, Rr+1:Rr
-// Stores the value of Rr into the location addressed by pointer P with a
-// displacement of q. Does not modify P.
-//
-// Expands to:
-// std P+q,   Rr
-// std P+q+1, Rr+1
-def STDWPtrQRr : Pseudo<(outs),
-                        (ins memri
-                         : $memri, DREGS
-                         : $src),
-                        "stdw\t$memri, $src", []>,
-                 Requires<[]>;
-
-
-
-
-// ------------------------------------- NEW ---------------------------------------
 
 let Constraints = "$src = $rd", Defs=[SREG]  in {
 

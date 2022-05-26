@@ -640,19 +640,6 @@ bool I8085AsmParser::ParseInstruction(ParseInstructionInfo &Info,
 
     first = false;
 
-    auto MatchResult = MatchOperandParserImpl(Operands, Mnemonic);
-
-    if (MatchResult == MatchOperand_Success) {
-      continue;
-    }
-
-    if (MatchResult == MatchOperand_ParseFail) {
-      SMLoc Loc = getLexer().getLoc();
-      Parser.eatToEndOfStatement();
-
-      return Error(Loc, "failed to parse register and immediate pair");
-    }
-
     if (parseOperand(Operands)) {
       SMLoc Loc = getLexer().getLoc();
       Parser.eatToEndOfStatement();

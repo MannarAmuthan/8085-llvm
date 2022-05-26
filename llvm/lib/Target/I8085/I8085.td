@@ -64,6 +64,12 @@ def I8085AsmParserVariant : AsmParserVariant {
 // Target Declaration
 //===---------------------------------------------------------------------===//
 
+class Proc<string Name, list<SubtargetFeature> Features>
+ : Processor<Name, NoItineraries, Features>;
+
+def : Proc<"i8085", []>;
+
+
 def I8085 : Target {
   let InstructionSet = I8085InstrInfo;
   let AssemblyWriters = [I8085AsmWriter];

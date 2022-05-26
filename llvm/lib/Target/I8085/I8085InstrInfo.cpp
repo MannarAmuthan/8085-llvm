@@ -47,17 +47,12 @@ void I8085InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
   const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
   unsigned Opc;
 
-  // Not all I8085 devices support the 16-bit `MOVW` instruction.
+
   if (I8085::GR8RegClass.contains(DestReg, SrcReg)) {
-    if (STI.hasMOVW() && I8085::DREGSMOVWRegClass.contains(DestReg, SrcReg)) {
-      // BuildMI(MBB, MI, DL, get(I8085::MOVWRdRr), DestReg)
-      //     .addReg(SrcReg, getKillRegState(KillSrc));
-    } else {
       Opc = I8085::MOV;
 
       BuildMI(MBB, MI, DL, get(Opc), DestReg)
         .addReg(SrcReg, getKillRegState(KillSrc));
-    }
   } else {
 
   unsigned destLow,destHigh;
@@ -80,7 +75,7 @@ unsigned I8085InstrInfo::isLoadFromStackSlot(const MachineInstr &MI,
                                            int &FrameIndex) const {
   switch (MI.getOpcode()) {
   case I8085::LOAD_8_WITH_ADDR:
-  case I8085::LOAD_16_WITH_ADDR: { //: FIXME: remove this once PR13375 gets fixed
+  case I8085::LOAD_16_WITH_ADDR: { 
     if (MI.getOperand(1).isFI() && MI.getOperand(2).isImm() &&
         MI.getOperand(2).getImm() == 0) {
       FrameIndex = MI.getOperand(1).getIndex();
