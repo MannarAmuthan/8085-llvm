@@ -365,21 +365,17 @@ static const MCPhysReg RegList8I8085[] = {
     I8085::R25, I8085::R24, I8085::R23, I8085::R22, I8085::R21, I8085::R20,
     I8085::R19, I8085::R18, I8085::R17, I8085::R16, I8085::R15, I8085::R14,
     I8085::R13, I8085::R12, I8085::R11, I8085::R10, I8085::R9,  I8085::R8};
-static const MCPhysReg RegList8Tiny[] = {I8085::R25, I8085::R24, I8085::R23,
-                                         I8085::R22, I8085::R21, I8085::R20};
+
 static const MCPhysReg RegList16I8085[] = {
     I8085::R26R25, I8085::R25R24, I8085::R24R23, I8085::R23R22, I8085::R22R21,
     I8085::R21R20, I8085::R20R19, I8085::R19R18, I8085::R18R17, I8085::R17R16,
     I8085::R16R15, I8085::R15R14, I8085::R14R13, I8085::R13R12, I8085::R12R11,
     I8085::R11R10, I8085::R10R9,  I8085::R9R8};
-static const MCPhysReg RegList16Tiny[] = {I8085::R26R25, I8085::R25R24,
-                                          I8085::R24R23, I8085::R23R22,
-                                          I8085::R22R21, I8085::R21R20};
+
 
 static_assert(array_lengthof(RegList8I8085) == array_lengthof(RegList16I8085),
               "8-bit and 16-bit register arrays must be of equal length");
-static_assert(array_lengthof(RegList8Tiny) == array_lengthof(RegList16Tiny),
-              "8-bit and 16-bit register arrays must be of equal length");
+
 
 /// Analyze incoming and outgoing function arguments. We need custom C++ code
 /// to handle special constraints in the ABI.
@@ -394,13 +390,10 @@ static void analyzeArguments(TargetLowering::CallLoweringInfo *CLI,
   // Choose the proper register list for argument passing according to the ABI.
   ArrayRef<MCPhysReg> RegList8;
   ArrayRef<MCPhysReg> RegList16;
-  if (Tiny) {
-    RegList8 = makeArrayRef(RegList8Tiny, array_lengthof(RegList8Tiny));
-    RegList16 = makeArrayRef(RegList16Tiny, array_lengthof(RegList16Tiny));
-  } else {
+
     RegList8 = makeArrayRef(RegList8I8085, array_lengthof(RegList8I8085));
     RegList16 = makeArrayRef(RegList16I8085, array_lengthof(RegList16I8085));
-  }
+
 
   unsigned NumArgs = Args.size();
   // This is the index of the last used register, in RegList*.
@@ -490,13 +483,10 @@ static void analyzeReturnValues(const SmallVectorImpl<ArgT> &Args,
   // Choose the proper register list for argument passing according to the ABI.
   ArrayRef<MCPhysReg> RegList8;
   ArrayRef<MCPhysReg> RegList16;
-  if (Tiny) {
-    RegList8 = makeArrayRef(RegList8Tiny, array_lengthof(RegList8Tiny));
-    RegList16 = makeArrayRef(RegList16Tiny, array_lengthof(RegList16Tiny));
-  } else {
+
     RegList8 = makeArrayRef(RegList8I8085, array_lengthof(RegList8I8085));
     RegList16 = makeArrayRef(RegList16I8085, array_lengthof(RegList16I8085));
-  }
+
 
   // GCC-ABI says that the size is rounded up to the next even number,
   // but actually once it is more than 4 it will always round up to 8.

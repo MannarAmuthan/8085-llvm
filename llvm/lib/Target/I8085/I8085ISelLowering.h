@@ -113,9 +113,6 @@ public:
   EVT getSetCCResultType(const DataLayout &DL, LLVMContext &Context,
                          EVT VT) const override;
 
-  // void LowerAsmOperandForConstraint(SDValue Op, std::string &Constraint,
-  //                                   std::vector<SDValue> &Ops,
-  //                                   SelectionDAG &DAG) const override;
 
   MachineBasicBlock * EmitInstrWithCustomInserter(MachineInstr &MI,
                               MachineBasicBlock *MBB) const override;
@@ -138,14 +135,6 @@ private:
   SDValue LowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerBlockAddress(SDValue Op, SelectionDAG &DAG) const;
 
-  // SDValue LowerStore(SDValue Op, SelectionDAG &DAG) const;
-  
-
-  SDValue LowerBR_CC(SDValue Op, SelectionDAG &DAG) const;
-  SDValue LowerINLINEASM(SDValue Op, SelectionDAG &DAG) const;
-  SDValue LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const;
-  SDValue LowerSETCC(SDValue Op, SelectionDAG &DAG) const;
-  SDValue LowerVASTART(SDValue Op, SelectionDAG &DAG) const;
 
   bool CanLowerReturn(CallingConv::ID CallConv, MachineFunction &MF,
                       bool isVarArg,
@@ -173,13 +162,6 @@ protected:
   const I8085Subtarget &Subtarget;
 
 private:
-  MachineBasicBlock *insertShift(MachineInstr &MI, MachineBasicBlock *BB) const;
-  MachineBasicBlock *insertMul(MachineInstr &MI, MachineBasicBlock *BB) const;
-  MachineBasicBlock *insertCopyR1(MachineInstr &MI,
-                                  MachineBasicBlock *BB) const;
-  MachineBasicBlock *insertAtomicArithmeticOp(MachineInstr &MI,
-                                              MachineBasicBlock *BB,
-                                              unsigned Opcode, int Width) const;
 
 
   MachineBasicBlock *insertCond8Set(MachineInstr &MI, MachineBasicBlock *MBB) const;
