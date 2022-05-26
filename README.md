@@ -22,169 +22,169 @@ entry:
 ```
 
 ```assembly
-fibanocci:                              
+fibanocci:
 LBB00:
 	LXI H, 65530
-	DAD	SP
+	DAD SP
 	SPHL
-	MVI	D, 0
-	MVI	E, 2
+	MVI D, 0
+	MVI E, 2
 	LXI H, 9
-	DAD	SP
+	DAD SP
 	MOV B, M
 	LXI H, 8
-	DAD	SP
+	DAD SP
 	MOV C, M
 	LXI H, 5
-	DAD	SP
+	DAD SP
 	MOV M, B
 	LXI H, 4
-	DAD	SP
+	DAD SP
 	MOV M, C
-	MOV	A, B
+	MOV A, B
 	XRA D
 	ANI 128
 	JZ	LBB01
 	JMP LBB04
 LBB01:
 	LXI H, 3
-	DAD	SP
+	DAD SP
 	MOV M, D
 	LXI H, 2
-	DAD	SP
+	DAD SP
 	MOV M, E
-	MOV	D, B
-	MOV	E, C
+	MOV D, B
+	MOV E, C
 	LXI H, 3
-	DAD	SP
+	DAD SP
 	MOV B, M
 	LXI H, 2
-	DAD	SP
+	DAD SP
 	MOV C, M
-	MOV	A, E
+	MOV A, E
 	SUB C
-	MOV	E, A
-	MOV	A, D
+	MOV E, A
+	MOV A, D
 	SBB B
-	MOV	D, A
-	MVI	D, 1
+	MOV D, A
+	MVI D, 1
 	JC	LBB03
 	JMP LBB02
 LBB02:
-	MVI	D, 0
+	MVI D, 0
 	JMP LBB03
 LBB03:
 	LXI H, 5
-	DAD	SP
+	DAD SP
 	MOV B, M
 	LXI H, 4
-	DAD	SP
+	DAD SP
 	MOV C, M
 	JMP LBB08
 LBB04:
-	MOV	A, B
+	MOV A, B
 	ANI 128
 	JZ	LBB05
 	JMP LBB06
 LBB05:
-	MVI	D, 0
+	MVI D, 0
 	JMP LBB07
 LBB06:
-	MVI	D, 1
+	MVI D, 1
 	JMP LBB07
 LBB07:
 	JMP LBB08
 LBB08:
-	MOV	A, D
+	MOV A, D
 	ORI 0
 	JNZ	LBB010
 	JMP LBB09
 LBB09:
-	MVI	D, 0
-	MVI	E, 1
+	MVI D, 0
+	MVI E, 1
 	LXI H, 3
-	DAD	SP
+	DAD SP
 	MOV M, D
 	LXI H, 2
-	DAD	SP
+	DAD SP
 	MOV M, E
-	MOV	D, B
-	MOV	E, C
+	MOV D, B
+	MOV E, C
 	LXI H, 3
-	DAD	SP
+	DAD SP
 	MOV B, M
 	LXI H, 2
-	DAD	SP
+	DAD SP
 	MOV C, M
-	MOV	A, E
+	MOV A, E
 	SUB C
-	MOV	E, A
-	MOV	A, D
+	MOV E, A
+	MOV A, D
 	SBB B
-	MOV	D, A
+	MOV D, A
 	LXI H, 1
-	DAD	SP
+	DAD SP
 	MOV M, D
 	LXI H, 0
-	DAD	SP
+	DAD SP
 	MOV M, E
-	MVI	B, 0
-	MVI	C, 2
+	MVI B, 0
+	MVI C, 2
 	LXI H, 5
-	DAD	SP
+	DAD SP
 	MOV D, M
 	LXI H, 4
-	DAD	SP
+	DAD SP
 	MOV E, M
-	MOV	A, E
+	MOV A, E
 	SUB C
-	MOV	E, A
-	MOV	A, D
+	MOV E, A
+	MOV A, D
 	SBB B
-	MOV	D, A
+	MOV D, A
 	LXI H, 5
-	DAD	SP
+	DAD SP
 	MOV M, D
 	LXI H, 4
-	DAD	SP
+	DAD SP
 	MOV M, E
 	CALL fibanocci
 	LXI H, 3
-	DAD	SP
+	DAD SP
 	MOV M, B
 	LXI H, 2
-	DAD	SP
+	DAD SP
 	MOV M, C
 	LXI H, 5
-	DAD	SP
+	DAD SP
 	MOV B, M
 	LXI H, 4
-	DAD	SP
+	DAD SP
 	MOV C, M
 	LXI H, 1
-	DAD	SP
+	DAD SP
 	MOV M, B
 	LXI H, 0
-	DAD	SP
+	DAD SP
 	MOV M, C
 	CALL fibanocci
 	LXI H, 3
-	DAD	SP
+	DAD SP
 	MOV D, M
 	LXI H, 2
-	DAD	SP
+	DAD SP
 	MOV E, M
-	MOV	A, E
+	MOV A, E
 	ADD C
-	MOV	E, A
-	MOV	A, D
+	MOV E, A
+	MOV A, D
 	ADC B
-	MOV	D, A
-	MOV	B, D
-	MOV	C, E
+	MOV D, A
+	MOV B, D
+	MOV C, E
 LBB010:
 	LXI H, 6
-	DAD	SP
+	DAD SP
 	SPHL
 	RET
 ```

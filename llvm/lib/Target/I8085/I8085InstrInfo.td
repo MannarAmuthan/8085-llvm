@@ -262,13 +262,13 @@ let Defs=[SREG,A], Uses=[A] in def XRI : I8085Pseudo<(outs), (ins i8imm: $val), 
 def MVI : I8085Pseudo<
                     (outs GR8: $rd),
                     (ins i8imm: $k),
-                    "MVI\t$rd, $k", [(set i8: $rd, imm: $k)]>;
+                    "MVI $rd, $k", [(set i8: $rd, imm: $k)]>;
 
 
 def MOV : I8085Pseudo<
                     (outs GR8: $rd),
                     (ins GR8: $rs),
-                    "MOV\t$rd, $rs", [(set i8: $rd, i8: $rs)]>;
+                    "MOV $rd, $rs", [(set i8: $rd, i8: $rs)]>;
 
 
 def mspi : Operand<iPTR> { 
@@ -281,7 +281,7 @@ def mspi : Operand<iPTR> {
 def LXI : I8085Pseudo<(outs GR8: $rd), (ins i16imm: $k), "LXI $rd, $k", []>;                  
 
 let Uses = [H,L] in {
-  let Defs=[SREG,H,L] in def DAD : I8085Pseudo<(outs), (ins), "DAD\tSP", []>;
+  let Defs=[SREG,H,L] in def DAD : I8085Pseudo<(outs), (ins), "DAD SP", []>;
 
   let Defs=[SP] in def SPHL : I8085LegalInst8<0b11111001,(outs), (ins), "SPHL", []>;                          
 
@@ -312,7 +312,7 @@ def SHRINK_STACK_BY
 let Uses=[SP] in {
 def LOAD_16 : I8085Pseudo<(outs GR16: $dst),
                        (ins i16imm: $src),
-                       "LOAD_16\t$dst, $src", [(set i16
+                       "LOAD_16 $dst, $src", [(set i16
                                              : $dst, imm
                                              : $src)]>; 
 
@@ -320,23 +320,23 @@ def STORE_16 : I8085Pseudo<(outs),
                             (ins mspi
                              : $dst, GR16
                              : $src),
-                            "STORE_16\t$dst, $src", [(store i16
+                            "STORE_16 $dst, $src", [(store i16
                                                      : $src, addr
                                                      : $dst)]>;
 
 def STORE_8 : I8085Pseudo<(outs),
                         (ins mspi: $memri,
                          GR8: $reg),
-                        "STORE\t$memri, $reg", [(store i8: $reg, addr: $memri)]>;
+                        "STORE $memri, $reg", [(store i8: $reg, addr: $memri)]>;
 
 
 def LOAD_16_WITH_ADDR : I8085Pseudo<(outs GR16: $dst),
                        (ins mspi: $src),
-                       "LOAD\t$dst, $src", [(set i16: $dst, (load addr: $src))]>;    
+                       "LOAD $dst, $src", [(set i16: $dst, (load addr: $src))]>;    
 
 def LOAD_8_WITH_ADDR : I8085Pseudo<(outs GR8: $dst),
                        (ins mspi: $src),
-                       "LOAD\t$dst, $src", [(set i8: $dst, (load addr: $src))]>;
+                       "LOAD $dst, $src", [(set i8: $dst, (load addr: $src))]>;
 
 
 def STORE_8_AT_OFFSET_WITH_SP : I8085Pseudo<(outs),
@@ -405,7 +405,7 @@ def SEXT8TO16
                        : $dst),
                       (ins GR8
                        : $src),
-                      "sext8to16\t$dst, $src",
+                      "sext8to16 $dst, $src",
                       [(set i16
                         : $dst, (sext i8
                                  : $src))]>;
