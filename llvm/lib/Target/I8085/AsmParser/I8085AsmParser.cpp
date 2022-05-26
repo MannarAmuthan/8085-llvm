@@ -738,9 +738,9 @@ unsigned I8085AsmParser::validateTargetOperandClass(MCParsedAsmOperand &AsmOp,
       int64_t RegNum = Const->getValue();
 
 
-      if (0 <= RegNum && RegNum <= 15 &&
-          STI.hasFeature(I8085::FeatureTinyEncoding))
-        return Match_InvalidRegisterOnTiny;
+      // if (0 <= RegNum && RegNum <= 15 &&
+      //     STI.hasFeature(I8085::FeatureTinyEncoding))
+      //   return Match_InvalidRegisterOnTiny;
 
       std::ostringstream RegName;
       RegName << "r" << RegNum;

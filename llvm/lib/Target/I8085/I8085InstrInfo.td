@@ -80,27 +80,6 @@ def I8085asrLoop : SDNode<"I8085ISD::ASRLOOP", SDTIntShiftOp>;
 // SWAP node.
 def I8085Swap : SDNode<"I8085ISD::SWAP", SDTIntUnaryOp>;
 
-//===----------------------------------------------------------------------===//
-// I8085 Operands, Complex Patterns and Transformations Definitions.
-//===----------------------------------------------------------------------===//
-
-
-// imm_com8_XFORM - Return the complement of a imm_com8 value
-def imm_com8_XFORM
-    : SDNodeXForm<imm, [{
-                    return CurDAG->getTargetConstant(
-                        ~((uint8_t) N->getZExtValue()), SDLoc(N), MVT::i8);
-                  }]>;
-
-// imm_com8 - Match an immediate that is a complement
-// of a 8-bit immediate.
-// Note: this pattern doesn't require an encoder method and such, as it's
-// only used on aliases (Pat<> and InstAlias<>). The actual encoding
-// is handled by the destination instructions, which use imm_com8.
-def imm_com8_asmoperand : AsmOperandClass { let Name = "ImmCom8"; }
-def imm_com8 : Operand<i8> { let ParserMatchClass = imm_com8_asmoperand; }
-
-
 
 def MemriAsmOperand : AsmOperandClass {
   let Name = "Memri";
@@ -120,34 +99,20 @@ def memri : Operand<iPTR> {
 // Address operand for `SP+imm` used by STD{W}SPQRr
 def memspi : Operand<iPTR> { let MIOperandInfo = (ops GPRSP, i16imm); }
 
-def relbrtarget_7 : Operand<OtherVT> {
-  let PrintMethod = "printPCRelImm";
-  let EncoderMethod = "encodeRelCondBrTarget<I8085::fixup_7_pcrel>";
-}
-
-def brtarget_13 : Operand<OtherVT> {
-  let PrintMethod = "printPCRelImm";
-  let EncoderMethod = "encodeRelCondBrTarget<I8085::fixup_13_pcrel>";
-}
 
 def rcalltarget_13 : Operand<i16> {
   let PrintMethod = "printPCRelImm";
   let EncoderMethod = "encodeRelCondBrTarget<I8085::fixup_13_pcrel>";
 }
 
-// The target of a 22 or 16-bit call/jmp instruction.
-def call_target : Operand<iPTR> {
-  let EncoderMethod = "encodeCallTarget";
-  let DecoderMethod = "decodeCallTarget";
-}
 
 // A 16-bit address (which can lead to an R_I8085_16 relocation).
 def imm16 : Operand<i16> { let EncoderMethod = "encodeImm<I8085::fixup_16, 2>"; }
 
 /// A 6-bit immediate used in the ADIW/SBIW instructions.
-def imm_arith6 : Operand<i16> {
-  let EncoderMethod = "encodeImm<I8085::fixup_6_adiw, 0>";
-}
+// def imm_arith6 : Operand<i16> {
+//   let EncoderMethod = "encodeImm<I8085::fixup_6_adiw, 0>";
+// }
 
 
 
@@ -157,27 +122,7 @@ def addr : ComplexPattern<iPTR, 2, "SelectAddr", [], [SDNPWantRoot]>;
 // AsmOperand class for a pointer register.
 // Used with the LD/ST family of instructions.
 // See FSTLD in I8085InstrFormats.td
-def PtrRegAsmOperand : AsmOperandClass { let Name = "Reg"; }
-
-// A special operand type for the LD/ST instructions.
-// It converts the pointer register number into a two-bit field used in the
-// instruction.
-def LDSTPtrReg : Operand<i16> {
-  let MIOperandInfo = (ops PTRREGS);
-  let EncoderMethod = "encodeLDSTPtrReg";
-
-  let ParserMatchClass = PtrRegAsmOperand;
-}
-
-
-//===----------------------------------------------------------------------===//
-// I8085 predicates for subtarget features
-//===----------------------------------------------------------------------===//
-
-def HasSRAM : Predicate<"Subtarget->hasSRAM()">,
-              AssemblerPredicate<(all_of FeatureSRAM)>;
-
-
+// def PtrRegAsmOperand : AsmOperandClass { let Name = "Reg"; }
 
 //===----------------------------------------------------------------------===//
 //===----------------------------------------------------------------------===//
@@ -223,10 +168,8 @@ def STDPtrQRr : FSTDLDD<1, (outs),
                         (ins memri
                          : $memri, GPR8
                          : $reg),
-                        "std\t$memri, $reg", [(store i8
-                                               : $reg, addr
-                                               : $memri)]>,
-                Requires<[HasSRAM]>;
+                        "std\t$memri, $reg", []>,
+                Requires<[]>;
 
 // STDW P+q, Rr+1:Rr
 // Stores the value of Rr into the location addressed by pointer P with a
@@ -239,54 +182,8 @@ def STDWPtrQRr : Pseudo<(outs),
                         (ins memri
                          : $memri, DREGS
                          : $src),
-                        "stdw\t$memri, $src", [(store i16
-                                                : $src, addr
-                                                : $memri)]>,
-                 Requires<[HasSRAM]>;
-
-
-
-//===----------------------------------------------------------------------===//
-// Pseudo instructions for later expansion
-//===----------------------------------------------------------------------===//
-
-//: TODO: Optimize this for wider types AND optimize the following code
-//       compile int foo(char a, char b, char c, char d) {return d+b;}
-//       looks like a missed sext_inreg opportunity.
-def SEXT
-    : ExtensionPseudo<(outs DREGS
-                       : $dst),
-                      (ins GPR8
-                       : $src),
-                      "sext\t$dst, $src",
-                      []>;
-
-def ZEXT
-    : ExtensionPseudo<(outs DREGS
-                       : $dst),
-                      (ins GPR8
-                       : $src),
-                      "zext\t$dst, $src",
-                      [(set i16
-                        : $dst, (zext i8
-                                 : $src)),
-                       (implicit SREG)]>;
-
-
-// SP read/write pseudos.
-let hasSideEffects = 0 in {
-  let Uses = [SP] in def SPREAD : Pseudo<(outs DREGS
-                                          : $dst),
-                                         (ins GPRSP
-                                          : $src),
-                                         "spread\t$dst, $src", []>;
-
-  let Defs = [SP] in def SPWRITE : Pseudo<(outs GPRSP
-                                           : $dst),
-                                          (ins DREGS
-                                           : $src),
-                                          "spwrite\t$dst, $src", []>;
-}
+                        "stdw\t$memri, $src", []>,
+                 Requires<[]>;
 
 
 
