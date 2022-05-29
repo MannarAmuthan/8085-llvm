@@ -122,15 +122,14 @@ Register I8085RegisterInfo::getFrameRegister(const MachineFunction &MF) const {
   return I8085::SP;
 }
 
-const TargetRegisterClass *
-I8085RegisterInfo::getPointerRegClass(const MachineFunction &MF,
-                                    unsigned Kind) const {
-  return &I8085::PTRDISPREGSRegClass;
-}
+// const TargetRegisterClass *
+// I8085RegisterInfo::getPointerRegClass(const MachineFunction &MF,
+//                                     unsigned Kind) const {
+//   return &I8085::GRSP;
+// }
 
 void I8085RegisterInfo::splitReg(Register Reg, Register &LoReg,
                                Register &HiReg) const {                        
-  assert(I8085::DREGSRegClass.contains(Reg) && "can only split 16-bit registers");
 
   LoReg = getSubReg(Reg, I8085::sub_lo);
   HiReg = getSubReg(Reg, I8085::sub_hi);
@@ -140,9 +139,6 @@ bool I8085RegisterInfo::shouldCoalesce(
     MachineInstr *MI, const TargetRegisterClass *SrcRC, unsigned SubReg,
     const TargetRegisterClass *DstRC, unsigned DstSubReg,
     const TargetRegisterClass *NewRC, LiveIntervals &LIS) const {
-  if (this->getRegClass(I8085::PTRDISPREGSRegClassID)->hasSubClassEq(NewRC)) {
-    return false;
-  }
 
   return TargetRegisterInfo::shouldCoalesce(MI, SrcRC, SubReg, DstRC, DstSubReg,
                                             NewRC, LIS);

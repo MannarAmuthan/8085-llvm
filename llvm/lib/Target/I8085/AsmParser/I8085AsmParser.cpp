@@ -30,6 +30,7 @@
 #include "llvm/Support/MathExtras.h"
 
 #include <sstream>
+#include <iostream>
 
 #define DEBUG_TYPE "i8085-asm-parser"
 
@@ -78,10 +79,10 @@ class I8085AsmParser : public MCTargetAsmParser {
   unsigned validateTargetOperandClass(MCParsedAsmOperand &Op,
                                       unsigned Kind) override;
 
-  unsigned toDREG(unsigned Reg, unsigned From = I8085::sub_lo) {
-    MCRegisterClass const *Class = &I8085MCRegisterClasses[I8085::DREGSRegClassID];
-    return MRI->getMatchingSuperReg(Reg, From, Class);
-  }
+  // unsigned toDREG(unsigned Reg, unsigned From = I8085::sub_lo) {
+  //   MCRegisterClass const *Class = &I8085MCRegisterClasses[I8085::DREGSRegClassID];
+  //   return MRI->getMatchingSuperReg(Reg, From, Class);
+  // }
 
   bool emit(MCInst &Instruction, SMLoc const &Loc, MCStreamer &Out) const;
   bool invalidOperand(SMLoc const &Loc, OperandVector const &Operands,
@@ -390,7 +391,7 @@ int I8085AsmParser::parseRegister(bool RestoreOnFailure) {
 
       if (Parser.getTok().is(AsmToken::Identifier)) {
         // Convert lower (even) register to DREG
-        RegNum = toDREG(parseRegisterName());
+        // RegNum = toDREG(parseRegisterName());
       }
       if (RegNum == I8085::NoRegister && RestoreOnFailure) {
         getLexer().UnLex(std::move(ColonTok));
@@ -742,17 +743,6 @@ unsigned I8085AsmParser::validateTargetOperandClass(MCParsedAsmOperand &AsmOp,
     }
   }
 
-  if (Op.isReg()) {
-    // If the instruction uses a register pair but we got a single, lower
-    // register we perform a "class cast".
-    if (isSubclass(Expected, MCK_DREGS)) {
-      unsigned correspondingDREG = toDREG(Op.getReg());
 
-      if (correspondingDREG != I8085::NoRegister) {
-        Op.makeReg(correspondingDREG);
-        return validateOperandClass(Op, Expected);
-      }
-    }
-  }
   return Match_InvalidOperand;
 }

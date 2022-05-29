@@ -361,20 +361,12 @@ bool I8085TargetLowering::isOffsetFoldingLegal(
 
 /// Registers for calling conventions, ordered in reverse as required by ABI.
 /// Both arrays must be of the same length.
-static const MCPhysReg RegList8I8085[] = {
-    I8085::R25, I8085::R24, I8085::R23, I8085::R22, I8085::R21, I8085::R20,
-    I8085::R19, I8085::R18, I8085::R17, I8085::R16, I8085::R15, I8085::R14,
-    I8085::R13, I8085::R12, I8085::R11, I8085::R10, I8085::R9,  I8085::R8};
+static const MCPhysReg RegList8I8085[] = { I8085::B, I8085::C, I8085::D, I8085::E };
 
-static const MCPhysReg RegList16I8085[] = {
-    I8085::R26R25, I8085::R25R24, I8085::R24R23, I8085::R23R22, I8085::R22R21,
-    I8085::R21R20, I8085::R20R19, I8085::R19R18, I8085::R18R17, I8085::R17R16,
-    I8085::R16R15, I8085::R15R14, I8085::R14R13, I8085::R13R12, I8085::R12R11,
-    I8085::R11R10, I8085::R10R9,  I8085::R9R8};
+static const MCPhysReg RegList16I8085[] = { I8085::BC, I8085::DE };
 
 
-static_assert(array_lengthof(RegList8I8085) == array_lengthof(RegList16I8085),
-              "8-bit and 16-bit register arrays must be of equal length");
+
 
 
 /// Analyze incoming and outgoing function arguments. We need custom C++ code
@@ -1034,13 +1026,9 @@ Register I8085TargetLowering::getRegisterByName(const char *RegName, LLT VT,
 
   if (VT == LLT::scalar(8)) {
     Reg = StringSwitch<unsigned>(RegName)
-              .Case("r0", I8085::R0)
-              .Case("r1", I8085::R1)
               .Default(0);
   } else {
     Reg = StringSwitch<unsigned>(RegName)
-              .Case("r0", I8085::R1R0)
-              .Case("sp", I8085::SP)
               .Default(0);
   }
 

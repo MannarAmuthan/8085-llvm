@@ -28,6 +28,10 @@
 #include "llvm/Support/EndianStream.h"
 #include "llvm/Support/raw_ostream.h"
 
+
+// Added for Debuffing, needs to removed
+#include <iostream>
+
 #define DEBUG_TYPE "mccodeemitter"
 
 #define GET_INSTRMAP_INFO
@@ -36,54 +40,10 @@
 
 namespace llvm {
 
-/// Performs a post-encoding step on a `LD` or `ST` instruction.
-///
-/// The encoding of the LD/ST family of instructions is inconsistent w.r.t
-/// the pointer register and the addressing mode.
-///
-/// The permutations of the format are as followed:
-/// ld Rd, X    `1001 000d dddd 1100`
-/// ld Rd, X+   `1001 000d dddd 1101`
-/// ld Rd, -X   `1001 000d dddd 1110`
-///
-/// ld Rd, Y    `1000 000d dddd 1000`
-/// ld Rd, Y+   `1001 000d dddd 1001`
-/// ld Rd, -Y   `1001 000d dddd 1010`
-///
-/// ld Rd, Z    `1000 000d dddd 0000`
-/// ld Rd, Z+   `1001 000d dddd 0001`
-/// ld Rd, -Z   `1001 000d dddd 0010`
-///                 ^
-///                 |
-/// Note this one inconsistent bit - it is 1 sometimes and 0 at other times.
-/// There is no logical pattern. Looking at a truth table, the following
-/// formula can be derived to fit the pattern:
-//
-/// ```
-/// inconsistent_bit = is_predec OR is_postinc OR is_reg_x
-/// ```
-//
-/// We manually set this bit in this post encoder method.
 unsigned
 I8085MCCodeEmitter::loadStorePostEncoder(const MCInst &MI, unsigned EncodedValue,
                                        const MCSubtargetInfo &STI) const {
 
-  // assert(MI.getOperand(0).isReg() && MI.getOperand(1).isReg() &&
-  //        "the load/store operands must be registers");
-
-  // unsigned Opcode = MI.getOpcode();
-
-  // // check whether either of the registers are the X pointer register.
-  // bool IsRegX = MI.getOperand(0).getReg() == I8085::R27R26 ||
-  //               MI.getOperand(1).getReg() == I8085::R27R26;
-
-  // bool IsPredec = Opcode == I8085::LDRdPtrPd || Opcode == I8085::STPtrPdRr;
-  // bool IsPostinc = Opcode == I8085::LDRdPtrPi || Opcode == I8085::STPtrPiRr;
-
-  // // Check if we need to set the inconsistent bit
-  // if (IsRegX || IsPredec || IsPostinc) {
-  //   EncodedValue |= (1 << 12);
-  // }
 
   return EncodedValue;
 }
@@ -212,8 +172,9 @@ unsigned I8085MCCodeEmitter::getMachineOpValue(const MCInst &MI,
                                              const MCOperand &MO,
                                              SmallVectorImpl<MCFixup> &Fixups,
                                              const MCSubtargetInfo &STI) const {
-  if (MO.isReg())
-    return Ctx.getRegisterInfo()->getEncodingValue(MO.getReg());
+  if (MO.isReg()){
+    // std::cout << "Register encode val: "<< Ctx.getRegisterInfo()->getEncodingValue(MO.getReg()) << "\n";
+    return Ctx.getRegisterInfo()->getEncodingValue(MO.getReg());}
   if (MO.isImm())
     return static_cast<unsigned>(MO.getImm());
 
@@ -229,11 +190,30 @@ unsigned I8085MCCodeEmitter::getMachineOpValue(const MCInst &MI,
 void I8085MCCodeEmitter::emitInstruction(uint64_t Val, unsigned Size,
                                        const MCSubtargetInfo &STI,
                                        raw_ostream &OS) const {
-  size_t WordCount = Size / 2;
 
-  for (int64_t i = WordCount - 1; i >= 0; --i) {
-    uint16_t Word = (Val >> (i * 16)) & 0xFFFF;
-    support::endian::write(OS, Word, support::endianness::little);
+  if(Size == 1){
+    uint8_t val = Val & 0xff;
+    // std::cout << "Writing Byte.. " << val << "\n";
+    OS << (char)val;
+  }
+
+  if(Size == 2){
+    uint16_t val = Val;
+    // std::cout << "Writing Word .. " << val << "\n";
+    uint8_t opcode = (val & 0xFF00) >> 8;
+    uint8_t operand = (val & 0x00FF);
+    OS << (char)opcode;
+    OS << (char)operand;
+  }
+  
+  if(Size == 3){
+    uint32_t val = Val;
+    uint8_t opcode = (val & 0x00FF0000) >> 16;
+    uint8_t operandHigh = (val & 0x0000FF00) >> 8;
+    uint8_t operandLow = (val & 0x000000FF);
+    OS << (char)opcode;
+    OS << (char)operandLow;
+    OS << (char)operandHigh;
   }
 }
 

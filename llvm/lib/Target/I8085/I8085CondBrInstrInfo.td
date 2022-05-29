@@ -128,17 +128,17 @@ def SET_LE_16 : I8085InserterPseudo<(outs GR8: $dst),
 
 let isBarrier = 1, isBranch = 1, Uses=[SREG]  in {                                                                                                                                                                           
 
-   def JZ :  I8085Pseudo<(outs),(ins addressTarget: $label),"JZ\t$label", []>;
+   def JZ :  I8085Pseudo<(outs),(ins addressTarget: $label),"JZ $label", []>;
 
-   def JNZ :  I8085Pseudo<(outs),(ins addressTarget: $label),"JNZ\t$label", []>;
+   def JNZ :  I8085Pseudo<(outs),(ins addressTarget: $label),"JNZ $label", []>;
 
-   def JNC :  I8085Pseudo<(outs),(ins addressTarget: $label),"JNC\t$label", []>;
+   def JNC :  I8085Pseudo<(outs),(ins addressTarget: $label),"JNC $label", []>;
 
-   def JC :  I8085Pseudo<(outs),(ins addressTarget: $label),"JC\t$label", []>;
+   def JC :  I8085Pseudo<(outs),(ins addressTarget: $label),"JC $label", []>;
 
-   def JP :  I8085Pseudo<(outs),(ins addressTarget: $label),"JP\t$label", []>;
+   def JP :  I8085Pseudo<(outs),(ins addressTarget: $label),"JP $label", []>;
 
-   def JM :  I8085Pseudo<(outs),(ins addressTarget: $label),"JM\t$label", []>;
+   def JM :  I8085Pseudo<(outs),(ins addressTarget: $label),"JM $label", []>;
 }
 
 let isBarrier = 1, isBranch = 1, isTerminator = 1 in {
@@ -166,13 +166,13 @@ let isBarrier = 1, isBranch = 1, isTerminator = 1 , Defs=[SREG] in {
 }
 
 let Constraints = "$src = $dst" in {
-def INV : I8085Pseudo<(outs GR8: $dst),
+   def INV : I8085Pseudo<(outs GR8: $dst),
                         (ins GR8: $src),
-                        "INVERSE\t$src", []>; 
+                        "INVERSE $src", []>; 
 }
 
 let Defs=[SREG] in {
-def CMP : I8085Pseudo<(outs),(ins GR8: $reg),"CMP\t$reg", []>;
+   def CMP : F2<0b10111,(outs),(ins GR8: $rs),"CMP $rs", []>;
 }
 
 def CMA : I8085Pseudo<(outs),(ins),"CMA", []>;

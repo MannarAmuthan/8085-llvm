@@ -65,12 +65,6 @@ const char *I8085InstPrinter::getPrettyRegisterName(unsigned RegNum,
 void I8085InstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
                                   raw_ostream &O) {
   const MCOperandInfo &MOI = this->MII.get(MI->getOpcode()).OpInfo[OpNo];
-  if (MOI.RegClass == I8085::ZREGRegClassID) {
-    // Special case for the Z register, which sometimes doesn't have an operand
-    // in the MCInst.
-    O << "Z";
-    return;
-  }
 
   if (OpNo >= MI->size()) {
     // Not all operands are correctly disassembled at the moment. This means
@@ -85,15 +79,7 @@ void I8085InstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
   const MCOperand &Op = MI->getOperand(OpNo);
 
   if (Op.isReg()) {
-    bool isPtrReg = (MOI.RegClass == I8085::PTRREGSRegClassID) ||
-                    (MOI.RegClass == I8085::PTRDISPREGSRegClassID) ||
-                    (MOI.RegClass == I8085::ZREGRegClassID);
-
-    if (isPtrReg) {
-      O << getRegisterName(Op.getReg(), I8085::ptr);
-    } else {
       O << getPrettyRegisterName(Op.getReg(), MRI);
-    }
   } else if (Op.isImm()) {
     O << formatImm(Op.getImm());
   } else {

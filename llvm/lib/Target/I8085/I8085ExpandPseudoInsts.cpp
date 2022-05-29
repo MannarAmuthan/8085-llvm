@@ -53,10 +53,6 @@ private:
   const I8085RegisterInfo *TRI;
   const TargetInstrInfo *TII;
 
-  /// The register to be used for temporary storage.
-  const Register SCRATCH_REGISTER = I8085::R0;
-  /// The register that will always contain zero.
-  const Register ZERO_REGISTER = I8085::R1;
 
   bool expandMBB(Block &MBB);
   bool expandMI(Block &MBB, BlockIt MBBI);
