@@ -128,21 +128,21 @@ def SET_LE_16 : I8085InserterPseudo<(outs GR8: $dst),
 
 let isBarrier = 1, isBranch = 1, Uses=[SREG]  in {                                                                                                                                                                           
 
-   def JZ :  I8085Pseudo<(outs),(ins addressTarget: $label),"JZ $label", []>;
+   def JZ :  F1<0b11001010,(outs),(ins addressTarget: $label),"JZ $label", []>;
 
-   def JNZ :  I8085Pseudo<(outs),(ins addressTarget: $label),"JNZ $label", []>;
+   def JNZ :  F1<0b11000010,(outs),(ins addressTarget: $label),"JNZ $label", []>;
 
-   def JNC :  I8085Pseudo<(outs),(ins addressTarget: $label),"JNC $label", []>;
+   def JNC :  F1<0b11010010,(outs),(ins addressTarget: $label),"JNC $label", []>;
 
-   def JC :  I8085Pseudo<(outs),(ins addressTarget: $label),"JC $label", []>;
+   def JC :  F1<0b11011010,(outs),(ins addressTarget: $label),"JC $label", []>;
 
-   def JP :  I8085Pseudo<(outs),(ins addressTarget: $label),"JP $label", []>;
+   def JP :  F1<0b11110010,(outs),(ins addressTarget: $label),"JP $label", []>;
 
-   def JM :  I8085Pseudo<(outs),(ins addressTarget: $label),"JM $label", []>;
+   def JM :  F1<0b11111010,(outs),(ins addressTarget: $label),"JM $label", []>;
 }
 
 let isBarrier = 1, isBranch = 1, isTerminator = 1 in {
-   def JMP : I8085Pseudo<(outs),(ins addressTarget:$k),
+   def JMP : F1<0b11000011,(outs),(ins addressTarget:$k),
                                            "JMP $k", [(br bb: $k)]>; 
 }
 
@@ -165,15 +165,15 @@ let isBarrier = 1, isBranch = 1, isTerminator = 1 , Defs=[SREG] in {
                                                                                  
 }
 
-let Constraints = "$src = $dst" in {
-   def INV : I8085Pseudo<(outs GR8: $dst),
-                        (ins GR8: $src),
-                        "INVERSE $src", []>; 
-}
+// let Constraints = "$src = $dst" in {
+//    def INV : I8085Pseudo<(outs GR8: $dst),
+//                         (ins GR8: $src),
+//                         "INVERSE $src", []>; 
+// }
 
 let Defs=[SREG] in {
    def CMP : F2<0b10111,(outs),(ins GR8: $rs),"CMP $rs", []>;
 }
 
-def CMA : I8085Pseudo<(outs),(ins),"CMA", []>;
+def CMA : F1<0b00101111,(outs),(ins),"CMA", []>;
 

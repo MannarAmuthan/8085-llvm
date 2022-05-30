@@ -5,15 +5,15 @@ For more details, current status of this backend, Please refer this [target's re
 Example : fibonacci.ll
 
 ```ll
-define i16 @fibanocci(i16 %a) {
+define i16 @fibonacci(i16 %a) {
 entry:
     %tmp1 = icmp sle i16 %a, 1
     br i1 %tmp1, label %done, label %recurse
     recurse:
         %tmp2 = sub i16 %a, 1
         %tmp3 = sub i16 %a, 2
-        %tmp4 = call i16 @fibanocci(i16 %tmp2)
-        %tmp5 = call i16 @fibanocci(i16 %tmp3)
+        %tmp4 = call i16 @fibonacci(i16 %tmp2)
+        %tmp5 = call i16 @fibonacci(i16 %tmp3)
         %tmp6 = add i16 %tmp4,%tmp5
         ret i16 %tmp6
     done:
@@ -22,7 +22,7 @@ entry:
 ```
 
 ```assembly
-fibanocci:
+fibonacci:
 LBB00:
 	LXI H, 65530
 	DAD SP
@@ -148,7 +148,7 @@ LBB09:
 	LXI H, 4
 	DAD SP
 	MOV M, E
-	CALL fibanocci
+	CALL fibonacci
 	LXI H, 3
 	DAD SP
 	MOV M, B
@@ -167,7 +167,7 @@ LBB09:
 	LXI H, 0
 	DAD SP
 	MOV M, C
-	CALL fibanocci
+	CALL fibonacci
 	LXI H, 3
 	DAD SP
 	MOV D, M

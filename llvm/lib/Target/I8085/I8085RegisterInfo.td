@@ -33,20 +33,21 @@ let Namespace = "I8085" in { def ptr : RegAltNameIndex; }
 //  8-bit general purpose registers
 //===----------------------------------------------------------------------===//
 
-def A : I8085Reg<7, "A">, DwarfRegNum<[1]>;
-def B : I8085Reg<0, "B">, DwarfRegNum<[2]>;
-def C : I8085Reg<1, "C">, DwarfRegNum<[3]>;
-def D : I8085Reg<2, "D">, DwarfRegNum<[4]>;
-def E : I8085Reg<3, "E">, DwarfRegNum<[5]>;
-def H : I8085Reg<4, "H">, DwarfRegNum<[6]>;
-def L : I8085Reg<5, "L">, DwarfRegNum<[7]>;
+def A : I8085Reg<7, "A">, DwarfRegNum<[7]>;
+def B : I8085Reg<0, "B">, DwarfRegNum<[0]>;
+def C : I8085Reg<1, "C">, DwarfRegNum<[1]>;
+def D : I8085Reg<2, "D">, DwarfRegNum<[2]>;
+def E : I8085Reg<3, "E">, DwarfRegNum<[3]>;
+def H : I8085Reg<4, "H">, DwarfRegNum<[4]>;
+def L : I8085Reg<5, "L">, DwarfRegNum<[5]>;
 
 
-def SP : I8085Reg<3, "SP">, DwarfRegNum<[8]>;
+def SP : I8085Reg<6, "SP">, DwarfRegNum<[6]>;
 
 let SubRegIndices = [sub_lo, sub_hi], CoveredBySubRegs = 1 in {
-def BC : I8085Reg<0, "C:B", [B, C]>, DwarfRegNum<[2]>;
-def DE : I8085Reg<1, "E:D", [D, E]>, DwarfRegNum<[4]>; 
+def BC : I8085Reg<0, "C:B", [B, C]>, DwarfRegNum<[0]>;
+def DE : I8085Reg<1, "E:D", [D, E]>, DwarfRegNum<[1]>;
+def HL : I8085Reg<2, "L:H", [H, L]>, DwarfRegNum<[2]>;
 }
 
 def GPRSP : RegisterClass<"I8085", [i16], 8, (add SP)>;
@@ -67,6 +68,6 @@ def GR8 : RegisterClass<"I8085", [i8], 8,
 def GR16 : RegisterClass<"I8085", [i16], 8,
                         (
                             // Return value and arguments.
-                            add BC,DE
+                            add BC,DE,SP
                             // Scratch registers.
                         )>;                                                      

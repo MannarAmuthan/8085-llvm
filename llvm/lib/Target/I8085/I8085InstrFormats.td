@@ -54,6 +54,12 @@ class I8085Inst16<dag outs, dag ins, string asmstr, list<dag> pattern>
   let Size = 2;
 }
 
+class I8085Inst24<dag outs, dag ins, string asmstr, list<dag> pattern>
+    : I8085Inst<outs, ins, asmstr, pattern> {
+  field bits<24> Inst;
+  let Size = 3;
+}
+
 
 //===----------------------------------------------------------------------===//
 // 1 Byte Instructions with 0 operands
@@ -147,5 +153,70 @@ class F2<bits<5> opcode,dag outs, dag ins, string asmstr, list<dag> pattern>
 
   let Inst{7-3} = opcode{4-0};
   let Inst{2-0} = rs{2-0};
+}
+
+//===----------------------------------------------------------------------===//
+// INR | DCR Instr Format
+// |00DD|D10x
+
+// x - Instruction Specific Opcode
+//        0 - INR
+//        1 - DCR
+
+// D - Dest Reg
+//===----------------------------------------------------------------------===//
+class F3<bits<1> opcode,dag outs, dag ins, string asmstr, list<dag> pattern>
+    : I8085Inst8<outs, ins, asmstr, pattern> {
+  
+  bits<4> rd;
+
+  let Inst{7-6} = 0b00;
+  let Inst{5-3} = rd{2-0};
+  let Inst{2-1} = 0b10;
+  let Inst{0} = opcode;
+}
+
+//===----------------------------------------------------------------------===//
+// LXI | DAD Instr Format
+// |00DD|xxxx|KKKK|KKKK|KKKK|KKKK
+// x - Instruction Specific Opcode
+//        0001 - LXI
+//        1001 - DAD
+// D - Dest Reg Pair
+// K - immediate
+//===----------------------------------------------------------------------===//
+class F4<bits<4> opcode,dag outs, dag ins, string asmstr, list<dag> pattern>
+    : I8085Inst24<outs, ins, asmstr, pattern> {
+  
+  bits<3> rd;
+  bits<16> k;
+
+  let Inst{23-22} = 0b00;
+  let Inst{21-20} = rd{2-1};
+  let Inst{19-16} = opcode;
+  let Inst{15-0} = k;
+}
+
+//===----------------------------------------------------------------------===//
+// Instructions with single byte operand and with accumulator
+// xxxx|xxxx|KKKK|KKKK
+// x - Instruction Specific Opcode
+//        11000110 - ADI
+//        11010110 - SUI  
+//        11100110 - ANI
+//        11110110 - ORI
+//        11001111 - ACI
+//        11011111 - SBI
+//        11101110 - XRI
+//        11111110 - CPI
+// K - immediate
+//===----------------------------------------------------------------------===//
+class F5<bits<8> opcode,dag outs, dag ins, string asmstr, list<dag> pattern>
+    : I8085Inst16<outs, ins, asmstr, pattern> {
+  
+  bits<8> k;
+
+  let Inst{15-8} = opcode;
+  let Inst{7-0} = k;
 }
 

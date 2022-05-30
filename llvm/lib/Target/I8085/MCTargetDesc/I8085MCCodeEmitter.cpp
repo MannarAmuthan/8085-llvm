@@ -221,9 +221,12 @@ void I8085MCCodeEmitter::encodeInstruction(const MCInst &MI, raw_ostream &OS,
                                          SmallVectorImpl<MCFixup> &Fixups,
                                          const MCSubtargetInfo &STI) const {
   const MCInstrDesc &Desc = MCII.get(MI.getOpcode());
-
   // Get byte count of instruction
   unsigned Size = Desc.getSize();
+
+  if(Size==0){
+    MI.dump();
+  }
 
   assert(Size > 0 && "Instruction size cannot be zero");
 

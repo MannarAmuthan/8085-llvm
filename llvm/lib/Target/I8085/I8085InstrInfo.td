@@ -135,7 +135,11 @@ let Defs = [SP], Uses = [SP] in {
                                     : $amt2)]>;
 }
 
-
+//===----------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
+// I8085 Arithmetic Instructions list
+//===----------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
 
 let Constraints = "$src = $rd", Defs=[SREG]  in {
 
@@ -176,11 +180,21 @@ let Constraints = "$src = $rd", Defs=[SREG]  in {
 
 let Defs=[SREG,A], Uses=[A] in def SUB : F2<0b10010,(outs), (ins GR8: $rs), "SUB $rs", []>;
 let Defs=[SREG,A], Uses=[A] in def SBB : F2<0b10011,(outs), (ins GR8: $rs), "SBB $rs",[]>;
-def SUB_M : I8085Pseudo<(outs), (ins), "SUB M", []>;
+def SUB_M : F1<0b10010110,(outs), (ins), "SUB M", []>;
 let Defs=[SREG,A], Uses=[A] in def ADD : F2<0b10000,(outs), (ins GR8: $rs), "ADD $rs", []>;
 let Defs=[SREG,A], Uses=[A] in def ADC : F2<0b10001,(outs), (ins GR8: $rs), "ADC $rs", []>;
-def ADD_M : I8085Pseudo<(outs), (ins), "ADD M", []>;
+def ADD_M : F1<0b10000110,(outs), (ins), "ADD M", []>;
 let Defs=[SREG,A], Uses=[A] in def ADI : I8085Pseudo<(outs), (ins i8imm: $val), "ADI $val", []>;
+
+let Defs=[SREG,A], Uses=[A] in def DCR : F3<0b1,(outs), (ins GR8: $rs), "DCR $rs", []>;
+let Defs=[SREG,A], Uses=[A] in def INR : F3<0b0,(outs), (ins GR8: $rs), "INR $rs", []>;
+
+
+//===----------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
+// I8085 Logical Instructions list
+//===----------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
 
 
 let Constraints = "$src = $rd", Defs=[SREG]  in {
@@ -238,25 +252,35 @@ let Constraints = "$src = $rd", Defs=[SREG]  in {
               [(set i8: $rd, (xor i8: $src, imm: $val))]>;                                                                                          
 }
 
+let Defs=[SREG,A], Uses=[A] in def ANA : F2<0b10100,(outs), (ins GR8: $rs), "ANA $rs", []>;
+let Defs=[SREG,A], Uses=[A] in def ORA : F2<0b10110,(outs), (ins GR8: $rs), "ORA $rs", []>;
+let Defs=[SREG,A], Uses=[A] in def XRA : F2<0b10101,(outs), (ins GR8: $rs), "XRA $rs", []>;
 
-let Defs=[SREG,A], Uses=[A] in def DCR : I8085Pseudo<(outs), (ins GR8: $rs), "DCR $rs", []>;
-let Defs=[SREG,A], Uses=[A] in def INR : I8085Pseudo<(outs), (ins GR8: $rs), "INR $rs", []>;
+let Defs=[SREG,A], Uses=[A] in def ANI : F5<0b11100110,(outs), (ins i8imm: $k), "ANI $k", []>;
+let Defs=[SREG,A], Uses=[A] in def ORI : F5<0b11110110,(outs), (ins i8imm: $k), "ORI $k", []>;
+let Defs=[SREG,A], Uses=[A] in def XRI : F5<0b11101110,(outs), (ins i8imm: $k), "XRI $k", []>;
+
+
+//===----------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
+// I8085 Bitwise Instructions list
+//===----------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
 
 
 let Defs=[SREG,A], Uses=[A] in def RL_8 : I8085Pseudo<(outs), (ins GR8: $rs), "RL_8 $rs", []>;
 let Defs=[SREG,A], Uses=[A] in def RR_8 : I8085Pseudo<(outs), (ins GR8: $rs), "RR_8 $rs", []>;
 
-def RLC : I8085Pseudo<(outs), (ins), "RLC", []>;
-def RRC : I8085Pseudo<(outs), (ins), "RRC", []>;
+def RLC : F1<0b00000111,(outs), (ins), "RLC", []>;
+def RRC : F1<0b00001111,(outs), (ins), "RRC", []>;
 
 
-let Defs=[SREG,A], Uses=[A] in def ANA : F2<0b10100,(outs), (ins GR8: $rs), "ANA $rs", []>;
-let Defs=[SREG,A], Uses=[A] in def ORA : F2<0b10110,(outs), (ins GR8: $rs), "ORA $rs", []>;
-let Defs=[SREG,A], Uses=[A] in def XRA : F2<0b10101,(outs), (ins GR8: $rs), "XRA $rs", []>;
 
-let Defs=[SREG,A], Uses=[A] in def ANI : I8085Pseudo<(outs), (ins i8imm: $val), "ANI $val", []>;
-let Defs=[SREG,A], Uses=[A] in def ORI : I8085Pseudo<(outs), (ins i8imm: $val), "ORI $val", []>;
-let Defs=[SREG,A], Uses=[A] in def XRI : I8085Pseudo<(outs), (ins i8imm: $val), "XRI $val", []>;
+//===----------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
+// I8085 Data movement operations
+//===----------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
 
 
 def MVI : FMVI<(outs GR8: $rd),
@@ -276,16 +300,16 @@ def mspi : Operand<iPTR> {
 }
 
 
-def LXI : I8085Pseudo<(outs GR8: $rd), (ins i16imm: $k), "LXI $rd, $k", []>;                  
+def LXI : F4<0b0001,(outs GR8: $rd), (ins i16imm: $k), "LXI $rd, $k", []>;                  
 
 let Uses = [H,L] in {
-  let Defs=[SREG,H,L] in def DAD : I8085Pseudo<(outs), (ins), "DAD SP", []>;
+  let Defs=[SREG,H,L] in def DAD : F1<0b00111001, (outs), (ins), "DAD SP", []>;
 
-  let Defs=[SP] in def SPHL : F1<0b00000001,(outs), (ins), "SPHL", []>;                          
+  let Defs=[SP] in def SPHL : F1<0b11111001,(outs), (ins), "SPHL", []>;                          
 
-  def SHLD : I8085Pseudo<(outs), (ins i16imm: $k), "SHLD $k", []>;   
+  def SHLD : F1<0b00100010,(outs), (ins i16imm: $k), "SHLD $k", []>;   
 
-  def LHLD : I8085Pseudo<(outs), (ins i16imm: $k), "LHLD $k", []>;                      
+  def LHLD : F1<0b00101010,(outs), (ins i16imm: $k), "LHLD $k", []>;                      
   
   def MOV_M  : FMOV_T_M<(outs), (ins GR8: $rs), "MOV M, $rs", []>;
 
@@ -354,7 +378,7 @@ def addressTarget : Operand<OtherVT> {
 }
 
 let isCall = 1 in {                                                                                                 
-let Uses = [SP] in def CALL : I8085Pseudo<(outs), (ins rcalltarget_13:$k),
+let Uses = [SP] in def CALL : F1<0b11001101,(outs), (ins rcalltarget_13:$k),
                                        "CALL $k", [(I8085call imm:$k)]>;
 }
 
