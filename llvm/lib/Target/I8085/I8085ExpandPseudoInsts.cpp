@@ -132,7 +132,8 @@ bool I8085ExpandPseudo::expand<I8085::STORE_8>(Block &MBB, BlockIt MBBI) {
       .addReg(I8085::H,RegState::Define)
       .addImm(offsetToStore);
 
-  buildMI(MBB, MBBI, I8085::DAD);
+  buildMI(MBB, MBBI, I8085::DAD)
+      .addReg(I8085::SP);
   
   /* Store the register value pointed by HL reg */
   
@@ -221,7 +222,8 @@ bool I8085ExpandPseudo::expand<I8085::SHRINK_STACK_BY>(Block &MBB, BlockIt MBBI)
         .addReg(I8085::H,RegState::Define)
         .addImm(Amount);
 
-  buildMI(MBB, MBBI,  I8085::DAD);
+  buildMI(MBB, MBBI,  I8085::DAD)
+        .addReg(I8085::SP);
 
   buildMI(MBB, MBBI,  I8085::SPHL);
   
@@ -242,7 +244,8 @@ bool I8085ExpandPseudo::expand<I8085::GROW_STACK_BY>(Block &MBB, BlockIt MBBI) {
         .addReg(I8085::H,RegState::Define)
         .addImm(Amount);
 
-  buildMI(MBB, MBBI,  I8085::DAD);
+  buildMI(MBB, MBBI,  I8085::DAD)
+        .addReg(I8085::SP);
 
   buildMI(MBB, MBBI,  I8085::SPHL);
   
@@ -266,7 +269,8 @@ bool I8085ExpandPseudo::expand<I8085::LOAD_8_WITH_ADDR>(Block &MBB, BlockIt MBBI
       .addReg(I8085::H,RegState::Define)
       .addImm(offsetToLoad);
 
-  buildMI(MBB, MBBI, I8085::DAD);
+  buildMI(MBB, MBBI, I8085::DAD)
+      .addReg(I8085::SP);
   
   /* Store the register value pointed by HL reg */
   

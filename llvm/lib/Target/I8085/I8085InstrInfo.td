@@ -79,17 +79,19 @@ def I8085asrLoop : SDNode<"I8085ISD::ASRLOOP", SDTIntShiftOp>;
 
 
 // Address operand for `SP+imm` used by STD{W}SPQRr
-def memspi : Operand<iPTR> { let MIOperandInfo = (ops GPRSP, i16imm); }
-
-
-def rcalltarget_13 : Operand<i16> {
-  let PrintMethod = "printPCRelImm";
-  let EncoderMethod = "encodeRelCondBrTarget<I8085::fixup_13_pcrel>";
+def memspi : Operand<iPTR> { 
+  let MIOperandInfo = (ops GPRSP, i16imm); 
 }
 
 
-// A 16-bit address (which can lead to an R_I8085_16 relocation).
-def imm16 : Operand<i16> { let EncoderMethod = "encodeImm<I8085::fixup_16, 2>"; }
+// def rcalltarget_13 : Operand<i16> {
+//   let PrintMethod = "printPCRelImm";
+//   let EncoderMethod = "encodeRelCondBrTarget<I8085::fixup_13_pcrel>";
+// }
+
+def imm16Addr : Operand<i16> { 
+  let EncoderMethod = "encodeImm<I8085::fixup_16, 0>";
+}
 
 
 
@@ -295,15 +297,13 @@ def MOV : FMOV<(outs GR8: $rd),
 
 def mspi : Operand<iPTR> { 
   let MIOperandInfo = (ops GPRSP, i16imm); 
-  let PrintMethod = "printMemri";
-  let EncoderMethod = "encodeMemri";
 }
 
 
 def LXI : F4<0b0001,(outs GR8: $rd), (ins i16imm: $k), "LXI $rd, $k", []>;                  
 
 let Uses = [H,L] in {
-  let Defs=[SREG,H,L] in def DAD : F1<0b00111001, (outs), (ins), "DAD SP", []>;
+  let Defs=[SREG,H,L] in def DAD : F7<(outs), (ins GR16: $rs), "DAD $rs", []>;
 
   let Defs=[SP] in def SPHL : F1<0b11111001,(outs), (ins), "SPHL", []>;                          
 
@@ -311,9 +311,9 @@ let Uses = [H,L] in {
 
   def LHLD : F1<0b00101010,(outs), (ins i16imm: $k), "LHLD $k", []>;                      
   
-  def MOV_M  : FMOV_T_M<(outs), (ins GR8: $rs), "MOV M, $rs", []>;
+  let Uses=[H,L] in def MOV_M  : FMOV_T_M<(outs), (ins GR8: $rs), "MOV M, $rs", []>;
 
-  def MOV_FROM_M  : FMOV_F_M<(outs GR8: $rd), (ins), "MOV $rd, M", []>;  
+  let Uses=[H,L] in def MOV_FROM_M  : FMOV_F_M<(outs GR8: $rd), (ins), "MOV $rd, M", []>;  
 }          
 
 let Defs=[SP], Uses=[SP] in {
@@ -373,12 +373,12 @@ def STORE_16_AT_OFFSET_WITH_SP : I8085Pseudo<(outs),
 
 
 def addressTarget : Operand<OtherVT> {
-  let PrintMethod = "printPCRelImm";
-  let EncoderMethod = "encodeRelCondBrTarget<I8085::fixup_13_pcrel>";
+  // let PrintMethod = "printPCRelImm";
+  let EncoderMethod = "encodeCallTarget<I8085::fixup_16, 0>";
 }
 
 let isCall = 1 in {                                                                                                 
-let Uses = [SP] in def CALL : F1<0b11001101,(outs), (ins rcalltarget_13:$k),
+let Uses = [SP] in def CALL : F6<0b11001101,(outs), (ins imm16Addr:$k),
                                        "CALL $k", [(I8085call imm:$k)]>;
 }
 

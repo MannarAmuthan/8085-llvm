@@ -27,6 +27,8 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <iostream>
+
 // FIXME: we should be doing checks to make sure asm operands
 // are not out of bounds.
 
@@ -80,8 +82,8 @@ static void adjustBranch(unsigned Size, const MCFixup &Fixup, uint64_t &Value,
   // one.
   unsigned_width(Size + 1, Value, std::string("branch target"), Fixup, Ctx);
 
-  // Rightshifts the value by one.
-  I8085::fixups::adjustBranchTarget(Value);
+  // // Rightshifts the value by one.
+  // I8085::fixups::adjustBranchTarget(Value);
 }
 
 /// Adjusts the value of a relative branch target before fixup application.
@@ -92,7 +94,7 @@ static void adjustRelativeBranch(unsigned Size, const MCFixup &Fixup,
   signed_width(Size + 1, Value, std::string("branch target"), Fixup, Ctx);
 
   // Rightshifts the value by one.
-  I8085::fixups::adjustBranchTarget(Value);
+  // I8085::fixups::adjustBranchTarget(Value);
 }
 
 /// 22-bit absolute fixup.
@@ -103,13 +105,14 @@ static void adjustRelativeBranch(unsigned Size, const MCFixup &Fixup,
 /// Offset of 0 (so the result is left shifted by 3 bits before application).
 static void fixup_call(unsigned Size, const MCFixup &Fixup, uint64_t &Value,
                        MCContext *Ctx = nullptr) {
-  adjustBranch(Size, Fixup, Value, Ctx);
 
-  auto top = Value & (0xf00000 << 6);   // the top four bits
-  auto middle = Value & (0x1ffff << 5); // the middle 13 bits
-  auto bottom = Value & 0x1f;           // end bottom 5 bits
+  // adjustBranch(Size, Fixup, Value, Ctx);
 
-  Value = (top << 6) | (middle << 3) | (bottom << 0);
+  // auto top = Value & (0xf00000 << 6);   // the top four bits
+  // auto middle = Value & (0x1ffff << 5); // the middle 13 bits
+  // auto bottom = Value & 0x1f;           // end bottom 5 bits
+
+  // Value = (top << 6) | (middle << 3) | (bottom << 0);
 }
 
 /// 7-bit PC-relative fixup.
@@ -367,8 +370,8 @@ void I8085AsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                                bool IsResolved,
                                const MCSubtargetInfo *STI) const {
   adjustFixupValue(Fixup, Target, Value, &Asm.getContext());
-  if (Value == 0)
-    return; // Doesn't change encoding.
+  if (Value == 0){
+    return;} // Doesn't change encoding.
 
   MCFixupKindInfo Info = getFixupKindInfo(Fixup.getKind());
 
@@ -426,7 +429,7 @@ MCFixupKindInfo const &I8085AsmBackend::getFixupKindInfo(MCFixupKind Kind) const
       {"fixup_hi8_ldi_pm_neg", 0, 8, 0},
       {"fixup_hh8_ldi_pm_neg", 0, 8, 0},
 
-      {"fixup_call", 0, 22, 0},
+      {"fixup_call", 0, 16, 0},
 
       {"fixup_6", 0, 16, 0}, // non-contiguous
       {"fixup_6_adiw", 0, 6, 0},
@@ -475,10 +478,8 @@ bool I8085AsmBackend::shouldForceRelocation(const MCAssembler &Asm,
   switch ((unsigned)Fixup.getKind()) {
   default:
     return false;
-  // Fixups which should always be recorded as relocations.
-  case I8085::fixup_7_pcrel:
-  case I8085::fixup_13_pcrel:
   case I8085::fixup_call:
+  case I8085::fixup_16:
     return true;
   }
 }

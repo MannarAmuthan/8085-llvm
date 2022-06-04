@@ -177,11 +177,10 @@ class F3<bits<1> opcode,dag outs, dag ins, string asmstr, list<dag> pattern>
 }
 
 //===----------------------------------------------------------------------===//
-// LXI | DAD Instr Format
+// LXI Instr Format
 // |00DD|xxxx|KKKK|KKKK|KKKK|KKKK
 // x - Instruction Specific Opcode
 //        0001 - LXI
-//        1001 - DAD
 // D - Dest Reg Pair
 // K - immediate
 //===----------------------------------------------------------------------===//
@@ -218,5 +217,44 @@ class F5<bits<8> opcode,dag outs, dag ins, string asmstr, list<dag> pattern>
 
   let Inst{15-8} = opcode;
   let Inst{7-0} = k;
+}
+
+
+//===----------------------------------------------------------------------===//
+// Branching / Call Instructions
+// xxxx|xxxx|KKKK|KKKK|KKKK|KKKK
+// x - Instruction Specific Opcode
+
+// K - immediate
+//===----------------------------------------------------------------------===//
+class F6<bits<8> opcode,dag outs, dag ins, string asmstr, list<dag> pattern>
+    : I8085Inst24<outs, ins, asmstr, pattern> {
+  
+  bits<16> k;
+
+  let Inst{23-16} = opcode;
+  let Inst{15-8} = k{7-0};
+  let Inst{7-0} = k{15-8};
+}
+
+//===----------------------------------------------------------------------===//
+// DAD |  Instr Format
+// |00SS|1001|
+
+// [0000|1001]
+// [0001|1001]
+// [0010|1001]
+// [0011|1001]
+
+// S - Src Reg Pair
+//===----------------------------------------------------------------------===//
+class F7<dag outs, dag ins, string asmstr, list<dag> pattern>
+    : I8085Inst8<outs, ins, asmstr, pattern> {
+  
+  bits<3> rs;
+
+  let Inst{7-6} = 0b00;
+  let Inst{5-4} = rs{2-1};
+  let Inst{3-0} = 0b1001;
 }
 

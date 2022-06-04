@@ -40,61 +40,23 @@
 
 namespace llvm {
 
-unsigned
-I8085MCCodeEmitter::loadStorePostEncoder(const MCInst &MI, unsigned EncodedValue,
-                                       const MCSubtargetInfo &STI) const {
-
-
-  return EncodedValue;
-}
-
-template <I8085::Fixups Fixup>
-unsigned
-I8085MCCodeEmitter::encodeRelCondBrTarget(const MCInst &MI, unsigned OpNo,
-                                        SmallVectorImpl<MCFixup> &Fixups,
-                                        const MCSubtargetInfo &STI) const {
-  const MCOperand &MO = MI.getOperand(OpNo);
+template <I8085::Fixups Fixup, unsigned Offset>
+unsigned I8085MCCodeEmitter::encodeCallTarget(const MCInst &MI, unsigned OpNo,
+                                            SmallVectorImpl<MCFixup> &Fixups,
+                                            const MCSubtargetInfo &STI) const {
+  auto MO = MI.getOperand(OpNo);
 
   if (MO.isExpr()) {
-    Fixups.push_back(
-        MCFixup::create(0, MO.getExpr(), MCFixupKind(Fixup), MI.getLoc()));
+    MCFixupKind FixupKind = static_cast<MCFixupKind>(Fixup);
+    Fixups.push_back(MCFixup::create(Offset, MO.getExpr(), FixupKind, MI.getLoc()));
     return 0;
   }
 
   assert(MO.isImm());
 
-  // Take the size of the current instruction away.
-  // With labels, this is implicitly done.
-  auto target = MO.getImm();
-  I8085::fixups::adjustBranchTarget(target);
-  return target;
-}
-
-unsigned I8085MCCodeEmitter::encodeLDSTPtrReg(const MCInst &MI, unsigned OpNo,
-                                            SmallVectorImpl<MCFixup> &Fixups,
-                                            const MCSubtargetInfo &STI) const {
-
-  return 0;
-}
-
-/// Encodes a `memri` operand.
-/// The operand is 7-bits.
-/// * The lower 6 bits is the immediate
-/// * The upper bit is the pointer register bit (Z=0,Y=1)
-unsigned I8085MCCodeEmitter::encodeMemri(const MCInst &MI, unsigned OpNo,
-                                       SmallVectorImpl<MCFixup> &Fixups,
-                                       const MCSubtargetInfo &STI) const {
-  return 0;
-}
-
-unsigned I8085MCCodeEmitter::encodeComplement(const MCInst &MI, unsigned OpNo,
-                                            SmallVectorImpl<MCFixup> &Fixups,
-                                            const MCSubtargetInfo &STI) const {
-  // The operand should be an immediate.
-  assert(MI.getOperand(OpNo).isImm());
-
-  auto Imm = MI.getOperand(OpNo).getImm();
-  return (~0) - Imm;
+  auto Target = MO.getImm();
+  I8085::fixups::adjustBranchTarget(Target);
+  return Target;
 }
 
 template <I8085::Fixups Fixup, unsigned Offset>
@@ -115,30 +77,11 @@ unsigned I8085MCCodeEmitter::encodeImm(const MCInst &MI, unsigned OpNo,
     MCFixupKind FixupKind = static_cast<MCFixupKind>(Fixup);
     Fixups.push_back(
         MCFixup::create(Offset, MO.getExpr(), FixupKind, MI.getLoc()));
-
     return 0;
   }
 
   assert(MO.isImm());
   return MO.getImm();
-}
-
-unsigned I8085MCCodeEmitter::encodeCallTarget(const MCInst &MI, unsigned OpNo,
-                                            SmallVectorImpl<MCFixup> &Fixups,
-                                            const MCSubtargetInfo &STI) const {
-  auto MO = MI.getOperand(OpNo);
-
-  if (MO.isExpr()) {
-    MCFixupKind FixupKind = static_cast<MCFixupKind>(I8085::fixup_call);
-    Fixups.push_back(MCFixup::create(0, MO.getExpr(), FixupKind, MI.getLoc()));
-    return 0;
-  }
-
-  assert(MO.isImm());
-
-  auto Target = MO.getImm();
-  I8085::fixups::adjustBranchTarget(Target);
-  return Target;
 }
 
 unsigned I8085MCCodeEmitter::getExprOpValue(const MCExpr *Expr,

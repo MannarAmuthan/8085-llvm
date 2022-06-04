@@ -128,21 +128,21 @@ def SET_LE_16 : I8085InserterPseudo<(outs GR8: $dst),
 
 let isBarrier = 1, isBranch = 1, Uses=[SREG]  in {                                                                                                                                                                           
 
-   def JZ :  F1<0b11001010,(outs),(ins addressTarget: $label),"JZ $label", []>;
+   def JZ :  F6<0b11001010,(outs),(ins addressTarget: $label),"JZ $label", []>;
 
-   def JNZ :  F1<0b11000010,(outs),(ins addressTarget: $label),"JNZ $label", []>;
+   def JNZ :  F6<0b11000010,(outs),(ins addressTarget: $label),"JNZ $label", []>;
 
-   def JNC :  F1<0b11010010,(outs),(ins addressTarget: $label),"JNC $label", []>;
+   def JNC :  F6<0b11010010,(outs),(ins addressTarget: $label),"JNC $label", []>;
 
-   def JC :  F1<0b11011010,(outs),(ins addressTarget: $label),"JC $label", []>;
+   def JC :  F6<0b11011010,(outs),(ins addressTarget: $label),"JC $label", []>;
 
-   def JP :  F1<0b11110010,(outs),(ins addressTarget: $label),"JP $label", []>;
+   def JP :  F6<0b11110010,(outs),(ins addressTarget: $label),"JP $label", []>;
 
-   def JM :  F1<0b11111010,(outs),(ins addressTarget: $label),"JM $label", []>;
+   def JM :  F6<0b11111010,(outs),(ins addressTarget: $label),"JM $label", []>;
 }
 
 let isBarrier = 1, isBranch = 1, isTerminator = 1 in {
-   def JMP : F1<0b11000011,(outs),(ins addressTarget:$k),
+   def JMP : F6<0b11000011,(outs),(ins addressTarget:$k),
                                            "JMP $k", [(br bb: $k)]>; 
 }
 

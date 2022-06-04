@@ -58,6 +58,8 @@ BitVector I8085RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   Reserved.set(I8085::A);
   Reserved.set(I8085::H);
   Reserved.set(I8085::L);
+  
+  Reserved.set(I8085::M);
 
   return Reserved;
 }

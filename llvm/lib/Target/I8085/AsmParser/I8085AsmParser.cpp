@@ -330,6 +330,12 @@ bool I8085AsmParser::MatchAndEmitInstruction(SMLoc Loc, unsigned &Opcode,
                                            OperandVector &Operands,
                                            MCStreamer &Out, uint64_t &ErrorInfo,
                                            bool MatchingInlineAsm) {
+
+  // int l = Operands.size();
+  // for(int i=0;i<l;i++){
+  //     Operands[i].get()->dump();
+  // }
+
   MCInst Inst;
   unsigned MatchResult =
       MatchInstructionImpl(Operands, Inst, ErrorInfo, MatchingInlineAsm);

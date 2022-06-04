@@ -41,8 +41,9 @@ def E : I8085Reg<3, "E">, DwarfRegNum<[3]>;
 def H : I8085Reg<4, "H">, DwarfRegNum<[4]>;
 def L : I8085Reg<5, "L">, DwarfRegNum<[5]>;
 
+def M : I8085Reg<6, "M">, DwarfRegNum<[6]>;
 
-def SP : I8085Reg<6, "SP">, DwarfRegNum<[6]>;
+def SP : I8085Reg<7, "SP">, DwarfRegNum<[7]>;
 
 let SubRegIndices = [sub_lo, sub_hi], CoveredBySubRegs = 1 in {
 def BC : I8085Reg<0, "C:B", [B, C]>, DwarfRegNum<[0]>;
@@ -61,7 +62,7 @@ def CCR : RegisterClass<"I8085", [i8], 8, (add SREG)> {
 def GR8 : RegisterClass<"I8085", [i8], 8,
                         (
                             // Return value and arguments.
-                            add A,B,C,D,E,H,L
+                            add A,B,C,D,E,H,L,M
                             // Scratch registers.
                             )>; 
 
