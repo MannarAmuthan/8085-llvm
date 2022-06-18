@@ -39,112 +39,112 @@ unsigned I8085ELFObjectWriter::getRelocType(MCContext &Ctx, const MCValue &Targe
                                           bool IsPCRel) const {
   MCSymbolRefExpr::VariantKind Modifier = Target.getAccessVariant();
   switch ((unsigned)Fixup.getKind()) {
-  case FK_Data_1:
-    switch (Modifier) {
-    default:
-      llvm_unreachable("Unsupported Modifier");
-    case MCSymbolRefExpr::VK_None:
-      return ELF::R_I8085_8;
-    case MCSymbolRefExpr::VK_I8085_DIFF8:
-      return ELF::R_I8085_DIFF8;
-    case MCSymbolRefExpr::VK_I8085_LO8:
-      return ELF::R_I8085_8_LO8;
-    case MCSymbolRefExpr::VK_I8085_HI8:
-      return ELF::R_I8085_8_HI8;
-    case MCSymbolRefExpr::VK_I8085_HLO8:
-      return ELF::R_I8085_8_HLO8;
-    }
-  case FK_Data_4:
-    switch (Modifier) {
-    default:
-      llvm_unreachable("Unsupported Modifier");
-    case MCSymbolRefExpr::VK_None:
-      return ELF::R_I8085_32;
-    case MCSymbolRefExpr::VK_I8085_DIFF32:
-      return ELF::R_I8085_DIFF32;
-    }
-  case FK_Data_2:
-    switch (Modifier) {
-    default:
-      llvm_unreachable("Unsupported Modifier");
-    case MCSymbolRefExpr::VK_None:
-      return ELF::R_I8085_16;
-    case MCSymbolRefExpr::VK_I8085_NONE:
-    case MCSymbolRefExpr::VK_I8085_PM:
-      return ELF::R_I8085_16_PM;
-    case MCSymbolRefExpr::VK_I8085_DIFF16:
-      return ELF::R_I8085_DIFF16;
-    }
-  case I8085::fixup_32:
-    return ELF::R_I8085_32;
-  case I8085::fixup_7_pcrel:
-    return ELF::R_I8085_7_PCREL;
-  case I8085::fixup_13_pcrel:
-    return ELF::R_I8085_13_PCREL;
+  // case FK_Data_1:
+  //   switch (Modifier) {
+  //   default:
+  //     llvm_unreachable("Unsupported Modifier");
+  //   case MCSymbolRefExpr::VK_None:
+  //     return ELF::R_I8085_8;
+  //   case MCSymbolRefExpr::VK_I8085_DIFF8:
+  //     return ELF::R_I8085_DIFF8;
+  //   case MCSymbolRefExpr::VK_I8085_LO8:
+  //     return ELF::R_I8085_8_LO8;
+  //   case MCSymbolRefExpr::VK_I8085_HI8:
+  //     return ELF::R_I8085_8_HI8;
+  //   case MCSymbolRefExpr::VK_I8085_HLO8:
+  //     return ELF::R_I8085_8_HLO8;
+  //   }
+  // case FK_Data_4:
+  //   switch (Modifier) {
+  //   default:
+  //     llvm_unreachable("Unsupported Modifier");
+  //   case MCSymbolRefExpr::VK_None:
+  //     return ELF::R_I8085_32;
+  //   case MCSymbolRefExpr::VK_I8085_DIFF32:
+  //     return ELF::R_I8085_DIFF32;
+  //   }
+  // case FK_Data_2:
+  //   switch (Modifier) {
+  //   default:
+  //     llvm_unreachable("Unsupported Modifier");
+  //   case MCSymbolRefExpr::VK_None:
+  //     return ELF::R_I8085_16;
+  //   case MCSymbolRefExpr::VK_I8085_NONE:
+  //   case MCSymbolRefExpr::VK_I8085_PM:
+  //     return ELF::R_I8085_16_PM;
+  //   case MCSymbolRefExpr::VK_I8085_DIFF16:
+  //     return ELF::R_I8085_DIFF16;
+  //   }
+  // case I8085::fixup_32:
+  //   return ELF::R_I8085_32;
+  // case I8085::fixup_7_pcrel:
+  //   return ELF::R_I8085_7_PCREL;
+  // case I8085::fixup_13_pcrel:
+  //   return ELF::R_I8085_13_PCREL;
   case I8085::fixup_16:
     return ELF::R_I8085_16;
-  case I8085::fixup_16_pm:
-    return ELF::R_I8085_16_PM;
-  case I8085::fixup_lo8_ldi:
-    return ELF::R_I8085_LO8_LDI;
-  case I8085::fixup_hi8_ldi:
-    return ELF::R_I8085_HI8_LDI;
-  case I8085::fixup_hh8_ldi:
-    return ELF::R_I8085_HH8_LDI;
-  case I8085::fixup_lo8_ldi_neg:
-    return ELF::R_I8085_LO8_LDI_NEG;
-  case I8085::fixup_hi8_ldi_neg:
-    return ELF::R_I8085_HI8_LDI_NEG;
-  case I8085::fixup_hh8_ldi_neg:
-    return ELF::R_I8085_HH8_LDI_NEG;
-  case I8085::fixup_lo8_ldi_pm:
-    return ELF::R_I8085_LO8_LDI_PM;
-  case I8085::fixup_hi8_ldi_pm:
-    return ELF::R_I8085_HI8_LDI_PM;
-  case I8085::fixup_hh8_ldi_pm:
-    return ELF::R_I8085_HH8_LDI_PM;
-  case I8085::fixup_lo8_ldi_pm_neg:
-    return ELF::R_I8085_LO8_LDI_PM_NEG;
-  case I8085::fixup_hi8_ldi_pm_neg:
-    return ELF::R_I8085_HI8_LDI_PM_NEG;
-  case I8085::fixup_hh8_ldi_pm_neg:
-    return ELF::R_I8085_HH8_LDI_PM_NEG;
+  // case I8085::fixup_16_pm:
+  //   return ELF::R_I8085_16_PM;
+  // case I8085::fixup_lo8_ldi:
+  //   return ELF::R_I8085_LO8_LDI;
+  // case I8085::fixup_hi8_ldi:
+  //   return ELF::R_I8085_HI8_LDI;
+  // case I8085::fixup_hh8_ldi:
+  //   return ELF::R_I8085_HH8_LDI;
+  // case I8085::fixup_lo8_ldi_neg:
+  //   return ELF::R_I8085_LO8_LDI_NEG;
+  // case I8085::fixup_hi8_ldi_neg:
+  //   return ELF::R_I8085_HI8_LDI_NEG;
+  // case I8085::fixup_hh8_ldi_neg:
+  //   return ELF::R_I8085_HH8_LDI_NEG;
+  // case I8085::fixup_lo8_ldi_pm:
+  //   return ELF::R_I8085_LO8_LDI_PM;
+  // case I8085::fixup_hi8_ldi_pm:
+  //   return ELF::R_I8085_HI8_LDI_PM;
+  // case I8085::fixup_hh8_ldi_pm:
+  //   return ELF::R_I8085_HH8_LDI_PM;
+  // case I8085::fixup_lo8_ldi_pm_neg:
+  //   return ELF::R_I8085_LO8_LDI_PM_NEG;
+  // case I8085::fixup_hi8_ldi_pm_neg:
+  //   return ELF::R_I8085_HI8_LDI_PM_NEG;
+  // case I8085::fixup_hh8_ldi_pm_neg:
+  //   return ELF::R_I8085_HH8_LDI_PM_NEG;
   case I8085::fixup_call:
     return ELF::R_I8085_CALL;
-  case I8085::fixup_ldi:
-    return ELF::R_I8085_LDI;
-  case I8085::fixup_6:
-    return ELF::R_I8085_6;
-  case I8085::fixup_6_adiw:
-    return ELF::R_I8085_6_ADIW;
-  case I8085::fixup_ms8_ldi:
-    return ELF::R_I8085_MS8_LDI;
-  case I8085::fixup_ms8_ldi_neg:
-    return ELF::R_I8085_MS8_LDI_NEG;
-  case I8085::fixup_lo8_ldi_gs:
-    return ELF::R_I8085_LO8_LDI_GS;
-  case I8085::fixup_hi8_ldi_gs:
-    return ELF::R_I8085_HI8_LDI_GS;
-  case I8085::fixup_8:
-    return ELF::R_I8085_8;
-  case I8085::fixup_8_lo8:
-    return ELF::R_I8085_8_LO8;
-  case I8085::fixup_8_hi8:
-    return ELF::R_I8085_8_HI8;
-  case I8085::fixup_8_hlo8:
-    return ELF::R_I8085_8_HLO8;
-  case I8085::fixup_diff8:
-    return ELF::R_I8085_DIFF8;
-  case I8085::fixup_diff16:
-    return ELF::R_I8085_DIFF16;
-  case I8085::fixup_diff32:
-    return ELF::R_I8085_DIFF32;
-  case I8085::fixup_lds_sts_16:
-    return ELF::R_I8085_LDS_STS_16;
-  case I8085::fixup_port6:
-    return ELF::R_I8085_PORT6;
-  case I8085::fixup_port5:
-    return ELF::R_I8085_PORT5;
+  // case I8085::fixup_ldi:
+  //   return ELF::R_I8085_LDI;
+  // case I8085::fixup_6:
+  //   return ELF::R_I8085_6;
+  // case I8085::fixup_6_adiw:
+  //   return ELF::R_I8085_6_ADIW;
+  // case I8085::fixup_ms8_ldi:
+  //   return ELF::R_I8085_MS8_LDI;
+  // case I8085::fixup_ms8_ldi_neg:
+  //   return ELF::R_I8085_MS8_LDI_NEG;
+  // case I8085::fixup_lo8_ldi_gs:
+  //   return ELF::R_I8085_LO8_LDI_GS;
+  // case I8085::fixup_hi8_ldi_gs:
+  //   return ELF::R_I8085_HI8_LDI_GS;
+  // case I8085::fixup_8:
+  //   return ELF::R_I8085_8;
+  // case I8085::fixup_8_lo8:
+  //   return ELF::R_I8085_8_LO8;
+  // case I8085::fixup_8_hi8:
+  //   return ELF::R_I8085_8_HI8;
+  // case I8085::fixup_8_hlo8:
+  //   return ELF::R_I8085_8_HLO8;
+  // case I8085::fixup_diff8:
+  //   return ELF::R_I8085_DIFF8;
+  // case I8085::fixup_diff16:
+  //   return ELF::R_I8085_DIFF16;
+  // case I8085::fixup_diff32:
+  //   return ELF::R_I8085_DIFF32;
+  // case I8085::fixup_lds_sts_16:
+  //   return ELF::R_I8085_LDS_STS_16;
+  // case I8085::fixup_port6:
+  //   return ELF::R_I8085_PORT6;
+  // case I8085::fixup_port5:
+  //   return ELF::R_I8085_PORT5;
   default:
     llvm_unreachable("invalid fixup kind!");
   }

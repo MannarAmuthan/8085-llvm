@@ -170,8 +170,6 @@ void I8085InstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
   if (TRI->isTypeLegalForClass(*RC, MVT::i8)) {
     Opcode = I8085::LOAD_8_WITH_ADDR;
   } else if (TRI->isTypeLegalForClass(*RC, MVT::i16)) {
-    // Opcode = I8085::LDDWRdPtrQ;
-    //: FIXME: remove this once PR13375 gets fixed
     Opcode = I8085::LOAD_16_WITH_ADDR;
   } else {
     llvm_unreachable("Cannot load this register from a stack slot!");

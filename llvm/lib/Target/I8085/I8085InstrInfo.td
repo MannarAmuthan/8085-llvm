@@ -186,7 +186,7 @@ def SUB_M : F1<0b10010110,(outs), (ins), "SUB M", []>;
 let Defs=[SREG,A], Uses=[A] in def ADD : F2<0b10000,(outs), (ins GR8: $rs), "ADD $rs", []>;
 let Defs=[SREG,A], Uses=[A] in def ADC : F2<0b10001,(outs), (ins GR8: $rs), "ADC $rs", []>;
 def ADD_M : F1<0b10000110,(outs), (ins), "ADD M", []>;
-let Defs=[SREG,A], Uses=[A] in def ADI : I8085Pseudo<(outs), (ins i8imm: $val), "ADI $val", []>;
+let Defs=[SREG,A], Uses=[A] in def ADI : F5<0b11000110,(outs), (ins i8imm: $k), "ADI $k", []>;
 
 let Defs=[SREG,A], Uses=[A] in def DCR : F3<0b1,(outs), (ins GR8: $rs), "DCR $rs", []>;
 let Defs=[SREG,A], Uses=[A] in def INR : F3<0b0,(outs), (ins GR8: $rs), "INR $rs", []>;
@@ -430,4 +430,14 @@ def SEXT8TO16
                       "sext8to16 $dst, $src",
                       [(set i16
                         : $dst, (sext i8
+                                 : $src))]>;
+
+def ZEXT8TO16
+    : I8085Pseudo<(outs GR16
+                       : $dst),
+                      (ins GR8
+                       : $src),
+                      "zext8to16 $dst, $src",
+                      [(set i16
+                        : $dst, (zext i8
                                  : $src))]>;

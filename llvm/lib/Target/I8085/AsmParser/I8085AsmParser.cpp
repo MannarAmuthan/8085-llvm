@@ -65,8 +65,6 @@ class I8085AsmParser : public MCTargetAsmParser {
 
   bool ParseDirective(AsmToken DirectiveID) override;
 
-  OperandMatchResultTy parseMemriOperand(OperandVector &Operands);
-
   bool parseOperand(OperandVector &Operands);
   int parseRegisterName(unsigned (*matchFn)(StringRef));
   int parseRegisterName();
@@ -246,10 +244,10 @@ public:
     RegImm = {0, Ex};
   }
 
-  void makeMemri(unsigned RegNo, MCExpr const *Imm) {
-    Kind = k_Memri;
-    RegImm = {RegNo, Imm};
-  }
+  // void makeMemri(unsigned RegNo, MCExpr const *Imm) {
+  //   Kind = k_Memri;
+  //   RegImm = {RegNo, Imm};
+  // }
 
   SMLoc getStartLoc() const override { return Start; }
   SMLoc getEndLoc() const override { return End; }
@@ -575,36 +573,6 @@ bool I8085AsmParser::parseOperand(OperandVector &Operands) {
   return true;
 }
 
-OperandMatchResultTy I8085AsmParser::parseMemriOperand(OperandVector &Operands) {
-  LLVM_DEBUG(dbgs() << "parseMemriOperand()\n");
-
-  SMLoc E, S;
-  MCExpr const *Expression;
-  int RegNo;
-
-  // Parse register.
-  {
-    RegNo = parseRegister();
-
-    if (RegNo == I8085::NoRegister)
-      return MatchOperand_ParseFail;
-
-    S = SMLoc::getFromPointer(Parser.getTok().getLoc().getPointer() - 1);
-    Parser.Lex(); // Eat register token.
-  }
-
-  // Parse immediate;
-  {
-    if (getParser().parseExpression(Expression))
-      return MatchOperand_ParseFail;
-
-    E = SMLoc::getFromPointer(Parser.getTok().getLoc().getPointer() - 1);
-  }
-
-  Operands.push_back(I8085Operand::CreateMemri(RegNo, Expression, S, E));
-
-  return MatchOperand_Success;
-}
 
 bool I8085AsmParser::ParseRegister(unsigned &RegNo, SMLoc &StartLoc,
                                  SMLoc &EndLoc) {
