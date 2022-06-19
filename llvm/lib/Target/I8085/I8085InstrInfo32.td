@@ -15,7 +15,13 @@ let Constraints = "$src = $rd", Defs=[SREG]  in {
       : I8085Pseudo<(outs GR32: $rd),
               (ins GR32: $src, GR32: $rr),
               "AND_32\t$rd, $rr",
-              [(set i32: $rd, (and i32: $src, i32: $rr))]>;            
+              [(set i32: $rd, (and i32: $src, i32: $rr))]>; 
+
+  def ADDI_32
+      : I8085Pseudo<(outs GR32: $rd),
+              (ins GR32: $src, i32imm: $k),
+              "ADDI_32\t$rd, $k",
+              [(set i32: $rd, (add i32: $src, imm: $k))]>;                       
 }
 
 let Uses=[SP] in {
@@ -43,7 +49,7 @@ def STORE_32_AT_OFFSET_WITH_SP : I8085Pseudo<(outs),
 
 }
 
-def : Pat<(add i32: $src1, (imm :$src2)),(ADD_32 i32: $src1, (LOAD_32 imm: $src2))>;
+// def : Pat<(add i32: $src1, (imm :$src2)),(ADD_32 i32: $src1, (LOAD_32 imm: $src2))>;
 
 def MVI_32 : I8085Pseudo<(outs GR32: $rd),
                     (ins i32imm: $k),

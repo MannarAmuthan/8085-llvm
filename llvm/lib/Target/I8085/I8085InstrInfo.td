@@ -191,6 +191,7 @@ let Uses=[H,L] in def ADC_M : F1<0b10001110,(outs), (ins), "ADC M", []>;
 let Uses=[H,L] in def ANA_M : F1<0b10100110,(outs), (ins), "ANA M", []>;
 
 let Defs=[SREG,A], Uses=[A] in def ADI : F5<0b11000110,(outs), (ins i8imm: $k), "ADI $k", []>;
+let Defs=[SREG,A], Uses=[A] in def ACI : F5<0b11001110,(outs), (ins i8imm: $k), "ACI $k", []>;
 
 let Defs=[SREG,A], Uses=[A] in def DCR : F3<0b1,(outs), (ins GR8: $rs), "DCR $rs", []>;
 let Defs=[SREG,A], Uses=[A] in def INR : F3<0b0,(outs), (ins GR8: $rs), "INR $rs", []>;
@@ -317,7 +318,9 @@ let Uses = [H,L] in {
   
   let Uses=[H,L] in def MOV_M  : FMOV_T_M<(outs), (ins GR8: $rs), "MOV M, $rs", []>;
 
-  let Uses=[H,L] in def MOV_FROM_M  : FMOV_F_M<(outs GR8: $rd), (ins), "MOV $rd, M", []>;  
+  let Uses=[H,L] in def MOV_FROM_M  : FMOV_F_M<(outs GR8: $rd), (ins), "MOV $rd, M", []>;
+
+  def MVI_M : F1<0b00111110,(outs), (ins i8imm: $k), "MVI M, $k", []>; 
 }          
 
 let Defs=[SP], Uses=[SP] in {

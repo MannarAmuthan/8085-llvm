@@ -121,28 +121,27 @@ template <> bool I8085ExpandPseudo32::expand<I8085::AND_32>(Block &MBB, BlockIt 
   const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
   MachineInstr &MI = *MBBI;
 
-  unsigned destReg = MI.getOperand(0).getReg();
   unsigned operandOne = MI.getOperand(1).getReg();
+  unsigned destReg = operandOne; 
   unsigned operandTwo = MI.getOperand(2).getReg();
   
   int address[]={11,12,13,14,15,16,17,18};
   int index = 0;
 
-  if(destReg==I8085::IBX){  index=4; }
+  if(destReg==I8085::IBX){  
+      index=4; 
+  }
 
   
   for(int i=0;i<4;i++){
       buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i]);
-      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
       buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
 
       buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+4]);
-      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
 
       buildMI(MBB, MBBI, I8085::ANA_M);
 
       buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
-      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
       buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
   }            
 
@@ -162,22 +161,18 @@ template <> bool I8085ExpandPseudo32::expand<I8085::MOV_32>(Block &MBB, BlockIt 
   if(srcReg==I8085::IBX){ 
           for(int i=0;i<4;i++){
               buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+4]);
-              buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
               buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
 
               buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i]);
-              buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
               buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
           }  
   }
   else{
           for(int i=0;i<4;i++){
               buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i]);
-              buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
               buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
 
               buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+4]);
-              buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
               buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
           }   
   }         
@@ -193,17 +188,18 @@ template <> bool I8085ExpandPseudo32::expand<I8085::STORE_32>(Block &MBB, BlockI
   unsigned baseReg = MI.getOperand(0).getReg();
   unsigned offsetToStore = MI.getOperand(1).getImm();
 
-  unsigned srcReg = MI.getOperand(3).getReg();
+  unsigned srcReg = MI.getOperand(2).getReg();
   
   int address[]={11,12,13,14,15,16,17,18};
   int index = 0;
 
-  if(srcReg==I8085::IBX){  index=4; }
+  if(srcReg==I8085::IBX){  
+    index=4; 
+  }
 
   
   for(int i=0;i<4;i++){
       buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
-      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
       buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
 
       buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(offsetToStore+i);
@@ -220,29 +216,70 @@ template <> bool I8085ExpandPseudo32::expand<I8085::ADD_32>(Block &MBB, BlockIt 
   const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
   MachineInstr &MI = *MBBI;
 
-  unsigned destReg = MI.getOperand(0).getReg();
   unsigned operandOne = MI.getOperand(1).getReg();
+  unsigned destReg = operandOne; 
   unsigned operandTwo = MI.getOperand(2).getReg();
   
   int address[]={11,12,13,14,15,16,17,18};
   int index = 0;
 
-  if(destReg==I8085::IBX){  index=4; }
-
+  if(destReg==I8085::IBX){  
+    index=4; 
+  }
   
   for(int i=0;i<4;i++){
       buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i]);
-      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
       buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
 
       buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+4]);
-      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
 
       if(i>0) buildMI(MBB, MBBI, I8085::ADC_M);
       else buildMI(MBB, MBBI, I8085::ADD_M);
 
       buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
-      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
+      buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
+  }            
+
+  MI.eraseFromParent();
+  return true;
+}
+
+
+template <> bool I8085ExpandPseudo32::expand<I8085::ADDI_32>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned operandOne = MI.getOperand(1).getReg();
+  unsigned destReg = operandOne; 
+  uint64_t immToAdd = MI.getOperand(2).getImm();
+  
+  int address[]={11,12,13,14,15,16,17,18};
+  int index = 0;
+
+  uint8_t nibbleOne = immToAdd & 0x000000FF  ;
+  uint8_t nibbleTwo = (immToAdd >> 8) & 0x000000FF  ;
+  uint8_t nibbleThree = (immToAdd >> 16) & 0x000000FF  ;
+  uint8_t nibbleFour = (immToAdd >> 24) & 0x000000FF  ;
+
+  uint8_t values[]={nibbleOne,nibbleTwo,nibbleThree,nibbleFour};
+
+  if(destReg==I8085::IBX){  
+    index=4; 
+  }
+
+  
+  for(int i=0;i<4;i++){
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i]);
+      buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
+
+      if(i>0){ 
+        buildMI(MBB, MBBI, I8085::ADI).addImm(values[i]);
+      }
+      else {
+        buildMI(MBB, MBBI, I8085::ACI).addImm(values[i]);
+      }
+
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
       buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
   }            
 
@@ -269,8 +306,40 @@ template <> bool I8085ExpandPseudo32::expand<I8085::LOAD_32_WITH_ADDR>(Block &MB
       buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
       buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
       buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
-      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
       buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
+  }            
+
+  MI.eraseFromParent();
+  return true;
+}
+
+uint8_t high(uint64_t input){return (input >> 8) & 0xFF;}
+
+uint8_t low(uint64_t input){return input & 0xFF;}
+
+template <> bool I8085ExpandPseudo32::expand<I8085::LOAD_32>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned destReg = MI.getOperand(0).getReg();
+  uint64_t immToLoad = MI.getOperand(1).getImm();
+  
+  int address[]={11,12,13,14,15,16,17,18};
+  int index = 0;
+
+  uint8_t nibbleOne = immToLoad & 0x000000FF  ;
+  uint8_t nibbleTwo = (immToLoad >> 8) & 0x000000FF  ;
+  uint8_t nibbleThree = (immToLoad >> 16) & 0x000000FF  ;
+  uint8_t nibbleFour = (immToLoad >> 24) & 0x000000FF  ;
+
+  uint8_t values[]={nibbleOne,nibbleTwo,nibbleThree,nibbleFour};
+
+  if(destReg==I8085::IBX){  index=4; }
+  
+  
+  for(int i=0;i<4;i++){
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
+      buildMI(MBB, MBBI, I8085::MVI_M).addImm(values[i]);
   }            
 
   MI.eraseFromParent();
@@ -289,6 +358,8 @@ bool I8085ExpandPseudo32::expandMI(Block &MBB, BlockIt MBBI) {
     EXPAND(I8085::AND_32);
     EXPAND(I8085::MOV_32);
     EXPAND(I8085::ADD_32);
+    EXPAND(I8085::ADDI_32);
+    EXPAND(I8085::LOAD_32);
     EXPAND(I8085::STORE_32);
     EXPAND(I8085::LOAD_32_WITH_ADDR);
   }
