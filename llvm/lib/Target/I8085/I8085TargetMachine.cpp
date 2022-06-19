@@ -91,6 +91,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeI8085Target() {
 
   auto &PR = *PassRegistry::getPassRegistry();
   initializeI8085ExpandPseudoPass(PR);
+  initializeI8085ExpandPseudo32Pass(PR);
 }
 
 const I8085Subtarget *I8085TargetMachine::getSubtargetImpl() const {
@@ -116,6 +117,7 @@ bool I8085PassConfig::addInstSelector() {
 
 void I8085PassConfig::addPreSched2() {
   addPass(createI8085ExpandPseudoPass());
+  addPass(createI8085ExpandPseudo32Pass());
 }
 
 void I8085PassConfig::addPreEmitPass() {

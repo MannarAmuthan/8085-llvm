@@ -41,6 +41,7 @@ I8085TargetLowering::I8085TargetLowering(const I8085TargetMachine &TM,
   // Set up the register classes.
   addRegisterClass(MVT::i8, &I8085::GR8RegClass);
   addRegisterClass(MVT::i16, &I8085::GR16RegClass);
+  addRegisterClass(MVT::i32, &I8085::GR32RegClass);
 
   // Compute derived properties from the register classes.
   computeRegisterProperties(Subtarget.getRegisterInfo());
@@ -51,10 +52,15 @@ I8085TargetLowering::I8085TargetLowering(const I8085TargetMachine &TM,
   setStackPointerRegisterToSaveRestore(I8085::SP);
   setSupportsUnalignedAtomics(true);
 
+  setTruncStoreAction(MVT::i16, MVT::i8, Expand);
+  setTruncStoreAction(MVT::i32, MVT::i16, Expand);
+
   for (MVT VT : MVT::integer_valuetypes()) {
     for (auto N : {ISD::EXTLOAD, ISD::SEXTLOAD, ISD::ZEXTLOAD}) {
       setLoadExtAction(N, VT, MVT::i1, Promote);
       setLoadExtAction(N, VT, MVT::i8, Expand);
+      setLoadExtAction(N, VT, MVT::i16, Expand);
+      setLoadExtAction(N, VT, MVT::i32, Expand);
     }
   }
 

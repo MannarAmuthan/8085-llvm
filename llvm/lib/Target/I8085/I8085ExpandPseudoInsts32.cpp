@@ -1,0 +1,307 @@
+//===-- I8085ExpandPseudoInsts.cpp - Expand pseudo instructions -------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+// This file contains a pass that expands pseudo instructions into target
+// instructions. This pass should be run after register allocation but before
+// the post-regalloc scheduling pass.
+//
+//===----------------------------------------------------------------------===//
+
+#include "I8085.h"
+#include "I8085InstrInfo.h"
+#include "I8085TargetMachine.h"
+#include "MCTargetDesc/I8085MCTargetDesc.h"
+
+#include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/RegisterScavenging.h"
+#include "llvm/CodeGen/TargetRegisterInfo.h"
+#include <stdint.h>
+
+#include <iostream>
+
+using namespace llvm;
+
+#define I8085_EXPAND_PSEUDO_32_NAME "I8085 pseudo instruction expansion pass for instructions with 32 bit imaginary registers"
+
+namespace {
+
+/// Expands "placeholder" instructions which uses 32 bit imaginary registers marked as pseudo into
+/// actual I8085 instructions.
+class I8085ExpandPseudo32 : public MachineFunctionPass {
+public:
+  static char ID;
+
+  I8085ExpandPseudo32() : MachineFunctionPass(ID) {
+    initializeI8085ExpandPseudo32Pass(*PassRegistry::getPassRegistry());
+  }
+
+  bool runOnMachineFunction(MachineFunction &MF) override;
+
+  StringRef getPassName() const override { return I8085_EXPAND_PSEUDO_32_NAME; }
+
+private:
+  typedef MachineBasicBlock Block;
+  typedef Block::iterator BlockIt;
+
+  const I8085RegisterInfo *TRI;
+  const TargetInstrInfo *TII;
+
+
+  bool expandMBB(Block &MBB);
+  bool expandMI(Block &MBB, BlockIt MBBI);
+  template <unsigned OP> bool expand(Block &MBB, BlockIt MBBI);
+
+  MachineInstrBuilder buildMI(Block &MBB, BlockIt MBBI, unsigned Opcode) {
+    return BuildMI(MBB, MBBI, MBBI->getDebugLoc(), TII->get(Opcode));
+  }
+
+  MachineInstrBuilder buildMI(Block &MBB, BlockIt MBBI, unsigned Opcode,
+                              Register DstReg) {
+    return BuildMI(MBB, MBBI, MBBI->getDebugLoc(), TII->get(Opcode), DstReg);
+  }
+
+  MachineRegisterInfo &getRegInfo(Block &MBB) {
+    return MBB.getParent()->getRegInfo();
+  }
+
+};
+
+char I8085ExpandPseudo32::ID = 0;
+
+bool I8085ExpandPseudo32::expandMBB(MachineBasicBlock &MBB) {
+  bool Modified = false;
+
+  BlockIt MBBI = MBB.begin(), E = MBB.end();
+  while (MBBI != E) {
+    BlockIt NMBBI = std::next(MBBI);
+    Modified |= expandMI(MBB, MBBI);
+    MBBI = NMBBI;
+  }
+
+  return Modified;
+}
+
+bool I8085ExpandPseudo32::runOnMachineFunction(MachineFunction &MF) {
+  bool Modified = false;
+
+  const I8085Subtarget &STI = MF.getSubtarget<I8085Subtarget>();
+  TRI = STI.getRegisterInfo();
+  TII = STI.getInstrInfo();
+
+  // We need to track liveness in order to use register scavenging.
+  MF.getProperties().set(MachineFunctionProperties::Property::TracksLiveness);
+
+  for (Block &MBB : MF) {
+    bool ContinueExpanding = true;
+    unsigned ExpandCount = 0;
+
+    // Continue expanding the block until all pseudos are expanded.
+    do {
+      assert(ExpandCount < 10 && "pseudo expand limit reached");
+
+      bool BlockModified = expandMBB(MBB);
+      Modified |= BlockModified;
+      ExpandCount++;
+
+      ContinueExpanding = BlockModified;
+    } while (ContinueExpanding);
+  }
+
+  return Modified;
+}
+
+template <> bool I8085ExpandPseudo32::expand<I8085::AND_32>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned destReg = MI.getOperand(0).getReg();
+  unsigned operandOne = MI.getOperand(1).getReg();
+  unsigned operandTwo = MI.getOperand(2).getReg();
+  
+  int address[]={11,12,13,14,15,16,17,18};
+  int index = 0;
+
+  if(destReg==I8085::IBX){  index=4; }
+
+  
+  for(int i=0;i<4;i++){
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i]);
+      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
+      buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
+
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+4]);
+      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
+
+      buildMI(MBB, MBBI, I8085::ANA_M);
+
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
+      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
+      buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
+  }            
+
+  MI.eraseFromParent();
+  return true;
+}
+
+template <> bool I8085ExpandPseudo32::expand<I8085::MOV_32>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned destReg = MI.getOperand(0).getReg();
+  unsigned srcReg = MI.getOperand(1).getReg();
+  
+  int address[]={11,12,13,14,15,16,17,18};
+
+  if(srcReg==I8085::IBX){ 
+          for(int i=0;i<4;i++){
+              buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+4]);
+              buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
+              buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
+
+              buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i]);
+              buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
+              buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
+          }  
+  }
+  else{
+          for(int i=0;i<4;i++){
+              buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i]);
+              buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
+              buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
+
+              buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+4]);
+              buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
+              buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
+          }   
+  }         
+
+  MI.eraseFromParent();
+  return true;
+}
+
+template <> bool I8085ExpandPseudo32::expand<I8085::STORE_32>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned baseReg = MI.getOperand(0).getReg();
+  unsigned offsetToStore = MI.getOperand(1).getImm();
+
+  unsigned srcReg = MI.getOperand(3).getReg();
+  
+  int address[]={11,12,13,14,15,16,17,18};
+  int index = 0;
+
+  if(srcReg==I8085::IBX){  index=4; }
+
+  
+  for(int i=0;i<4;i++){
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
+      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
+      buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
+
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(offsetToStore+i);
+      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
+      buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
+  }            
+
+  MI.eraseFromParent();
+  return true;
+}
+
+
+template <> bool I8085ExpandPseudo32::expand<I8085::ADD_32>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned destReg = MI.getOperand(0).getReg();
+  unsigned operandOne = MI.getOperand(1).getReg();
+  unsigned operandTwo = MI.getOperand(2).getReg();
+  
+  int address[]={11,12,13,14,15,16,17,18};
+  int index = 0;
+
+  if(destReg==I8085::IBX){  index=4; }
+
+  
+  for(int i=0;i<4;i++){
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i]);
+      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
+      buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
+
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+4]);
+      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
+
+      if(i>0) buildMI(MBB, MBBI, I8085::ADC_M);
+      else buildMI(MBB, MBBI, I8085::ADD_M);
+
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
+      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
+      buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
+  }            
+
+  MI.eraseFromParent();
+  return true;
+}
+
+template <> bool I8085ExpandPseudo32::expand<I8085::LOAD_32_WITH_ADDR>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned destReg = MI.getOperand(0).getReg();
+  unsigned baseReg = MI.getOperand(1).getReg();
+  uint16_t offsetToLoad = MI.getOperand(2).getImm();
+  
+  int address[]={11,12,13,14,15,16,17,18};
+  int index = 0;
+
+  if(destReg==I8085::IBX){  index=4; }
+
+  
+  for(int i=0;i<4;i++){
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(offsetToLoad+i);
+      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
+      buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
+      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
+      buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
+  }            
+
+  MI.eraseFromParent();
+  return true;
+}
+
+bool I8085ExpandPseudo32::expandMI(Block &MBB, BlockIt MBBI) {
+  MachineInstr &MI = *MBBI;
+  int Opcode = MBBI->getOpcode();
+
+#define EXPAND(Op)                                                             \
+  case Op:                                                                     \
+    return expand<Op>(MBB, MI)
+
+  switch (Opcode) {
+    EXPAND(I8085::AND_32);
+    EXPAND(I8085::MOV_32);
+    EXPAND(I8085::ADD_32);
+    EXPAND(I8085::STORE_32);
+    EXPAND(I8085::LOAD_32_WITH_ADDR);
+  }
+#undef EXPAND
+  return false;
+}
+
+} // end of anonymous namespace
+
+INITIALIZE_PASS(I8085ExpandPseudo32, "i8085-expand-pseudo32", I8085_EXPAND_PSEUDO_32_NAME,
+                false, false)
+namespace llvm { 
+
+FunctionPass *createI8085ExpandPseudo32Pass() {  return new I8085ExpandPseudo32();  }
+
+} // end of namespace llvm

@@ -59,16 +59,24 @@ def CCR : RegisterClass<"I8085", [i8], 8, (add SREG)> {
   let CopyCost = -1; // Don't allow copying of status registers
 }
 
+//===----------------------------------------------------------------------===//
+//  32 bit - Imaginary registers, existed in zeroth page
+//===----------------------------------------------------------------------===//
+
+def IAX : I8085Reg<9, "IAX">, DwarfRegNum<[1]>;
+def IBX : I8085Reg<10, "IBX">, DwarfRegNum<[2]>;
+
 def GR8 : RegisterClass<"I8085", [i8], 8,
                         (
-                            // Return value and arguments.
                             add A,B,C,D,E,H,L,M
-                            // Scratch registers.
                             )>; 
 
 def GR16 : RegisterClass<"I8085", [i16], 8,
                         (
-                            // Return value and arguments.
                             add BC,DE,SP
-                            // Scratch registers.
-                        )>;                                                      
+                        )>;
+
+def GR32 : RegisterClass<"I8085", [i32], 8,
+                        (
+                            add IAX, IBX
+                        )>;                                              

@@ -77,6 +77,10 @@ I8085RegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC,
   if (TRI->isTypeLegalForClass(*RC, MVT::i8)) {
     return &I8085::GR8RegClass;
   }
+  
+  if (TRI->isTypeLegalForClass(*RC, MVT::i32)) {
+    return &I8085::GR32RegClass;
+  }
 
   llvm_unreachable("Invalid register size");
 }

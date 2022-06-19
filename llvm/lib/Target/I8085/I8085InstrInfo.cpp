@@ -53,7 +53,7 @@ void I8085InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
 
       BuildMI(MBB, MI, DL, get(Opc), DestReg)
         .addReg(SrcReg, getKillRegState(KillSrc));
-  } else {
+  } else if(I8085::GR16RegClass.contains(DestReg, SrcReg)) {
 
   unsigned destLow,destHigh;
   if(DestReg==I8085::BC){  destLow=I8085::C;  destHigh=I8085::B; }
@@ -69,13 +69,21 @@ void I8085InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
   BuildMI(MBB, MI, DL, get(Opc), destLow)
         .addReg(srcLow, getKillRegState(KillSrc));    
   }
+  else{
+
+  Opc = I8085::MOV_32;
+  BuildMI(MBB, MI, DL, get(Opc), DestReg)
+        .addReg(SrcReg, getKillRegState(KillSrc));
+
+  }
 }
 
 unsigned I8085InstrInfo::isLoadFromStackSlot(const MachineInstr &MI,
                                            int &FrameIndex) const {
   switch (MI.getOpcode()) {
   case I8085::LOAD_8_WITH_ADDR:
-  case I8085::LOAD_16_WITH_ADDR: { 
+  case I8085::LOAD_16_WITH_ADDR:
+  case I8085::LOAD_32_WITH_ADDR: { 
     if (MI.getOperand(1).isFI() && MI.getOperand(2).isImm() &&
         MI.getOperand(2).getImm() == 0) {
       FrameIndex = MI.getOperand(1).getIndex();
@@ -94,7 +102,8 @@ unsigned I8085InstrInfo::isStoreToStackSlot(const MachineInstr &MI,
                                           int &FrameIndex) const {
   switch (MI.getOpcode()) {
   case I8085::STORE_8:
-  case I8085::STORE_16: {
+  case I8085::STORE_16: 
+  case I8085::STORE_32: {
     if (MI.getOperand(0).isFI() && MI.getOperand(1).isImm() &&
         MI.getOperand(1).getImm() == 0) {
       FrameIndex = MI.getOperand(0).getIndex();
@@ -137,6 +146,9 @@ void I8085InstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
     Opcode = I8085::STORE_8;
   } else if (TRI->isTypeLegalForClass(*RC, MVT::i16)) {
     Opcode = I8085::STORE_16;
+  } 
+  else if (TRI->isTypeLegalForClass(*RC, MVT::i32)) {
+    Opcode = I8085::STORE_32;
   } else {
     llvm_unreachable("Cannot store this register into a stack slot!");
   }
@@ -171,6 +183,8 @@ void I8085InstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
     Opcode = I8085::LOAD_8_WITH_ADDR;
   } else if (TRI->isTypeLegalForClass(*RC, MVT::i16)) {
     Opcode = I8085::LOAD_16_WITH_ADDR;
+  } else if (TRI->isTypeLegalForClass(*RC, MVT::i32)) {
+    Opcode = I8085::LOAD_32_WITH_ADDR;
   } else {
     llvm_unreachable("Cannot load this register from a stack slot!");
   }

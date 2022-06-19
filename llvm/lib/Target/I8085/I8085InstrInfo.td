@@ -185,7 +185,11 @@ let Defs=[SREG,A], Uses=[A] in def SBB : F2<0b10011,(outs), (ins GR8: $rs), "SBB
 def SUB_M : F1<0b10010110,(outs), (ins), "SUB M", []>;
 let Defs=[SREG,A], Uses=[A] in def ADD : F2<0b10000,(outs), (ins GR8: $rs), "ADD $rs", []>;
 let Defs=[SREG,A], Uses=[A] in def ADC : F2<0b10001,(outs), (ins GR8: $rs), "ADC $rs", []>;
-def ADD_M : F1<0b10000110,(outs), (ins), "ADD M", []>;
+
+let Uses=[H,L] in def ADD_M : F1<0b10000110,(outs), (ins), "ADD M", []>;
+let Uses=[H,L] in def ADC_M : F1<0b10001110,(outs), (ins), "ADC M", []>;
+let Uses=[H,L] in def ANA_M : F1<0b10100110,(outs), (ins), "ANA M", []>;
+
 let Defs=[SREG,A], Uses=[A] in def ADI : F5<0b11000110,(outs), (ins i8imm: $k), "ADI $k", []>;
 
 let Defs=[SREG,A], Uses=[A] in def DCR : F3<0b1,(outs), (ins GR8: $rs), "DCR $rs", []>;
@@ -292,7 +296,7 @@ def MVI : FMVI<(outs GR8: $rd),
 
 def MOV : FMOV<(outs GR8: $rd),
                     (ins GR8: $rs),
-                    "MOV $rd, $rs", [(set i8: $rd, i8: $rs)]>;
+                    "MOV $rd, $rs", []>;
 
 
 def mspi : Operand<iPTR> { 
@@ -419,9 +423,6 @@ def : Pat<(add i8: $src1, (imm :$src2)),(ADD_8 i8: $src1, (MVI imm: $src2))>;
 def : Pat<(add i16: $src1, (imm :$src2)),(ADD_16 i16: $src1, (LOAD_16 imm: $src2))>;
 
 
-include "I8085CondBrInstrInfo.td"
-
-
 def SEXT8TO16
     : I8085Pseudo<(outs GR16
                        : $dst),
@@ -440,4 +441,28 @@ def ZEXT8TO16
                       "zext8to16 $dst, $src",
                       [(set i16
                         : $dst, (zext i8
-                                 : $src))]>;
+                                 : $src))]>;                               
+
+def AEXT8TO16
+    : I8085Pseudo<(outs GR16
+                       : $dst),
+                      (ins GR8
+                       : $src),
+                      "aext8to16 $dst, $src",
+                      [(set i16
+                        : $dst, (anyext i8
+                                 : $src))]>;   
+
+
+def TRUNC16TO8
+    : I8085Pseudo<(outs GR8: $dst),
+                      (ins GR16: $src),
+                      "trunc16to8 $dst, $src",
+                      [(set i8
+                        : $dst, (trunc i16
+                                 : $src))]>;                                 
+
+
+include "I8085CondBrInstrInfo.td"
+
+include "I8085InstrInfo32.td"

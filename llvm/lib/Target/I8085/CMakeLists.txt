@@ -17,6 +17,7 @@ add_public_tablegen_target(I8085CommonTableGen)
 add_llvm_target(I8085CodeGen
   I8085AsmPrinter.cpp
   I8085ExpandPseudoInsts.cpp
+  I8085ExpandPseudoInsts32.cpp
   I8085FrameLowering.cpp
   I8085InstrInfo.cpp
   I8085ISelDAGToDAG.cpp
