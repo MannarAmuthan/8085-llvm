@@ -206,6 +206,52 @@ unsigned get16Opc(ISD::CondCode CC){
   return Opc;
 }
 
+unsigned get32Opc(ISD::CondCode CC){
+  unsigned Opc=0;
+    switch(CC){
+      case ISD::SETNE:
+          Opc = I8085::SET_NE_32;
+          break;
+      
+      case ISD::SETEQ:
+          Opc = I8085::SET_EQ_32;
+          break;
+
+      case ISD::SETGE:
+          Opc = I8085::SET_GE_32;
+          break;
+
+      case ISD::SETLE:
+          Opc = I8085::SET_LE_32;
+          break;
+
+      case ISD::SETGT:
+          Opc = I8085::SET_GT_32;
+          break;
+
+      case ISD::SETLT:
+          Opc = I8085::SET_LT_32;
+          break;
+
+      case ISD::SETULT:
+          Opc = I8085::SET_ULT_32;
+          break;
+
+      case ISD::SETUGE:
+          Opc = I8085::SET_UGE_32;
+          break;
+
+      case ISD::SETULE:
+          Opc = I8085::SET_ULE_32;
+          break;
+
+      case ISD::SETUGT:
+          Opc = I8085::SET_UGT_32;
+          break;    
+  }
+  return Opc;
+}
+
 
 template <> bool I8085DAGToDAGISel::select<ISD::SETCC>(SDNode *N) {
   SDLoc dl(N);
@@ -221,6 +267,9 @@ template <> bool I8085DAGToDAGISel::select<ISD::SETCC>(SDNode *N) {
 
   if(Lhs.getSimpleValueType() == MVT::i16){
     Opc=get16Opc(CC);
+  }
+  else if(Lhs.getSimpleValueType() == MVT::i32){
+    Opc=get32Opc(CC);
   }
 
   SDNode *ResNode=CurDAG->getMachineNode(Opc, dl,MVT::i8,Ops);
@@ -247,6 +296,10 @@ template <> bool I8085DAGToDAGISel::select<ISD::BR_CC>(SDNode *N) {
   if(LHS.getSimpleValueType() == MVT::i16){
     Opc=get16Opc(CC);
   }
+  else if(LHS.getSimpleValueType() == MVT::i32){
+    Opc=get32Opc(CC);
+  }
+  
   SDNode *SETccNode=CurDAG->getMachineNode(Opc, dl,MVT::i8,{LHS,RHS});
 
   SDValue Ops[] = {SDValue(SETccNode, 0),JumpTo,Chain};

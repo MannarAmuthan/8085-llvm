@@ -244,6 +244,39 @@ template <> bool I8085ExpandPseudo32::expand<I8085::ADD_32>(Block &MBB, BlockIt 
   return true;
 }
 
+template <> bool I8085ExpandPseudo32::expand<I8085::SUB_32>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned operandOne = MI.getOperand(1).getReg();
+  unsigned destReg = operandOne; 
+  unsigned operandTwo = MI.getOperand(2).getReg();
+  
+  int address[]={11,12,13,14,15,16,17,18};
+  int indexOne = 0,indexTwo=4;
+
+  if(destReg==I8085::IBX){  
+    indexOne=4;
+    indexTwo=0;
+  }
+  
+  for(int i=0;i<4;i++){
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+indexOne]);
+      buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
+
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+indexTwo]);
+
+      if(i>0) buildMI(MBB, MBBI, I8085::SBB_M);
+      else buildMI(MBB, MBBI, I8085::SUB_M);
+
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+indexOne]);
+      buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
+  }            
+
+  MI.eraseFromParent();
+  return true;
+}
+
 
 template <> bool I8085ExpandPseudo32::expand<I8085::ADDI_32>(Block &MBB, BlockIt MBBI) {
   const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
@@ -346,6 +379,130 @@ template <> bool I8085ExpandPseudo32::expand<I8085::LOAD_32>(Block &MBB, BlockIt
   return true;
 }
 
+
+template <> bool I8085ExpandPseudo32::expand<I8085::JMP_32_IF_NOT_EQUAL>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned operandOne = MI.getOperand(0).getReg();
+  unsigned operandTwo = MI.getOperand(1).getReg();
+  
+  int address[]={11,12,13,14,15,16,17,18};
+  int index = 0;
+
+  for(int i=0;i<4;i++){
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
+      buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A, RegState::Define);
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i]);
+      buildMI(MBB, MBBI, I8085::CMP_M);
+      buildMI(MBB, MBBI, I8085::JNZ).addMBB(MI.getOperand(2).getMBB());
+  }            
+
+  MI.eraseFromParent();
+  return true;
+}
+
+
+template <> bool I8085ExpandPseudo32::expand<I8085::JMP_32_IF_SAME_SIGN>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned operandOne = MI.getOperand(0).getReg();
+  unsigned operandTwo = MI.getOperand(1).getReg();
+  
+  int address[]={11,12,13,14,15,16,17,18};
+  int index = 0;
+
+
+  buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[4]);
+  buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A, RegState::Define);
+
+  buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[0]);
+
+  buildMI(MBB, MBBI, I8085::XRA_M);
+  buildMI(MBB, MBBI, I8085::ANI).addImm(128);  
+  buildMI(MBB, MBBI, I8085::JZ).addMBB(MI.getOperand(2).getMBB());
+        
+  MI.eraseFromParent();
+  return true;
+}
+
+template <> bool I8085ExpandPseudo32::expand<I8085::JMP_32_IF_POSITIVE>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned operandOne = MI.getOperand(0).getReg();
+  
+  int address[]={11,12,13,14,15,16,17,18};
+  int index = 0;
+
+  if(operandOne==I8085::IBX){  index=4; }
+
+
+  buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[index]);
+  buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A, RegState::Define);
+  buildMI(MBB, MBBI, I8085::ANI).addImm(128);  
+  buildMI(MBB, MBBI, I8085::JZ).addMBB(MI.getOperand(1).getMBB());
+        
+  MI.eraseFromParent();
+  return true;
+}
+
+
+template <> bool I8085ExpandPseudo32::expand<I8085::STORE_32_AT_OFFSET_WITH_SP>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned srcReg = MI.getOperand(0).getReg();
+  unsigned offsetToStore = MI.getOperand(1).getImm();
+  
+  int address[]={11,12,13,14,15,16,17,18};
+  int index = 0;
+
+  if(srcReg==I8085::IBX){  
+    index=4; 
+  }
+
+  
+  for(int i=0;i<4;i++){
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
+      buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
+
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(offsetToStore+i);
+      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
+      buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
+  }            
+
+  MI.eraseFromParent();
+  return true;
+}
+
+
+template <> bool I8085ExpandPseudo32::expand<I8085::LOAD_32_OFFSET_WITH_SP>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned destReg = MI.getOperand(0).getReg();
+  uint16_t offsetToLoad = MI.getOperand(1).getImm();
+  
+  int address[]={11,12,13,14,15,16,17,18};
+  int index = 0;
+
+  if(destReg==I8085::IBX){  index=4; }
+
+  
+  for(int i=0;i<4;i++){
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(offsetToLoad+i);
+      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
+      buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
+      buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
+  }            
+
+  MI.eraseFromParent();
+  return true;
+}
+
 bool I8085ExpandPseudo32::expandMI(Block &MBB, BlockIt MBBI) {
   MachineInstr &MI = *MBBI;
   int Opcode = MBBI->getOpcode();
@@ -355,8 +512,14 @@ bool I8085ExpandPseudo32::expandMI(Block &MBB, BlockIt MBBI) {
     return expand<Op>(MBB, MI)
 
   switch (Opcode) {
+    EXPAND(I8085::LOAD_32_OFFSET_WITH_SP);
+    EXPAND(I8085::STORE_32_AT_OFFSET_WITH_SP);
+    EXPAND(I8085::JMP_32_IF_POSITIVE);
+    EXPAND(I8085::JMP_32_IF_SAME_SIGN);
+    EXPAND(I8085::JMP_32_IF_NOT_EQUAL);
     EXPAND(I8085::AND_32);
     EXPAND(I8085::MOV_32);
+    EXPAND(I8085::SUB_32);
     EXPAND(I8085::ADD_32);
     EXPAND(I8085::ADDI_32);
     EXPAND(I8085::LOAD_32);

@@ -182,13 +182,17 @@ let Constraints = "$src = $rd", Defs=[SREG]  in {
 
 let Defs=[SREG,A], Uses=[A] in def SUB : F2<0b10010,(outs), (ins GR8: $rs), "SUB $rs", []>;
 let Defs=[SREG,A], Uses=[A] in def SBB : F2<0b10011,(outs), (ins GR8: $rs), "SBB $rs",[]>;
-def SUB_M : F1<0b10010110,(outs), (ins), "SUB M", []>;
+let Uses=[H,L],Defs=[SREG,A] in def SUB_M : F1<0b10010110,(outs), (ins), "SUB M", []>;
+let Uses=[H,L],Defs=[SREG,A] in def SBB_M : F1<0b10011110,(outs), (ins), "SBB M", []>;
 let Defs=[SREG,A], Uses=[A] in def ADD : F2<0b10000,(outs), (ins GR8: $rs), "ADD $rs", []>;
 let Defs=[SREG,A], Uses=[A] in def ADC : F2<0b10001,(outs), (ins GR8: $rs), "ADC $rs", []>;
 
 let Uses=[H,L] in def ADD_M : F1<0b10000110,(outs), (ins), "ADD M", []>;
 let Uses=[H,L] in def ADC_M : F1<0b10001110,(outs), (ins), "ADC M", []>;
 let Uses=[H,L] in def ANA_M : F1<0b10100110,(outs), (ins), "ANA M", []>;
+
+let Uses=[H,L],Defs=[SREG,A] in def CMP_M : F1<0b10111101,(outs), (ins), "CMP M", []>;
+let Uses=[H,L],Defs=[SREG,A] in def XRA_M : F1<0b10101110,(outs), (ins), "XRA M", []>;
 
 let Defs=[SREG,A], Uses=[A] in def ADI : F5<0b11000110,(outs), (ins i8imm: $k), "ADI $k", []>;
 let Defs=[SREG,A], Uses=[A] in def ACI : F5<0b11001110,(outs), (ins i8imm: $k), "ACI $k", []>;

@@ -45,7 +45,12 @@ def LOAD_32_WITH_ADDR : I8085Pseudo<(outs GR32: $dst),
 
 def STORE_32_AT_OFFSET_WITH_SP : I8085Pseudo<(outs),
                        (ins GR32: $src, i16imm: $offset),
-                       "STORE_32_SP_AT_OFFSET\t$offset, $src", [(store i32: $src, imm: $offset)]>;                    
+                       "STORE_32_AT_OFFSET_WITH_SP\t$offset, $src", [(store i32: $src, imm: $offset)]>;                    
+
+
+def LOAD_32_OFFSET_WITH_SP : I8085Pseudo<(outs GR32: $dst),
+                       (ins i16imm: $offset),
+                       "LOAD_32_OFFSET_WITH_SP\t$dst, $offset", [(set i32: $dst, (load imm: $offset))]>;
 
 }
 
@@ -89,3 +94,82 @@ def TRUNC32TO16
 def MOV_32 : I8085Pseudo<(outs GR32: $rd),
                     (ins GR32: $rs),
                     "MOV_32 $rd, $rs", []>;
+
+
+let isBarrier = 1, isBranch = 1, isTerminator = 1 , Defs=[SREG] in {
+//    def JMP_8_IF : I8085Pseudo<(outs),(ins GR8: $reg, addressTarget:$k),
+//                                            "JMP_8_IF $reg, $k", []>;
+
+//    def JMP_16_IF : I8085Pseudo<(outs),(ins GR16: $reg, addressTarget:$k),
+//                                            "JMP_16_IF $reg, $k", []>; 
+
+   def JMP_32_IF_NOT_EQUAL : I8085Pseudo<(outs),(ins GR32: $lhs, GR32: $rhs, addressTarget:$k),
+                                           "JMP_32_IF_NOT_EQUAL $lhs, $rhs, $k", []>; 
+
+   def JMP_32_IF_SAME_SIGN : I8085Pseudo<(outs),(ins GR32: $lhs, GR32: $rhs, addressTarget:$k),
+                                           "JMP_32_IF_SAME_SIGN $lhs, $rhs, $k", []>;   
+   
+   def JMP_32_IF_POSITIVE : I8085Pseudo<(outs),(ins GR32: $reg, addressTarget:$k),
+                                           "JMP_32_IF_POSITIVE $reg, $k", []>; 
+                                                                                 
+}
+
+let Constraints = "$lhs = $dst" , Uses=[SREG] in {
+
+def SET_NE_32 : I8085InserterPseudo<(outs GR8: $dst),
+                        (ins GR32: $lhs,GR32: $rhs),
+                        "SET_NE_32\t$dst, $lhs, $rhs", []>;
+
+def SET_EQ_32 : I8085InserterPseudo<(outs GR8: $dst),
+                        (ins GR32: $lhs,GR32: $rhs),
+                        "SET_EQ_32\t$dst, $lhs, $rhs", []>;
+
+def SET_GT_32 : I8085InserterPseudo<(outs GR8: $dst),
+                        (ins GR32: $lhs,GR32: $rhs),
+                        "SET_SGT_32\t$dst, $lhs, $rhs", []>;
+
+def SET_GE_32 : I8085InserterPseudo<(outs GR8: $dst),
+                        (ins GR32: $lhs,GR32: $rhs),
+                        "SET_SGE_32\t$dst, $lhs, $rhs", []>;
+
+def SET_LT_32 : I8085InserterPseudo<(outs GR8: $dst),
+                        (ins GR32: $lhs,GR32: $rhs),
+                        "SET_SLT_32\t$dst, $lhs, $rhs", []>;
+
+def SET_LE_32 : I8085InserterPseudo<(outs GR8: $dst),
+                        (ins GR32: $lhs,GR32: $rhs),
+                        "SET_SLE_32\t$dst, $lhs, $rhs", []>;   
+
+}
+
+let Constraints = "$lhs = $dst" , Uses=[SREG] in {
+
+def SET_UGT_32 : I8085InserterPseudo<(outs GR8: $dst),
+                        (ins GR32: $lhs,GR32: $rhs),
+                        "SET_UGT_32\t$dst, $lhs, $rhs", []>;
+
+def SET_UGE_32 : I8085InserterPseudo<(outs GR8: $dst),
+                        (ins GR32: $lhs,GR32: $rhs),
+                        "SET_UGE_32\t$dst, $lhs, $rhs", []>;
+
+def SET_ULT_32 : I8085InserterPseudo<(outs GR8: $dst),
+                        (ins GR32: $lhs,GR32: $rhs),
+                        "SET_ULT_32\t$dst, $lhs, $rhs", []>;
+
+def SET_ULE_32 : I8085InserterPseudo<(outs GR8: $dst),
+                        (ins GR32: $lhs,GR32: $rhs),
+                        "SET_ULE_32\t$dst, $lhs, $rhs", []>;   
+
+}
+
+let Constraints = "$lhs = $dst" , Uses=[SREG] in {
+
+def SET_DIFF_SIGN_GT_32 : I8085InserterPseudo<(outs GR8: $dst),
+                        (ins GR32: $lhs,GR32: $rhs),
+                        "SET_DIFF_SIGN_GT_32\t$dst, $lhs, $rhs", []>;
+
+def SET_DIFF_SIGN_LT_32 : I8085InserterPseudo<(outs GR8: $dst),
+                        (ins GR32: $lhs,GR32: $rhs),
+                        "SET_DIFF_SIGN_LT_32\t$dst, $lhs, $rhs", []>;                         
+
+}

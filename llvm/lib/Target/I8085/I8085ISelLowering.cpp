@@ -751,6 +751,8 @@ SDValue I8085TargetLowering::LowerCallResult(
 
   CCInfo.AnalyzeCallResult(Ins, RetCC_I8085_BUILTIN);
 
+  SmallVector<std::pair<int, unsigned>, 4> ResultMemLocs;
+
   // Copy all of the result registers out of their specified physreg.
   for (CCValAssign const &RVLoc : RVLocs) {
     if(RVLoc.isRegLoc()){
@@ -762,8 +764,37 @@ SDValue I8085TargetLowering::LowerCallResult(
     }
     else{
       assert(RVLoc.isMemLoc() && "Must be memory location.");
+      ResultMemLocs.push_back(
+          std::make_pair(RVLoc.getLocMemOffset(), InVals.size()));
+      // Reserve space for this result.
+      InVals.push_back(SDValue());
     }
   }
+
+    // Copy results out of memory.
+  SmallVector<SDValue, 4> MemOpChains;
+  for (unsigned i = 0, e = ResultMemLocs.size(); i != e; ++i) {
+    int Offset = ResultMemLocs[i].first;
+    unsigned Index = ResultMemLocs[i].second;
+
+    
+
+    // SDValue StackPtr = DAG.getRegister(I8085::SP, MVT::i16);
+    // SDValue SpLoc = DAG.getNode(ISD::ADD, dl, MVT::i16, StackPtr,DAG.getConstant(Offset, dl, MVT::i16));
+    // SDValue Load = DAG.getLoad(MVT::i32, dl, Chain, SpLoc, MachinePointerInfo());
+    // InVals[Index] = Load;
+    // MemOpChains.push_back(Load.getValue(1));
+    
+    SDValue ptrConstant = DAG.getConstant(Offset,dl,MVT::i16);
+    SDValue Load = DAG.getLoad(MVT::i32, dl, Chain, ptrConstant, MachinePointerInfo());
+    InVals[Index] = Load;
+    MemOpChains.push_back(Load.getValue(1));
+  }
+
+  // Transform all loads nodes into one single node because
+  // all load nodes are independent of each other.
+  if (!MemOpChains.empty())
+    Chain = DAG.getNode(ISD::TokenFactor, dl, MVT::Other, MemOpChains);
 
   return Chain;
 }
@@ -1006,8 +1037,30 @@ MachineBasicBlock *I8085TargetLowering::EmitInstrWithCustomInserter(MachineInstr
   case I8085::SET_DIFF_SIGN_LT_16:
   case I8085::SET_DIFF_SIGN_GT_16:
     return insertDifferentSignedCond16Set(MI, MBB); 
-
   
+
+  case I8085::SET_NE_32:
+  case I8085::SET_EQ_32:
+    return insertEqualityCond32Set(MI,MBB);
+  
+
+  case I8085::SET_UGT_32:
+  case I8085::SET_ULT_32:
+  case I8085::SET_UGE_32:
+  case I8085::SET_ULE_32:
+    return insertCond32Set(MI, MBB); 
+  
+  case I8085::SET_GT_32:
+  case I8085::SET_LT_32:
+  case I8085::SET_GE_32:
+  case I8085::SET_LE_32:
+    return insertSignedCond32Set(MI, MBB); 
+
+
+  case I8085::SET_DIFF_SIGN_LT_32:
+  case I8085::SET_DIFF_SIGN_GT_32:
+    return insertDifferentSignedCond32Set(MI, MBB);   
+
   case I8085::SHL_8:
   case I8085::SRA_8:
     return insertShift8Set(MI, MBB);      
@@ -1017,13 +1070,6 @@ MachineBasicBlock *I8085TargetLowering::EmitInstrWithCustomInserter(MachineInstr
          "Unexpected instr type to insert");
   return MBB;
 }
-
-
-
-
-
-
-
 
 
 Register I8085TargetLowering::getRegisterByName(const char *RegName, LLT VT,
