@@ -54,8 +54,6 @@ def LOAD_32_OFFSET_WITH_SP : I8085Pseudo<(outs GR32: $dst),
 
 }
 
-// def : Pat<(add i32: $src1, (imm :$src2)),(ADD_32 i32: $src1, (LOAD_32 imm: $src2))>;
-
 def MVI_32 : I8085Pseudo<(outs GR32: $rd),
                     (ins i32imm: $k),
                     "MVI_32 $rd, $k", [(set i32: $rd, imm: $k)]>;
@@ -173,3 +171,17 @@ def SET_DIFF_SIGN_LT_32 : I8085InserterPseudo<(outs GR8: $dst),
                         "SET_DIFF_SIGN_LT_32\t$dst, $lhs, $rhs", []>;                         
 
 }
+
+
+def imm32_Neg_Form : SDNodeXForm<imm, [{
+                    return CurDAG->getTargetConstant(-N->getAPIntValue(),
+                                                     SDLoc(N), MVT::i32);
+                  }]>;
+
+
+def IsNeg32 : ImmLeaf<i32, [{
+  return Imm < 0;
+}], imm32_Neg_Form>;
+
+
+def : Pat<(add i32: $src1, (IsNeg32 :$src2)),(SUB_32 i32: $src1, (LOAD_32 (imm32_Neg_Form imm: $src2)))>;

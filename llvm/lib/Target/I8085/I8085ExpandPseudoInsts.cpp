@@ -943,6 +943,40 @@ template <> bool I8085ExpandPseudo::expand<I8085::RR_8>(Block &MBB, BlockIt MBBI
   return true;
 }
 
+template <> bool I8085ExpandPseudo::expand<I8085::JMP_16_IF>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+  
+  unsigned operandOne = MI.getOperand(0).getReg();
+
+  unsigned opOneLow,opOneHigh;
+
+  if(operandOne==I8085::BC){  opOneLow=I8085::C;  opOneHigh=I8085::B; }
+  if(operandOne==I8085::DE){  opOneLow=I8085::E;  opOneHigh=I8085::D; }
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(I8085::A,RegState::Define)
+    .addReg(opOneHigh);
+
+  buildMI(MBB, MBBI, I8085::ANI)
+    .addImm(255);
+
+  buildMI(MBB, MBBI, I8085::JNZ)
+    .addMBB(MI.getOperand(1).getMBB());
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(I8085::A,RegState::Define)
+    .addReg(opOneLow);
+
+  buildMI(MBB, MBBI, I8085::ANI)
+    .addImm(255);
+
+  buildMI(MBB, MBBI, I8085::JNZ)
+    .addMBB(MI.getOperand(1).getMBB());
+  
+  MI.eraseFromParent();
+  return true;
+}
 
 template <> bool I8085ExpandPseudo::expand<I8085::JMP_16_IF_NOT_EQUAL>(Block &MBB, BlockIt MBBI) {
   const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();

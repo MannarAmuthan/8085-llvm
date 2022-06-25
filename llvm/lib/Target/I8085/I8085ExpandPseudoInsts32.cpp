@@ -388,10 +388,9 @@ template <> bool I8085ExpandPseudo32::expand<I8085::JMP_32_IF_NOT_EQUAL>(Block &
   unsigned operandTwo = MI.getOperand(1).getReg();
   
   int address[]={11,12,13,14,15,16,17,18};
-  int index = 0;
 
   for(int i=0;i<4;i++){
-      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+4]);
       buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A, RegState::Define);
       buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i]);
       buildMI(MBB, MBBI, I8085::CMP_M);
@@ -434,12 +433,12 @@ template <> bool I8085ExpandPseudo32::expand<I8085::JMP_32_IF_POSITIVE>(Block &M
   unsigned operandOne = MI.getOperand(0).getReg();
   
   int address[]={11,12,13,14,15,16,17,18};
-  int index = 0;
+  int higherByteIndex = 3;
 
-  if(operandOne==I8085::IBX){  index=4; }
+  if(operandOne==I8085::IBX){  higherByteIndex=7; }
 
 
-  buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[index]);
+  buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[higherByteIndex]);
   buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A, RegState::Define);
   buildMI(MBB, MBBI, I8085::ANI).addImm(128);  
   buildMI(MBB, MBBI, I8085::JZ).addMBB(MI.getOperand(1).getMBB());
