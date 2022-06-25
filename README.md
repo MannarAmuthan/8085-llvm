@@ -2,194 +2,6 @@
 
 For more details, current status of this backend, Please refer this [target's readme](llvm/lib/Target/I8085).
 
-Example : fibonacci.ll
-
-```ll
-define i16 @fibonacci(i16 %a) {
-entry:
-    %tmp1 = icmp sle i16 %a, 1
-    br i1 %tmp1, label %done, label %recurse
-    recurse:
-        %tmp2 = sub i16 %a, 1
-        %tmp3 = sub i16 %a, 2
-        %tmp4 = call i16 @fibonacci(i16 %tmp2)
-        %tmp5 = call i16 @fibonacci(i16 %tmp3)
-        %tmp6 = add i16 %tmp4,%tmp5
-        ret i16 %tmp6
-    done:
-        ret i16 %a
-}
-```
-
-```assembly
-fibonacci:
-LBB00:
-	LXI H, 65530
-	DAD SP
-	SPHL
-	MVI D, 0
-	MVI E, 2
-	LXI H, 9
-	DAD SP
-	MOV B, M
-	LXI H, 8
-	DAD SP
-	MOV C, M
-	LXI H, 5
-	DAD SP
-	MOV M, B
-	LXI H, 4
-	DAD SP
-	MOV M, C
-	MOV A, B
-	XRA D
-	ANI 128
-	JZ	LBB01
-	JMP LBB04
-LBB01:
-	LXI H, 3
-	DAD SP
-	MOV M, D
-	LXI H, 2
-	DAD SP
-	MOV M, E
-	MOV D, B
-	MOV E, C
-	LXI H, 3
-	DAD SP
-	MOV B, M
-	LXI H, 2
-	DAD SP
-	MOV C, M
-	MOV A, E
-	SUB C
-	MOV E, A
-	MOV A, D
-	SBB B
-	MOV D, A
-	MVI D, 1
-	JC	LBB03
-	JMP LBB02
-LBB02:
-	MVI D, 0
-	JMP LBB03
-LBB03:
-	LXI H, 5
-	DAD SP
-	MOV B, M
-	LXI H, 4
-	DAD SP
-	MOV C, M
-	JMP LBB08
-LBB04:
-	MOV A, B
-	ANI 128
-	JZ	LBB05
-	JMP LBB06
-LBB05:
-	MVI D, 0
-	JMP LBB07
-LBB06:
-	MVI D, 1
-	JMP LBB07
-LBB07:
-	JMP LBB08
-LBB08:
-	MOV A, D
-	ORI 0
-	JNZ	LBB010
-	JMP LBB09
-LBB09:
-	MVI D, 0
-	MVI E, 1
-	LXI H, 3
-	DAD SP
-	MOV M, D
-	LXI H, 2
-	DAD SP
-	MOV M, E
-	MOV D, B
-	MOV E, C
-	LXI H, 3
-	DAD SP
-	MOV B, M
-	LXI H, 2
-	DAD SP
-	MOV C, M
-	MOV A, E
-	SUB C
-	MOV E, A
-	MOV A, D
-	SBB B
-	MOV D, A
-	LXI H, 1
-	DAD SP
-	MOV M, D
-	LXI H, 0
-	DAD SP
-	MOV M, E
-	MVI B, 0
-	MVI C, 2
-	LXI H, 5
-	DAD SP
-	MOV D, M
-	LXI H, 4
-	DAD SP
-	MOV E, M
-	MOV A, E
-	SUB C
-	MOV E, A
-	MOV A, D
-	SBB B
-	MOV D, A
-	LXI H, 5
-	DAD SP
-	MOV M, D
-	LXI H, 4
-	DAD SP
-	MOV M, E
-	CALL fibonacci
-	LXI H, 3
-	DAD SP
-	MOV M, B
-	LXI H, 2
-	DAD SP
-	MOV M, C
-	LXI H, 5
-	DAD SP
-	MOV B, M
-	LXI H, 4
-	DAD SP
-	MOV C, M
-	LXI H, 1
-	DAD SP
-	MOV M, B
-	LXI H, 0
-	DAD SP
-	MOV M, C
-	CALL fibonacci
-	LXI H, 3
-	DAD SP
-	MOV D, M
-	LXI H, 2
-	DAD SP
-	MOV E, M
-	MOV A, E
-	ADD C
-	MOV E, A
-	MOV A, D
-	ADC B
-	MOV D, A
-	MOV B, D
-	MOV C, E
-LBB010:
-	LXI H, 6
-	DAD SP
-	SPHL
-	RET
-```
-
-
 ## Build
 
 ```
@@ -200,3 +12,447 @@ ninja
 ```
 
 For using other build systems and methods, please refer official LLVM Build Docs.
+
+Example : fibonacci.ll
+
+```c
+#include<stdlib.h>
+
+int16_t fibonacci(int16_t n){
+    if(n <= 1){
+        return n;
+    }
+    return fibonacci(n-1)+fibonacci(n-2);
+} 
+```
+
+```assembly
+LBB00:
+	LXI H, 65518
+	DAD SP
+	SPHL
+	LXI H, 21
+	DAD SP
+	MOV B, M
+	LXI H, 20
+	DAD SP
+	MOV C, M
+	LXI H, 15
+	DAD SP
+	MOV M, B
+	LXI H, 14
+	DAD SP
+	MOV M, C
+	LXI H, 15
+	DAD SP
+	MOV B, M
+	LXI H, 14
+	DAD SP
+	MOV C, M
+	LXI H, 15
+	MOV M, C
+	LXI H, 16
+	MOV M, B
+	MOV A, B
+	ADI 128
+	SBB A
+	LXI H, 18
+	MOV M, A
+	LXI H, 17
+	MOV M, A
+	LXI H, 11
+	MVI M, 1
+	LXI H, 12
+	MVI M, 0
+	LXI H, 13
+	MVI M, 0
+	LXI H, 14
+	MVI M, 0
+	LXI H, 15
+	MOV A, M
+	LXI H, 11
+	XRA M
+	ANI 128
+	JZ LBB02
+	JMP LBB06
+LBB01:
+	MOV A, B
+	ORI 0
+	JNZ LBB011
+	JMP LBB010
+LBB02:
+	LXI H, 11
+	MOV A, M
+	LXI H, 6
+	DAD SP
+	MOV M, A
+	LXI H, 12
+	MOV A, M
+	LXI H, 7
+	DAD SP
+	MOV M, A
+	LXI H, 13
+	MOV A, M
+	LXI H, 8
+	DAD SP
+	MOV M, A
+	LXI H, 14
+	MOV A, M
+	LXI H, 9
+	DAD SP
+	MOV M, A
+	LXI H, 15
+	MOV A, M
+	LXI H, 11
+	MOV M, A
+	LXI H, 16
+	MOV A, M
+	LXI H, 12
+	MOV M, A
+	LXI H, 17
+	MOV A, M
+	LXI H, 13
+	MOV M, A
+	LXI H, 18
+	MOV A, M
+	LXI H, 14
+	MOV M, A
+	LXI H, 15
+	MOV A, M
+	LXI H, 2
+	DAD SP
+	MOV M, A
+	LXI H, 16
+	MOV A, M
+	LXI H, 3
+	DAD SP
+	MOV M, A
+	LXI H, 17
+	MOV A, M
+	LXI H, 4
+	DAD SP
+	MOV M, A
+	LXI H, 18
+	MOV A, M
+	LXI H, 5
+	DAD SP
+	MOV M, A
+	LXI H, 6
+	DAD SP
+	MOV A, M
+	LXI H, 15
+	MOV M, A
+	LXI H, 7
+	DAD SP
+	MOV A, M
+	LXI H, 16
+	MOV M, A
+	LXI H, 8
+	DAD SP
+	MOV A, M
+	LXI H, 17
+	MOV M, A
+	LXI H, 9
+	DAD SP
+	MOV A, M
+	LXI H, 18
+	MOV M, A
+	LXI H, 11
+	MOV A, M
+	LXI H, 15
+	SUB M
+	LXI H, 11
+	MOV M, A
+	LXI H, 12
+	MOV A, M
+	LXI H, 16
+	SBB M
+	LXI H, 12
+	MOV M, A
+	LXI H, 13
+	MOV A, M
+	LXI H, 17
+	SBB M
+	LXI H, 13
+	MOV M, A
+	LXI H, 14
+	MOV A, M
+	LXI H, 18
+	SBB M
+	LXI H, 14
+	MOV M, A
+	JC LBB04
+	LXI H, 6
+	DAD SP
+	MOV A, M
+	LXI H, 11
+	MOV M, A
+	LXI H, 7
+	DAD SP
+	MOV A, M
+	LXI H, 12
+	MOV M, A
+	LXI H, 8
+	DAD SP
+	MOV A, M
+	LXI H, 13
+	MOV M, A
+	LXI H, 9
+	DAD SP
+	MOV A, M
+	LXI H, 14
+	MOV M, A
+	LXI H, 2
+	DAD SP
+	MOV A, M
+	LXI H, 15
+	MOV M, A
+	LXI H, 3
+	DAD SP
+	MOV A, M
+	LXI H, 16
+	MOV M, A
+	LXI H, 4
+	DAD SP
+	MOV A, M
+	LXI H, 17
+	MOV M, A
+	LXI H, 5
+	DAD SP
+	MOV A, M
+	LXI H, 18
+	MOV M, A
+	LXI H, 15
+	MOV A, M
+	LXI H, 11
+	CMP M
+	JNZ LBB03
+	LXI H, 16
+	MOV A, M
+	LXI H, 12
+	CMP M
+	JNZ LBB03
+	LXI H, 17
+	MOV A, M
+	LXI H, 13
+	CMP M
+	JNZ LBB03
+	LXI H, 18
+	MOV A, M
+	LXI H, 14
+	CMP M
+	JNZ LBB03
+	JMP LBB04
+LBB03:
+	MVI B, 1
+	JMP LBB05
+LBB04:
+	MVI B, 0
+	JMP LBB05
+LBB05:
+	JMP LBB01
+LBB06:
+	LXI H, 18
+	MOV A, M
+	ANI 128
+	JZ LBB08
+	JMP LBB09
+LBB07:
+	JMP LBB01
+LBB08:
+	MVI B, 1
+	JMP LBB07
+LBB09:
+	MVI B, 0
+	JMP LBB07
+LBB010:
+	LXI H, 15
+	DAD SP
+	MOV B, M
+	LXI H, 14
+	DAD SP
+	MOV C, M
+	LXI H, 17
+	DAD SP
+	MOV M, B
+	LXI H, 16
+	DAD SP
+	MOV M, C
+	JMP LBB012
+LBB011:
+	LXI H, 15
+	DAD SP
+	MOV B, M
+	LXI H, 14
+	DAD SP
+	MOV C, M
+	MVI D, 0
+	MVI E, 1
+	MOV A, C
+	SUB E
+	MOV C, A
+	MOV A, B
+	SBB D
+	MOV B, A
+	LXI H, 1
+	DAD SP
+	MOV M, B
+	LXI H, 0
+	DAD SP
+	MOV M, C
+	CALL fibonacci
+	LXI H, 14
+	MVI M, 0
+	LXI H, 13
+	MVI M, 0
+	LXI H, 12
+	MOV M, B
+	LXI H, 11
+	MOV M, C
+	LXI H, 11
+	MOV A, M
+	LXI H, 10
+	DAD SP
+	MOV M, A
+	LXI H, 12
+	MOV A, M
+	LXI H, 11
+	DAD SP
+	MOV M, A
+	LXI H, 13
+	MOV A, M
+	LXI H, 12
+	DAD SP
+	MOV M, A
+	LXI H, 14
+	MOV A, M
+	LXI H, 13
+	DAD SP
+	MOV M, A
+	LXI H, 15
+	DAD SP
+	MOV B, M
+	LXI H, 14
+	DAD SP
+	MOV C, M
+	MVI D, 0
+	MVI E, 2
+	MOV A, C
+	SUB E
+	MOV C, A
+	MOV A, B
+	SBB D
+	MOV B, A
+	LXI H, 1
+	DAD SP
+	MOV M, B
+	LXI H, 0
+	DAD SP
+	MOV M, C
+	CALL fibonacci
+	LXI H, 14
+	MVI M, 0
+	LXI H, 13
+	MVI M, 0
+	LXI H, 12
+	MOV M, B
+	LXI H, 11
+	MOV M, C
+	LXI H, 10
+	DAD SP
+	MOV A, M
+	LXI H, 15
+	MOV M, A
+	LXI H, 11
+	DAD SP
+	MOV A, M
+	LXI H, 16
+	MOV M, A
+	LXI H, 12
+	DAD SP
+	MOV A, M
+	LXI H, 17
+	MOV M, A
+	LXI H, 13
+	DAD SP
+	MOV A, M
+	LXI H, 18
+	MOV M, A
+	LXI H, 11
+	MOV A, M
+	LXI H, 15
+	ADD M
+	LXI H, 15
+	MOV M, A
+	LXI H, 12
+	MOV A, M
+	LXI H, 16
+	ADC M
+	LXI H, 16
+	MOV M, A
+	LXI H, 13
+	MOV A, M
+	LXI H, 17
+	ADC M
+	LXI H, 17
+	MOV M, A
+	LXI H, 14
+	MOV A, M
+	LXI H, 18
+	ADC M
+	LXI H, 18
+	MOV M, A
+	LXI H, 15
+	MOV C, M
+	LXI H, 16
+	MOV B, M
+	LXI H, 17
+	DAD SP
+	MOV M, B
+	LXI H, 16
+	DAD SP
+	MOV M, C
+	JMP LBB012
+LBB012:
+	LXI H, 17
+	DAD SP
+	MOV B, M
+	LXI H, 16
+	DAD SP
+	MOV C, M
+	LXI H, 11
+	MOV M, C
+	LXI H, 12
+	MOV M, B
+	MOV A, B
+	ADI 128
+	SBB A
+	LXI H, 14
+	MOV M, A
+	LXI H, 13
+	MOV M, A
+	LXI H, 11
+	MOV A, M
+	LXI H, 20
+	DAD SP
+	MOV M, A
+	LXI H, 12
+	MOV A, M
+	LXI H, 21
+	DAD SP
+	MOV M, A
+	LXI H, 13
+	MOV A, M
+	LXI H, 22
+	DAD SP
+	MOV M, A
+	LXI H, 14
+	MOV A, M
+	LXI H, 23
+	DAD SP
+	MOV M, A
+	LXI H, 18
+	DAD SP
+	SPHL
+	RET
+```
