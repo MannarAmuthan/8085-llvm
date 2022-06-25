@@ -13,7 +13,7 @@ ninja
 
 For using other build systems and methods, please refer official LLVM Build Docs.
 
-Example : fibonacci.ll
+Example : fibonacci.c
 
 ```c
 #include<stdlib.h>
@@ -27,6 +27,7 @@ int16_t fibonacci(int16_t n){
 ```
 
 ```assembly
+fibonacci:
 LBB00:
 	LXI H, 65518
 	DAD SP
