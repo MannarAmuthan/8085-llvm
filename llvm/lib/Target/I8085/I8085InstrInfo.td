@@ -382,6 +382,25 @@ def STORE_16_AT_OFFSET_WITH_SP : I8085Pseudo<(outs),
 
 }
 
+let Uses=[SP] in {
+
+def LOAD_8_WITH_IMM_ADDR : I8085Pseudo<(outs GR8: $dst),
+                       (ins imm16Addr: $src),
+                       "LOAD_8_ADDR $dst, $src", []>;  
+
+def LOAD_16_WITH_IMM_ADDR : I8085Pseudo<(outs GR16: $dst),
+                       (ins imm16Addr: $src),
+                       "LOAD_16_ADDR $dst, $src", []>;
+
+def LOAD_8_ADDR_CONTENT : I8085Pseudo<(outs GR8: $dst),
+                       (ins GR16: $src),
+                       "LOAD_8_ADDR_CONTENT $dst, $src", [(set i8: $dst, (load i16: $src))]>;
+
+def LOAD_16_ADDR_CONTENT : I8085Pseudo<(outs GR16: $dst),
+                       (ins GR16: $src),
+                       "LOAD_16_ADDR_CONTENT $dst, $src", [(set i16: $dst, (load i16: $src))]>;
+}  
+
 
 def addressTarget : Operand<OtherVT> {
   // let PrintMethod = "printPCRelImm";
@@ -470,6 +489,26 @@ def TRUNC16TO8
                                  : $src))]>;                                 
 
 
+def : Pat<(i16(load(I8085Wrapper tglobaladdr
+                    : $dst))),
+          (LOAD_16_WITH_IMM_ADDR tglobaladdr
+           : $dst)>;
+
+def : Pat<(i8(load(I8085Wrapper tglobaladdr
+                   : $dst))),
+          (LOAD_8_WITH_IMM_ADDR tglobaladdr
+           : $dst)>;
+
+def : Pat<(i16(I8085Wrapper tglobaladdr : $dst)), 
+          (LOAD_16_WITH_IMM_ADDR tglobaladdr : $dst)>;
+
+
+let Defs = [SREG],
+    hasSideEffects = 0 in  def FRMIDX : I8085Pseudo<(outs GR16: $dst),
+                                                    (ins mspi: $memri),
+                                                    "FRMIDX\t$dst, $memri", []>;
+
+                                              
 include "I8085CondBrInstrInfo.td"
 
 include "I8085InstrInfo32.td"

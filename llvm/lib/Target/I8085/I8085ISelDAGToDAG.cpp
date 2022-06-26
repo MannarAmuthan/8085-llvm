@@ -299,7 +299,7 @@ template <> bool I8085DAGToDAGISel::select<ISD::BR_CC>(SDNode *N) {
   else if(LHS.getSimpleValueType() == MVT::i32){
     Opc=get32Opc(CC);
   }
-  
+
   SDNode *SETccNode=CurDAG->getMachineNode(Opc, dl,MVT::i8,{LHS,RHS});
 
   SDValue Ops[] = {SDValue(SETccNode, 0),JumpTo,Chain};
@@ -350,6 +350,21 @@ template <> bool I8085DAGToDAGISel::select<ISD::SRA>(SDNode *N) {
   return false;
 }
 
+
+template <> bool I8085DAGToDAGISel::select<ISD::FrameIndex>(SDNode *N) {
+  auto DL = CurDAG->getDataLayout();
+
+  // Convert the frameindex into a temp instruction that will hold the
+  // effective address of the final stack slot.
+  int FI = cast<FrameIndexSDNode>(N)->getIndex();
+  SDValue TFI =
+      CurDAG->getTargetFrameIndex(FI, getTargetLowering()->getPointerTy(DL));
+
+  CurDAG->SelectNodeTo(N, I8085::FRMIDX, getTargetLowering()->getPointerTy(DL),
+                       TFI, CurDAG->getTargetConstant(0, SDLoc(N), MVT::i16));
+  return true;
+}
+
 void I8085DAGToDAGISel::Select(SDNode *N) {
   // If we have a custom node, we already have selected!
   if (N->isMachineOpcode()) {
@@ -378,7 +393,9 @@ bool I8085DAGToDAGISel::trySelect(SDNode *N) {
   case ISD::SHL:
     return select<ISD::SHL>(N);  
   case ISD::SRA:
-    return select<ISD::SRA>(N);      
+    return select<ISD::SRA>(N);
+  case ISD::FrameIndex:
+    return select<ISD::FrameIndex>(N);    
   default:
     return false;
   }

@@ -52,6 +52,10 @@ def LOAD_32_OFFSET_WITH_SP : I8085Pseudo<(outs GR32: $dst),
                        (ins i16imm: $offset),
                        "LOAD_32_OFFSET_WITH_SP\t$dst, $offset", [(set i32: $dst, (load imm: $offset))]>;
 
+def LOAD_32_WITH_IMM_ADDR : I8085Pseudo<(outs GR32: $dst),
+                       (ins imm16Addr: $src),
+                       "LOAD_32_ADDR $dst, $src", []>;
+
 }
 
 def MVI_32 : I8085Pseudo<(outs GR32: $rd),
@@ -80,6 +84,27 @@ def AEXT16TO32
                       [(set i32: $dst, (anyext i16: $src))]>;                      
 
 
+
+def ZEXT8TO32
+    : I8085Pseudo<(outs GR32: $dst),
+                      (ins GR8: $src),
+                      "zext8to32 $dst, $src", 
+                      [(set i32: $dst, (zext i8: $src))]>;
+
+
+def SEXT8TO32
+    : I8085Pseudo<(outs GR32: $dst),
+                      (ins GR8: $src),
+                      "sext8to32 $dst, $src", 
+                      [(set i32: $dst, (sext i8: $src))]>;
+
+def AEXT8TO32
+    : I8085Pseudo<(outs GR32: $dst),
+                      (ins GR8: $src),
+                      "aext8to32 $dst, $src", 
+                      [(set i32: $dst, (anyext i8: $src))]>; 
+
+
 def TRUNC32TO16
     : I8085Pseudo<(outs GR16: $dst),
                       (ins GR32: $src),
@@ -88,6 +113,29 @@ def TRUNC32TO16
                         : $dst, (trunc i32
                                  : $src))]>; 
 
+def TRUNC32TO8
+    : I8085Pseudo<(outs GR8: $dst),
+                      (ins GR32: $src),
+                      "trunc32to8 $dst, $src",
+                      [(set i8
+                        : $dst, (trunc i32
+                                 : $src))]>;                                 
+
+
+let Constraints = "$src = $dst", Defs=[SREG]  in {
+        def SEXT32_INREG_8
+            : I8085Pseudo<(outs GR32: $dst),
+                            (ins GR32: $src),
+                            "SEXT32_INREG_8 $dst, $src",
+                            [(set i32: $dst, (sext_inreg i32: $src,i8))]>;
+
+        def SEXT32_INREG_16
+            : I8085Pseudo<(outs GR32: $dst),
+                            (ins GR32: $src),
+                            "SEXT32_INREG_16 $dst, $src",
+                            [(set i32: $dst, (sext_inreg i32: $src,i16))]>;                     
+
+}
 
 def MOV_32 : I8085Pseudo<(outs GR32: $rd),
                     (ins GR32: $rs),
@@ -185,3 +233,9 @@ def IsNeg32 : ImmLeaf<i32, [{
 
 
 def : Pat<(add i32: $src1, (IsNeg32 :$src2)),(SUB_32 i32: $src1, (LOAD_32 (imm32_Neg_Form imm: $src2)))>;
+
+
+def : Pat<(i32(load(I8085Wrapper tglobaladdr
+                    : $dst))),
+          (LOAD_32_WITH_IMM_ADDR tglobaladdr
+           : $dst)>;
