@@ -898,6 +898,99 @@ template <> bool I8085ExpandPseudo::expand<I8085::AEXT8TO16>(Block &MBB, BlockIt
   return expand<I8085::ZEXT8TO16>(MBB, MI);
 }
 
+template <> bool I8085ExpandPseudo::expand<I8085::RL_16>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+  
+  unsigned reg = MI.getOperand(0).getReg();
+
+  unsigned regLow,regHigh;
+  if(reg==I8085::BC){  regLow=I8085::C;  regHigh=I8085::B; }
+  if(reg==I8085::DE){  regLow=I8085::E;  regHigh=I8085::D; }
+  
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(I8085::A,RegState::Define)
+    .addReg(regLow);
+
+  buildMI(MBB, MBBI, I8085::RAL);
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(regLow,RegState::Define)
+    .addReg(I8085::A);
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(I8085::A,RegState::Define)
+    .addReg(regHigh);
+
+  buildMI(MBB, MBBI, I8085::RAL);
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(regHigh,RegState::Define)
+    .addReg(I8085::A);
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(I8085::A,RegState::Define)
+    .addReg(regLow);
+
+  buildMI(MBB, MBBI, I8085::ANI)
+    .addImm(254);  
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(regLow,RegState::Define)
+    .addReg(I8085::A);
+
+  MI.eraseFromParent();
+  return true;
+}
+
+
+template <> bool I8085ExpandPseudo::expand<I8085::RR_16>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+  
+  unsigned reg = MI.getOperand(0).getReg();
+
+  unsigned regLow,regHigh;
+  if(reg==I8085::BC){  regLow=I8085::C;  regHigh=I8085::B; }
+  if(reg==I8085::DE){  regLow=I8085::E;  regHigh=I8085::D; }
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(I8085::A,RegState::Define)
+    .addReg(regHigh);
+
+  buildMI(MBB, MBBI, I8085::RAR);
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(regHigh,RegState::Define)
+    .addReg(I8085::A);
+
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(I8085::A,RegState::Define)
+    .addReg(regLow);
+
+  buildMI(MBB, MBBI, I8085::RAR);
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(regLow,RegState::Define)
+    .addReg(I8085::A);
+
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(I8085::A,RegState::Define)
+    .addReg(regHigh);
+
+  buildMI(MBB, MBBI, I8085::ANI)
+    .addImm(127);  
+
+  buildMI(MBB, MBBI, I8085::MOV)
+    .addReg(regHigh,RegState::Define)
+    .addReg(I8085::A);
+
+  MI.eraseFromParent();
+  return true;
+}
+
 template <> bool I8085ExpandPseudo::expand<I8085::RL_8>(Block &MBB, BlockIt MBBI) {
   const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
   MachineInstr &MI = *MBBI;
@@ -1130,6 +1223,8 @@ bool I8085ExpandPseudo::expandMI(Block &MBB, BlockIt MBBI) {
     EXPAND(I8085::AEXT8TO16);
     EXPAND(I8085::SEXT8TO16);
     EXPAND(I8085::ZEXT8TO16);
+    EXPAND(I8085::RL_16);
+    EXPAND(I8085::RR_16);
     EXPAND(I8085::RL_8);
     EXPAND(I8085::RR_8);
     // EXPAND(I8085::SET_NE_16);

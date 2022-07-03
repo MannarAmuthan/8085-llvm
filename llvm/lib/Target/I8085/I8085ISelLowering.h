@@ -181,7 +181,7 @@ private:
   MachineBasicBlock *insertSignedCond32Set(MachineInstr &MI, MachineBasicBlock *MBB) const;
   MachineBasicBlock *insertDifferentSignedCond32Set(MachineInstr &MI, MachineBasicBlock *MBB) const;
   
-  MachineBasicBlock *insertShift8Set(MachineInstr &MI, MachineBasicBlock *BB) const;                                          
+  MachineBasicBlock *insertShiftSet(MachineInstr &MI, MachineBasicBlock *BB) const;                                       
 };
 
 } // end namespace llvm

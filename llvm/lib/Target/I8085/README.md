@@ -20,13 +20,13 @@ This is the experimental LLVM backend for the  [intel 8085 microprocessor](https
 
 ## <a id="implemented">**Implemented Functionalities:**
 
-Currently basic constructs such as , loading and storing variables, function call, branching statements, logical operations (and, or, xor) and two arithmetic operations such as addition and subtraction are implemented. And those are also only for i8 and i16 integer types alone. Still far way to go.
+Currently basic constructs such as , loading and storing variables, function call, branching statements, logical operations (and, or, xor) and two arithmetic operations such as addition and subtraction are implemented, for i8,i16,i32 integere types. Still far way to go.
 
 
 ## <a id="notes">**Some implementation note:**
 
 1. Arguments are passed via stack, and return value is stored in register.
-2. 8 bit integers are returned via A reg and 16 bit integers are returned via BC reg pair.
+2. 8 bit integers are returned via A reg, 16 bit integers are returned via BC reg pair and 32 bit integers are returned via stack.
 
 
 ## <a id="correctness">**Correctness:**
@@ -39,9 +39,8 @@ This 8085 backend is purely experimental and never tested with original hardware
 
 ## <a id="priority">**Next on priority:**
 1. Implement shift operations for 16 bit integers.
-2. Adding 32 bit integer support.
+2. Linker/Loader implementation.
 3. Adding more arithmetic operations and floating point types.
-4. Sign extension and zero extensions
 
 
 ## <a id="credits"> **Thanks and Credits:**

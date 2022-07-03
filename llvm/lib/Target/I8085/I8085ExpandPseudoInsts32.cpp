@@ -26,6 +26,10 @@
 
 #include <iostream>
 
+
+#define DEBUG_TYPE "i8085-expand-psuedo-32"
+
+
 using namespace llvm;
 
 #define I8085_EXPAND_PSEUDO_32_NAME "I8085 pseudo instruction expansion pass for instructions with 32 bit imaginary registers"
@@ -116,6 +120,66 @@ bool I8085ExpandPseudo32::runOnMachineFunction(MachineFunction &MF) {
 
   return Modified;
 }
+
+template <> bool I8085ExpandPseudo32::expand<I8085::RR_32>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned srcReg = MI.getOperand(0).getReg();
+  
+  int address[]={11,12,13,14,15,16,17,18};
+  int index = 0;
+
+  if(srcReg==I8085::IBX){
+      index=4;
+  }
+
+  for(int i=3;i>-1;i--){
+    buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[index+i]);
+    buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
+    buildMI(MBB, MBBI, I8085::RAR);
+    buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
+  }
+
+  buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[index+3]);
+  buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
+  buildMI(MBB, MBBI, I8085::ANI).addImm(127);  
+  buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
+  
+  MI.eraseFromParent();
+  return true;
+}
+
+
+template <> bool I8085ExpandPseudo32::expand<I8085::RL_32>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned srcReg = MI.getOperand(0).getReg();
+  
+  int address[]={11,12,13,14,15,16,17,18};
+  int index = 0;
+
+  if(srcReg==I8085::IBX){
+      index=4;
+  }
+
+  for(int i=0;i<4;i++){
+    buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[index+i]);
+    buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
+    buildMI(MBB, MBBI, I8085::RAL);
+    buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
+  }
+
+  buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[index]);
+  buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
+  buildMI(MBB, MBBI, I8085::ANI).addImm(254);  
+  buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
+
+  MI.eraseFromParent();
+  return true;
+}
+
 
 template <> bool I8085ExpandPseudo32::expand<I8085::SEXT32_INREG_8>(Block &MBB, BlockIt MBBI) {
   const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
@@ -785,6 +849,8 @@ bool I8085ExpandPseudo32::expandMI(Block &MBB, BlockIt MBBI) {
     return expand<Op>(MBB, MI)
 
   switch (Opcode) {
+    EXPAND(I8085::RL_32);
+    EXPAND(I8085::RR_32);
     EXPAND(I8085::SEXT32_INREG_16);
     EXPAND(I8085::SEXT32_INREG_8);
     EXPAND(I8085::TRUNC32TO16);

@@ -64,6 +64,30 @@ I8085TargetLowering::I8085TargetLowering(const I8085TargetMachine &TM,
     }
   }
 
+  setOperationAction(ISD::MUL, MVT::i8, LibCall);
+  setOperationAction(ISD::MUL, MVT::i16, LibCall);
+  setOperationAction(ISD::MUL, MVT::i32, LibCall);
+
+  setOperationAction(ISD::SDIV, MVT::i8, LibCall);
+  setOperationAction(ISD::SDIV, MVT::i16, LibCall);
+  setOperationAction(ISD::SDIV, MVT::i32, LibCall);
+
+  setOperationAction(ISD::SREM, MVT::i8, LibCall);
+  setOperationAction(ISD::SREM, MVT::i16, LibCall);
+  setOperationAction(ISD::SREM, MVT::i32, LibCall);
+
+  setLibcallName(RTLIB::MUL_I8, "__mul8");
+  setLibcallName(RTLIB::MUL_I16, "__mul16");
+  setLibcallName(RTLIB::MUL_I32, "__mul32");
+
+  setLibcallName(RTLIB::SDIV_I8, "__sdiv8");
+  setLibcallName(RTLIB::SDIV_I16, "__sdiv16");
+  setLibcallName(RTLIB::SDIV_I32, "__sdiv32");
+
+  setLibcallName(RTLIB::SREM_I8, "__srem8");
+  setLibcallName(RTLIB::SREM_I16, "__srem16");
+  setLibcallName(RTLIB::SREM_I32, "__srem32");
+
   setOperationAction(ISD::GlobalAddress, MVT::i16, Custom);
   setOperationAction(ISD::BlockAddress, MVT::i16, Custom);
 
@@ -894,7 +918,7 @@ I8085TargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
   return DAG.getNode(RetOpc, dl, MVT::Other, RetOps);
 }
 
-MachineBasicBlock *I8085TargetLowering::insertShift8Set(MachineInstr &MI,
+MachineBasicBlock *I8085TargetLowering::insertShiftSet(MachineInstr &MI,
                                                   MachineBasicBlock *MBB) const {
 
   int Opc = MI.getOpcode();
@@ -925,14 +949,18 @@ MachineBasicBlock *I8085TargetLowering::insertShift8Set(MachineInstr &MI,
 
   MachineBasicBlock *continuationMBB = MF->CreateMachineBasicBlock(LLVM_BB);
   MachineBasicBlock *shiftLoopMBB = MF->CreateMachineBasicBlock(LLVM_BB);
+  MachineBasicBlock *checkMBB = MF->CreateMachineBasicBlock(LLVM_BB);
 
   MachineFunction::iterator I;
   for (I = MF->begin(); I != MF->end() && &(*I) != MBB; ++I)
     ;
   if (I != MF->end())
     ++I;
-  MF->insert(I, continuationMBB);
+  
   MF->insert(I, shiftLoopMBB);
+  MF->insert(I, checkMBB);
+  MF->insert(I, continuationMBB);
+
 
   // Transfer remaining instructions and all successors of the current
   // block to the block which will contain the Phi node for the
@@ -942,51 +970,85 @@ MachineBasicBlock *I8085TargetLowering::insertShift8Set(MachineInstr &MI,
 
   continuationMBB->transferSuccessorsAndUpdatePHIs(MBB);
 
+  MBB->addSuccessor(checkMBB);
+  shiftLoopMBB->addSuccessor(checkMBB);
+  checkMBB->addSuccessor(shiftLoopMBB);
+  checkMBB->addSuccessor(continuationMBB);
+
   unsigned destReg = MI.getOperand(0).getReg();
   unsigned operandOne = MI.getOperand(1).getReg();
   unsigned operandTwo = MI.getOperand(2).getReg();
-  
-  
+
   unsigned counterTempReg = MF->getRegInfo().createVirtualRegister(getRegClassFor(MVT::i8));
-  unsigned tempHolder = MF->getRegInfo().createVirtualRegister(getRegClassFor(MVT::i8));
+  unsigned counterTempReg2 = MF->getRegInfo().createVirtualRegister(getRegClassFor(MVT::i8));
 
+  unsigned tempHolderOne,tempHolderTwo;
+  int rrOpcode;
+  if(Opc==I8085::SHL_16 || Opc==I8085::SRA_16){
+      rrOpcode = I8085::RR_16;
+      if(Opc==I8085::SHL_16) rrOpcode=I8085::RL_16;
+      tempHolderOne = MF->getRegInfo().createVirtualRegister(getRegClassFor(MVT::i16));
+      tempHolderTwo = MF->getRegInfo().createVirtualRegister(getRegClassFor(MVT::i16));
+  }
 
-  BuildMI(MBB, dl, TII.get(I8085::MOV))
-        .addReg(counterTempReg, RegState::Define)
-        .addReg(operandTwo);
+  if(Opc==I8085::SHL_8 || Opc==I8085::SRA_8){
+      rrOpcode = I8085::RR_8;
+      if(Opc==I8085::SHL_8) rrOpcode=I8085::RL_8;
+      tempHolderOne = MF->getRegInfo().createVirtualRegister(getRegClassFor(MVT::i8));
+      tempHolderTwo = MF->getRegInfo().createVirtualRegister(getRegClassFor(MVT::i8));
+  }
 
-  BuildMI(MBB, dl, TII.get(I8085::MOV))
-        .addReg(tempHolder, RegState::Define)
-        .addReg(operandOne);      
+  if(Opc==I8085::SHL_32 || Opc==I8085::SRA_32){
+      rrOpcode = I8085::RR_32;
+      if(Opc==I8085::SHL_32) rrOpcode=I8085::RL_32;
+      tempHolderOne = MF->getRegInfo().createVirtualRegister(getRegClassFor(MVT::i32));
+      tempHolderTwo = MF->getRegInfo().createVirtualRegister(getRegClassFor(MVT::i32));
+  }
 
-  BuildMI(MBB, dl, TII.get(I8085::JMP)).addMBB(shiftLoopMBB);
+  //MBB:
+  // Jump to loop MBB
+
+  BuildMI(MBB, dl, TII.get(I8085::JMP))
+     .addMBB(checkMBB);
+
+  // LoopBB:
+  // tempHolderTwo = shift tempHolderOne
+
+  BuildMI(shiftLoopMBB, dl, TII.get(rrOpcode))
+        .addReg(tempHolderTwo, RegState::Define)
+        .addReg(tempHolderOne);
+
+  // checkMBB:
+  // tempHolderOne = phi [%operandOne, BB], [%tempHolderTwo, LoopBB]
+  // counterTempReg2 = phi [%operandTwo, BB], [%counterTempReg, LoopBB]
+  // destReg  = phi [%operandOne, BB], [%tempHolderTwo,  LoopBB]
+  // counterTempReg = counterTempReg2 - 1;
+  // if (counterTempReg >= 0) goto shiftLoopMBB;
   
-  MBB->addSuccessor(shiftLoopMBB);
+  BuildMI(checkMBB, dl, TII.get(I8085::PHI), tempHolderOne)
+      .addReg(operandOne)
+      .addMBB(MBB)
+      .addReg(tempHolderTwo)
+      .addMBB(shiftLoopMBB);
 
-  if(Opc == I8085::SHL_8){
-    BuildMI(shiftLoopMBB, dl, TII.get(I8085::RL_8))
-          .addReg(tempHolder);
-  }
-  if(Opc == I8085::SRA_8){
-    BuildMI(shiftLoopMBB, dl, TII.get(I8085::RR_8))
-          .addReg(tempHolder);
-  }
+  BuildMI(checkMBB, dl, TII.get(I8085::PHI), counterTempReg2)
+      .addReg(operandTwo)
+      .addMBB(MBB)
+      .addReg(counterTempReg)
+      .addMBB(shiftLoopMBB);
 
+  BuildMI(checkMBB, dl, TII.get(I8085::PHI), destReg)
+      .addReg(operandOne)
+      .addMBB(MBB)
+      .addReg(tempHolderTwo)
+      .addMBB(shiftLoopMBB);
 
-  BuildMI(shiftLoopMBB, dl, TII.get(I8085::DCR))
-        .addReg(counterTempReg);
+  BuildMI(checkMBB, dl, TII.get(I8085::DCR))
+      .addReg(counterTempReg,RegState::Define)
+      .addReg(counterTempReg2);
 
-  BuildMI(shiftLoopMBB, dl, TII.get(I8085::JZ))
-            .addMBB(continuationMBB);
-
-  BuildMI(shiftLoopMBB, dl, TII.get(I8085::JNZ))
-            .addMBB(shiftLoopMBB);          
-
-  shiftLoopMBB->addSuccessor(continuationMBB);
-
-  BuildMI(*continuationMBB, continuationMBB->begin(), dl, TII.get(I8085::MOV))
-      .addReg(destReg, RegState::Define)
-      .addReg(tempHolder);
+  BuildMI(checkMBB, dl, TII.get(I8085::JP))
+            .addMBB(shiftLoopMBB);      
 
   MI.eraseFromParent();
   return continuationMBB;
@@ -1063,7 +1125,11 @@ MachineBasicBlock *I8085TargetLowering::EmitInstrWithCustomInserter(MachineInstr
 
   case I8085::SHL_8:
   case I8085::SRA_8:
-    return insertShift8Set(MI, MBB);      
+  case I8085::SHL_16:
+  case I8085::SRA_16:
+  case I8085::SHL_32:
+  case I8085::SRA_32:
+    return insertShiftSet(MI, MBB);      
   }
 
   assert( false &&

@@ -178,6 +178,18 @@ let Constraints = "$src = $rd", Defs=[SREG]  in {
               (ins GR8: $src, GR8: $rr),
               "SRA_8\t$rd, $rr",
               [(set i8: $rd, (sra i8: $src, i8: $rr))]>;
+
+  def SHL_16
+      : I8085InserterPseudo<(outs GR16: $rd),
+              (ins GR16: $src, GR8: $rr),
+              "SHL_16\t$rd, $rr",
+              [(set i16: $rd, (shl i16: $src, i8: $rr))]>;
+
+  def SRA_16
+      : I8085InserterPseudo<(outs GR16: $rd),
+              (ins GR16: $src, GR8: $rr),
+              "SRA_16\t$rd, $rr",
+              [(set i16: $rd, (sra i16: $src, i8: $rr))]>;            
 }
 
 let Defs=[SREG,A], Uses=[A] in def SUB : F2<0b10010,(outs), (ins GR8: $rs), "SUB $rs", []>;
@@ -197,9 +209,13 @@ let Uses=[H,L],Defs=[SREG,A] in def XRA_M : F1<0b10101110,(outs), (ins), "XRA M"
 let Defs=[SREG,A], Uses=[A] in def ADI : F5<0b11000110,(outs), (ins i8imm: $k), "ADI $k", []>;
 let Defs=[SREG,A], Uses=[A] in def ACI : F5<0b11001110,(outs), (ins i8imm: $k), "ACI $k", []>;
 
-let Defs=[SREG,A], Uses=[A] in def DCR : F3<0b1,(outs), (ins GR8: $rs), "DCR $rs", []>;
-let Defs=[SREG,A], Uses=[A] in def INR : F3<0b0,(outs), (ins GR8: $rs), "INR $rs", []>;
+let Constraints = "$rs = $rd", Defs=[SREG]  in {
 
+def DCR : F3<0b1,(outs GR8: $rd), (ins GR8: $rs), "DCR $rs", []>;
+
+def INR : F3<0b0,(outs GR8: $rd), (ins GR8: $rs), "INR $rs", []>;
+
+}
 
 //===----------------------------------------------------------------------===//
 //===----------------------------------------------------------------------===//
@@ -279,11 +295,21 @@ let Defs=[SREG,A], Uses=[A] in def XRI : F5<0b11101110,(outs), (ins i8imm: $k), 
 //===----------------------------------------------------------------------===//
 
 
-let Defs=[SREG,A], Uses=[A] in def RL_8 : I8085Pseudo<(outs), (ins GR8: $rs), "RL_8 $rs", []>;
-let Defs=[SREG,A], Uses=[A] in def RR_8 : I8085Pseudo<(outs), (ins GR8: $rs), "RR_8 $rs", []>;
+
+
+let Constraints = "$rs = $rd", Defs=[SREG]  in {
+  let Defs=[SREG,A], Uses=[A] in def RL_8 : I8085Pseudo<(outs GR8: $rd), (ins GR8: $rs), "RL_8 $rs", []>;
+  let Defs=[SREG,A], Uses=[A] in def RR_8 : I8085Pseudo<(outs GR8: $rd), (ins GR8: $rs), "RR_8 $rs", []>;
+
+  let Defs=[SREG,A], Uses=[A] in def RL_16 : I8085Pseudo<(outs GR16: $rd), (ins GR16: $rs), "RL_16 $rs", []>;
+  let Defs=[SREG,A], Uses=[A] in def RR_16 : I8085Pseudo<(outs GR16: $rd), (ins GR16: $rs), "RR_16 $rs", []>;
+}
 
 def RLC : F1<0b00000111,(outs), (ins), "RLC", []>;
 def RRC : F1<0b00001111,(outs), (ins), "RRC", []>;
+
+def RAL : F1<0b00010111,(outs), (ins), "RAL", []>;
+def RAR : F1<0b00011111,(outs), (ins), "RAR", []>;
 
 
 

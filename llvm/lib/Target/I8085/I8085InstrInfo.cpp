@@ -219,6 +219,8 @@ MachineBasicBlock *I8085InstrInfo::getBranchDestBlock(const MachineInstr &MI) co
     llvm_unreachable("unexpected branch opcode!");
   case I8085::JMP:
   case I8085::JZ:
+  case I8085::JP:
+  case I8085::JM:
   case I8085::JNZ:
   case I8085::JC:
   case I8085::JNC:
@@ -235,6 +237,8 @@ bool I8085InstrInfo::isBranchOffsetInRange(unsigned BranchOp,
     llvm_unreachable("unexpected opcode!");
   case I8085::JMP:
   case I8085::JZ:
+  case I8085::JP:
+  case I8085::JM:
   case I8085::JNZ:
   case I8085::JC:
   case I8085::JNC:
