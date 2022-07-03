@@ -40,7 +40,7 @@ class AMDGPUInst <dag outs, dag ins, string asm = "",
   // instructions to not match without killing the whole decode process. It is
   // mainly used for ARM, but Tablegen expects this field to exist or it fails
   // to build the decode table.
-  field bits<64> SoftFail = 0;
+  field bits<96> SoftFail = 0;
 
   let DecoderNamespace = Namespace;
 
@@ -85,6 +85,17 @@ def FalsePredicate : Predicate<"false">;
 class PredConcat<list<Predicate> lst, Predicate pred> {
   list<Predicate> ret =
       !listconcat([pred], !filter(item, lst, !ne(item, pred)));
+}
+
+// Add a Register to the list if does not already exist
+class RegAppend<list<Register> lst, Register reg> {
+  list<Register> ret =
+      !listconcat([reg], !filter(item, lst, !ne(item, reg)));
+}
+// Get the union of two Register lists
+class RegListUnion<list<Register> lstA, list<Register> lstB> {
+  list<Register> ret =
+      !foldl(lstA, lstB, temp, item, RegAppend<temp, item>.ret);
 }
 
 class PredicateControl {

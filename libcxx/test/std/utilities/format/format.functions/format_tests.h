@@ -11,9 +11,11 @@
 #include <format>
 
 #include <algorithm>
+#include <cassert>
 #include <charconv>
 #include <cmath>
 #include <cstdint>
+#include <iterator>
 
 #include "make_string.h"
 #include "string_literal.h"
@@ -53,7 +55,7 @@ template <class CharT>
 struct std::formatter<status, CharT> {
   int type = 0;
 
-  constexpr auto parse(auto& parse_ctx) -> decltype(parse_ctx.begin()) {
+  constexpr auto parse(basic_format_parse_context<CharT>& parse_ctx) -> decltype(parse_ctx.begin()) {
     auto begin = parse_ctx.begin();
     auto end = parse_ctx.end();
     if (begin == end)
@@ -81,7 +83,8 @@ struct std::formatter<status, CharT> {
     return begin;
   }
 
-  auto format(status s, auto& ctx) -> decltype(ctx.out()) {
+  template <class Out>
+  auto format(status s, basic_format_context<Out, CharT>& ctx) -> decltype(ctx.out()) {
     const char* names[] = {"foo", "bar", "foobar"};
     char buffer[6];
     const char* begin;
@@ -174,8 +177,10 @@ case #T[0]:                                                                     
   return result;
 }
 
-template <class CharT, class T, class TestFunction, class ExceptionTest>
-void format_test_string(T world, T universe, TestFunction check, ExceptionTest check_exception) {
+// Using a const ref for world and universe so a string literal will be a character array.
+// When passed as character array W and U have different types.
+template <class CharT, class W, class U, class TestFunction, class ExceptionTest>
+void format_test_string(const W& world, const U& universe, TestFunction check, ExceptionTest check_exception) {
 
   // *** Valid input tests ***
   // Unsed argument is ignored. TODO FMT what does the Standard mandate?
@@ -291,6 +296,44 @@ template <class CharT, class TestFunction>
 void format_test_string_unicode(TestFunction check) {
   (void)check;
 #ifndef TEST_HAS_NO_UNICODE
+  // Make sure all possible types are tested. For clarity don't use macros.
+  if constexpr (std::same_as<CharT, char>) {
+    const char* c_string = "aßc";
+    check.template operator()<"{:*^5}">(SV("*aßc*"), c_string);
+    check.template operator()<"{:*^4.2}">(SV("*aß*"), c_string);
+
+    check.template operator()<"{:*^5}">(SV("*aßc*"), const_cast<char*>(c_string));
+    check.template operator()<"{:*^4.2}">(SV("*aß*"), const_cast<char*>(c_string));
+
+    check.template operator()<"{:*^5}">(SV("*aßc*"), "aßc");
+    check.template operator()<"{:*^4.2}">(SV("*aß*"), "aßc");
+
+    check.template operator()<"{:*^5}">(SV("*aßc*"), std::string("aßc"));
+    check.template operator()<"{:*^4.2}">(SV("*aß*"), std::string("aßc"));
+
+    check.template operator()<"{:*^5}">(SV("*aßc*"), std::string_view("aßc"));
+    check.template operator()<"{:*^4.2}">(SV("*aß*"), std::string_view("aßc"));
+  }
+#  ifndef TEST_HAS_NO_WIDE_CHARACTERS
+  else {
+    const wchar_t* c_string = L"aßc";
+    check.template operator()<"{:*^5}">(SV("*aßc*"), c_string);
+    check.template operator()<"{:*^4.2}">(SV("*aß*"), c_string);
+
+    check.template operator()<"{:*^5}">(SV("*aßc*"), const_cast<wchar_t*>(c_string));
+    check.template operator()<"{:*^4.2}">(SV("*aß*"), const_cast<wchar_t*>(c_string));
+
+    check.template operator()<"{:*^5}">(SV("*aßc*"), L"aßc");
+    check.template operator()<"{:*^4.2}">(SV("*aß*"), L"aßc");
+
+    check.template operator()<"{:*^5}">(SV("*aßc*"), std::wstring(L"aßc"));
+    check.template operator()<"{:*^4.2}">(SV("*aß*"), std::wstring(L"aßc"));
+
+    check.template operator()<"{:*^5}">(SV("*aßc*"), std::wstring_view(L"aßc"));
+    check.template operator()<"{:*^4.2}">(SV("*aß*"), std::wstring_view(L"aßc"));
+  }
+#  endif
+
   // ß requires one column
   check.template operator()<"{}">(SV("aßc"), STR("aßc"));
 
@@ -330,9 +373,14 @@ void format_string_tests(TestFunction check, ExceptionTest check_exception) {
   std::basic_string<CharT> world = STR("world");
   std::basic_string<CharT> universe = STR("universe");
 
-  // Testing the char const[] is a bit tricky due to array to pointer decay.
-  // Since there are separate tests in format.formatter.spec the array is not
-  // tested here.
+  // Test a string literal in a way it won't decay to a pointer.
+  if constexpr (std::same_as<CharT, char>)
+    format_test_string<CharT>("world", "universe", check, check_exception);
+#ifndef TEST_HAS_NO_WIDE_CHARACTERS
+  else
+    format_test_string<CharT>(L"world", L"universe", check, check_exception);
+#endif
+
   format_test_string<CharT>(world.c_str(), universe.c_str(), check, check_exception);
   format_test_string<CharT>(const_cast<CharT*>(world.c_str()), const_cast<CharT*>(universe.c_str()), check,
                             check_exception);

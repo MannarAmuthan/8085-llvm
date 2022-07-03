@@ -22,6 +22,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Signals.h"
+#include "llvm/Support/StringSaver.h"
 #include "llvm/Support/WithColor.h"
 
 using namespace llvm;
@@ -38,7 +39,7 @@ static cl::opt<std::string> OutputFile("o", cl::Required,
                                        cl::cat(ClangOffloadPackagerCategory));
 
 static cl::list<std::string>
-    DeviceImages("image", cl::ZeroOrMore,
+    DeviceImages("image",
                  cl::desc("List of key and value arguments. Required keywords "
                           "are 'file' and 'triple'."),
                  cl::value_desc("<key>=<value>,..."),
@@ -71,9 +72,18 @@ int main(int argc, const char **argv) {
   SmallVector<char, 1024> BinaryData;
   raw_svector_ostream OS(BinaryData);
   for (StringRef Image : DeviceImages) {
+    BumpPtrAllocator Alloc;
+    StringSaver Saver(Alloc);
+
     StringMap<StringRef> Args;
-    for (StringRef Arg : llvm::split(Image, ","))
-      Args.insert(Arg.split("="));
+    for (StringRef Arg : llvm::split(Image, ",")) {
+      auto KeyAndValue = Arg.split("=");
+      if (Args.count(KeyAndValue.first))
+        Args[KeyAndValue.first] =
+            Saver.save(Args[KeyAndValue.first] + "," + KeyAndValue.second);
+      else
+        Args[KeyAndValue.first] = KeyAndValue.second;
+    }
 
     if (!Args.count("triple") || !Args.count("file"))
       return reportError(createStringError(
@@ -89,8 +99,7 @@ int main(int argc, const char **argv) {
             llvm::MemoryBuffer::getFileOrSTDIN(KeyAndValue.getValue());
         if (std::error_code EC = ObjectOrErr.getError())
           return reportError(errorCodeToError(EC));
-        DeviceImage = std::move(*ObjectOrErr);
-        ImageBinary.Image = *DeviceImage;
+        ImageBinary.Image = std::move(*ObjectOrErr);
         ImageBinary.TheImageKind = getImageKind(
             sys::path::extension(KeyAndValue.getValue()).drop_front());
       } else if (Key == "kind") {

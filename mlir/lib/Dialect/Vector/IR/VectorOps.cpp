@@ -272,7 +272,7 @@ Attribute CombiningKindAttr::parse(AsmParser &parser, Type type) {
   if (failed(parser.parseGreater()))
     return {};
 
-  return CombiningKindAttr::get(kind.getValue(), parser.getContext());
+  return CombiningKindAttr::get(*kind, parser.getContext());
 }
 
 Attribute VectorDialect::parseAttribute(DialectAsmParser &parser,
@@ -403,15 +403,6 @@ LogicalResult ReductionOp::verify() {
            << eltType << "' for kind '" << stringifyCombiningKind(getKind())
            << "'";
 
-  // Verify optional accumulator.
-  if (getAcc()) {
-    if (getKind() != CombiningKind::ADD && getKind() != CombiningKind::MUL)
-      return emitOpError("no accumulator for reduction kind: ")
-             << stringifyCombiningKind(getKind());
-    if (!eltType.isa<FloatType>())
-      return emitOpError("no accumulator for type: ") << eltType;
-  }
-
   return success();
 }
 
@@ -476,6 +467,12 @@ Value mlir::vector::getVectorReductionOp(arith::AtomicRMWKind op,
   case arith::AtomicRMWKind::maxu:
     return builder.create<vector::ReductionOp>(vector.getLoc(),
                                                CombiningKind::MAXUI, vector);
+  case arith::AtomicRMWKind::andi:
+    return builder.create<vector::ReductionOp>(vector.getLoc(),
+                                               CombiningKind::AND, vector);
+  case arith::AtomicRMWKind::ori:
+    return builder.create<vector::ReductionOp>(vector.getLoc(),
+                                               CombiningKind::OR, vector);
   // TODO: Add remaining reduction operations.
   default:
     (void)emitOptionalError(loc, "Reduction operation type not supported");
@@ -701,8 +698,9 @@ static LogicalResult verifyOutputShape(
           extents[pos] = getAffineConstantExpr(v.getShape()[idx], ctx);
       }
     }
-    assert(llvm::all_of(extents, [](AffineExpr e) { return e; }) &&
-           "expected extent along all dimensions.");
+    if (!llvm::all_of(extents, [](AffineExpr e) { return e; }))
+      return op.emitOpError("expected all input dimensions to be used by "
+                            "either the LHS or the RHS");
 
     AffineMap resMap = op.getIndexingMaps()[2];
     auto extentsMap = AffineMap::get(/*dimCount=*/extents.size(),
@@ -1963,7 +1961,7 @@ LogicalResult InsertOp::verify() {
       (static_cast<unsigned>(srcVectorType.getRank()) + positionAttr.size() !=
        static_cast<unsigned>(destVectorType.getRank())))
     return emitOpError("expected position attribute rank + source rank to "
-                          "match dest vector rank");
+                       "match dest vector rank");
   if (!srcVectorType &&
       (positionAttr.size() != static_cast<unsigned>(destVectorType.getRank())))
     return emitOpError(
@@ -2182,6 +2180,70 @@ LogicalResult InsertStridedSliceOp::verify() {
   return success();
 }
 
+namespace {
+/// Pattern to rewrite an InsertStridedSliceOp(SplatOp(X):src_type,
+/// SplatOp(X):dst_type) to SplatOp(X):dst_type.
+class FoldInsertStridedSliceSplat final
+    : public OpRewritePattern<InsertStridedSliceOp> {
+public:
+  using OpRewritePattern<InsertStridedSliceOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InsertStridedSliceOp insertStridedSliceOp,
+                                PatternRewriter &rewriter) const override {
+    auto srcSplatOp =
+        insertStridedSliceOp.getSource().getDefiningOp<vector::SplatOp>();
+    auto destSplatOp =
+        insertStridedSliceOp.getDest().getDefiningOp<vector::SplatOp>();
+
+    if (!srcSplatOp || !destSplatOp)
+      return failure();
+
+    if (srcSplatOp.getInput() != destSplatOp.getInput())
+      return failure();
+
+    rewriter.replaceOp(insertStridedSliceOp, insertStridedSliceOp.getDest());
+    return success();
+  }
+};
+
+/// Pattern to rewrite an InsertStridedSliceOp(ExtractStridedSliceOp(dst), dst)
+/// to dst.
+class FoldInsertStridedSliceOfExtract final
+    : public OpRewritePattern<InsertStridedSliceOp> {
+public:
+  using OpRewritePattern<InsertStridedSliceOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InsertStridedSliceOp insertStridedSliceOp,
+                                PatternRewriter &rewriter) const override {
+    auto extractStridedSliceOp =
+        insertStridedSliceOp.getSource()
+            .getDefiningOp<vector::ExtractStridedSliceOp>();
+
+    if (!extractStridedSliceOp)
+      return failure();
+
+    if (extractStridedSliceOp.getOperand() != insertStridedSliceOp.getDest())
+      return failure();
+
+    // Check if have the same strides and offsets.
+    if (extractStridedSliceOp.getStrides() !=
+            insertStridedSliceOp.getStrides() ||
+        extractStridedSliceOp.getOffsets() != insertStridedSliceOp.getOffsets())
+      return failure();
+
+    rewriter.replaceOp(insertStridedSliceOp, insertStridedSliceOp.getDest());
+    return success();
+  }
+};
+
+} // namespace
+
+void vector::InsertStridedSliceOp::getCanonicalizationPatterns(
+    RewritePatternSet &results, MLIRContext *context) {
+  results.add<FoldInsertStridedSliceSplat, FoldInsertStridedSliceOfExtract>(
+      context);
+}
+
 OpFoldResult InsertStridedSliceOp::fold(ArrayRef<Attribute> operands) {
   if (getSourceVectorType() == getDestVectorType())
     return getSource();
@@ -2296,8 +2358,7 @@ LogicalResult ReshapeOp::verify() {
   int64_t numFixedVectorSizes = fixedVectorSizes.size();
 
   if (inputVectorType.getRank() != inputShapeRank + numFixedVectorSizes)
-    return emitError("invalid input shape for vector type ")
-           << inputVectorType;
+    return emitError("invalid input shape for vector type ") << inputVectorType;
 
   if (outputVectorType.getRank() != outputShapeRank + numFixedVectorSizes)
     return emitError("invalid output shape for vector type ")
@@ -2390,24 +2451,29 @@ LogicalResult ExtractStridedSliceOp::verify() {
   auto sizes = getSizesAttr();
   auto strides = getStridesAttr();
   if (offsets.size() != sizes.size() || offsets.size() != strides.size())
-    return emitOpError("expected offsets, sizes and strides attributes of same size");
+    return emitOpError(
+        "expected offsets, sizes and strides attributes of same size");
 
   auto shape = type.getShape();
   auto offName = getOffsetsAttrName();
   auto sizesName = getSizesAttrName();
   auto stridesName = getStridesAttrName();
-  if (failed(isIntegerArrayAttrSmallerThanShape(*this, offsets, shape, offName)) ||
-      failed(isIntegerArrayAttrSmallerThanShape(*this, sizes, shape, sizesName)) ||
+  if (failed(
+          isIntegerArrayAttrSmallerThanShape(*this, offsets, shape, offName)) ||
+      failed(
+          isIntegerArrayAttrSmallerThanShape(*this, sizes, shape, sizesName)) ||
       failed(isIntegerArrayAttrSmallerThanShape(*this, strides, shape,
                                                 stridesName)) ||
-      failed(isIntegerArrayAttrConfinedToShape(*this, offsets, shape, offName)) ||
+      failed(
+          isIntegerArrayAttrConfinedToShape(*this, offsets, shape, offName)) ||
       failed(isIntegerArrayAttrConfinedToShape(*this, sizes, shape, sizesName,
                                                /*halfOpen=*/false,
                                                /*min=*/1)) ||
-      failed(isIntegerArrayAttrConfinedToRange(*this, strides, 1, 1, stridesName,
+      failed(isIntegerArrayAttrConfinedToRange(*this, strides, 1, 1,
+                                               stridesName,
                                                /*halfOpen=*/false)) ||
-      failed(isSumOfIntegerArrayAttrConfinedToShape(*this, offsets, sizes, shape,
-                                                    offName, sizesName,
+      failed(isSumOfIntegerArrayAttrConfinedToShape(*this, offsets, sizes,
+                                                    shape, offName, sizesName,
                                                     /*halfOpen=*/false)))
     return failure();
 
@@ -3166,7 +3232,7 @@ public:
     }
     SmallVector<bool> inBounds(xferOp.getTransferRank(), true);
     rewriter.replaceOpWithNewOp<TransferReadOp>(
-        xferOp, xferOp.getVectorType(), extractOp.source(), newIndices,
+        xferOp, xferOp.getVectorType(), extractOp.getSource(), newIndices,
         xferOp.getPadding(), ArrayRef<bool>{inBounds});
 
     return success();
@@ -3519,7 +3585,7 @@ public:
     if (!insertOp.hasUnitStride())
       return failure();
 
-    auto xferOp = insertOp.source().getDefiningOp<TransferWriteOp>();
+    auto xferOp = insertOp.getSource().getDefiningOp<TransferWriteOp>();
     if (!xferOp)
       return failure();
     // TODO: support 0-d corner case.
@@ -3574,7 +3640,7 @@ public:
         rewriter, insertOp.getLoc(), insertOp.getMixedOffsets());
     SmallVector<bool> inBounds(xferOp.getTransferRank(), true);
     rewriter.replaceOpWithNewOp<TransferWriteOp>(insertOp, xferOp.getVector(),
-                                                 insertOp.dest(), indices,
+                                                 insertOp.getDest(), indices,
                                                  ArrayRef<bool>{inBounds});
     return success();
   }
@@ -3612,10 +3678,11 @@ public:
                                 PatternRewriter &rewriter) const override {
     if (!insertOp.hasUnitStride())
       return failure();
-    auto extractOp = insertOp.source().getDefiningOp<tensor::ExtractSliceOp>();
+    auto extractOp =
+        insertOp.getSource().getDefiningOp<tensor::ExtractSliceOp>();
     if (!extractOp || !extractOp.hasUnitStride() || !extractOp->hasOneUse())
       return failure();
-    auto transferOp = extractOp.source().getDefiningOp<TransferWriteOp>();
+    auto transferOp = extractOp.getSource().getDefiningOp<TransferWriteOp>();
     if (!transferOp || !transferOp->hasOneUse())
       return failure();
 
@@ -3667,7 +3734,7 @@ public:
     for (const auto &en : enumerate(newResultShape))
       newInBounds.push_back(en.value() == vectorShape[en.index()]);
     auto newExtractOp = rewriter.create<tensor::ExtractSliceOp>(
-        extractOp.getLoc(), insertOp.getSourceType(), insertOp.dest(),
+        extractOp.getLoc(), insertOp.getSourceType(), insertOp.getDest(),
         insertOp.getMixedOffsets(), insertOp.getMixedSizes(),
         insertOp.getMixedStrides());
     auto newTransferWriteOp = rewriter.create<TransferWriteOp>(
@@ -3675,7 +3742,7 @@ public:
         transferOp.getIndices(), transferOp.getPermutationMapAttr(),
         rewriter.getBoolArrayAttr(newInBounds));
     rewriter.updateRootInPlace(insertOp, [&]() {
-      insertOp.sourceMutable().assign(newTransferWriteOp.getResult());
+      insertOp.getSourceMutable().assign(newTransferWriteOp.getResult());
     });
     return success();
   }
@@ -4187,12 +4254,46 @@ public:
   }
 };
 
+/// Pattern to rewrite a ShapeCast(Broadcast) -> Broadcast.
+/// This only applies when the shape of the broadcast source is a suffix of the
+/// shape of the result (i.e. when broadcast without reshape is expressive
+/// enough to capture the result in a single op).
+class ShapeCastBroadcastFolder final : public OpRewritePattern<ShapeCastOp> {
+public:
+  using OpRewritePattern<ShapeCastOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ShapeCastOp shapeCastOp,
+                                PatternRewriter &rewriter) const override {
+    auto broadcastOp =
+        shapeCastOp.getSource().getDefiningOp<vector::BroadcastOp>();
+    if (!broadcastOp)
+      return failure();
+
+    auto broadcastSourceVectorType =
+        broadcastOp.getSourceType().dyn_cast<VectorType>();
+    auto broadcastSourceShape = broadcastSourceVectorType
+                                    ? broadcastSourceVectorType.getShape()
+                                    : ArrayRef<int64_t>{};
+    auto shapeCastTargetShape = shapeCastOp.getResultVectorType().getShape();
+
+    // Bail if `broadcastSourceShape` is not a suffix of the result.
+    bool isSuffix = (broadcastSourceShape == shapeCastTargetShape.take_back(
+                                                 broadcastSourceShape.size()));
+    if (!isSuffix)
+      return failure();
+
+    rewriter.replaceOpWithNewOp<vector::BroadcastOp>(
+        shapeCastOp, shapeCastOp.getResultVectorType(),
+        broadcastOp.getSource());
+    return success();
+  }
+};
+
 } // namespace
 
 void ShapeCastOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                               MLIRContext *context) {
-  // Pattern to rewrite a ShapeCastOp(ConstantOp) -> ConstantOp.
-  results.add<ShapeCastConstantFolder>(context);
+  results.add<ShapeCastConstantFolder, ShapeCastBroadcastFolder>(context);
 }
 
 //===----------------------------------------------------------------------===//
@@ -4217,7 +4318,7 @@ LogicalResult BitCastOp::verify() {
   if (sourceVectorType.getRank() == 0) {
     if (sourceElementBits != resultElementBits)
       return emitOpError("source/result bitwidth of the 0-D vector element "
-                            "types must be equal");
+                         "types must be equal");
   } else if (sourceElementBits * sourceVectorType.getShape().back() !=
              resultElementBits * resultVectorType.getShape().back()) {
     return emitOpError(
@@ -4233,9 +4334,13 @@ OpFoldResult BitCastOp::fold(ArrayRef<Attribute> operands) {
     return getSource();
 
   // Canceling bitcasts.
-  if (auto otherOp = getSource().getDefiningOp<BitCastOp>())
+  if (auto otherOp = getSource().getDefiningOp<BitCastOp>()) {
     if (getResult().getType() == otherOp.getSource().getType())
       return otherOp.getSource();
+
+    setOperand(otherOp.getSource());
+    return getResult();
+  }
 
   Attribute sourceConstant = operands.front();
   if (!sourceConstant)
@@ -4749,7 +4854,7 @@ ParseResult WarpExecuteOnLane0Op::parse(OpAsmParser &parser,
 void WarpExecuteOnLane0Op::getSuccessorRegions(
     Optional<unsigned> index, ArrayRef<Attribute> operands,
     SmallVectorImpl<RegionSuccessor> &regions) {
-  if (index.hasValue()) {
+  if (index) {
     regions.push_back(RegionSuccessor(getResults()));
     return;
   }

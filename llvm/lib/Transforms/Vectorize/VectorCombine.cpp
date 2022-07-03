@@ -697,8 +697,9 @@ bool VectorCombine::scalarizeBinopOrCmp(Instruction &I) {
     ScalarInst->copyIRFlags(&I);
 
   // Fold the vector constants in the original vectors into a new base vector.
-  Constant *NewVecC = IsCmp ? ConstantExpr::getCompare(Pred, VecC0, VecC1)
-                            : ConstantExpr::get(Opcode, VecC0, VecC1);
+  Value *NewVecC =
+      IsCmp ? Builder.CreateCmp(Pred, VecC0, VecC1)
+            : Builder.CreateBinOp((Instruction::BinaryOps)Opcode, VecC0, VecC1);
   Value *Insert = Builder.CreateInsertElement(NewVecC, Scalar, Index);
   replaceValue(I, *Insert);
   return true;
@@ -1270,7 +1271,7 @@ bool VectorCombine::foldSelectShuffle(Instruction &I, bool FromReduction) {
       auto *SV = dyn_cast<ShuffleVectorInst>(U);
       if (!SV || SV->getType() != VT)
         return false;
-      if (find(Shuffles, SV) == Shuffles.end())
+      if (!llvm::is_contained(Shuffles, SV))
         Shuffles.push_back(SV);
     }
     return true;

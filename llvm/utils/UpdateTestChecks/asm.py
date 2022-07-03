@@ -34,7 +34,7 @@ ASM_FUNCTION_AARCH64_RE = re.compile(
      r'(?:[ \t]+.cfi_startproc\n)?'  # drop optional cfi noise
      r'(?P<body>.*?)\n'
      # This list is incomplete
-     r'.Lfunc_end[0-9]+:\n',
+     r'^\s*(\.Lfunc_end[0-9]+|// -- End function)',
      flags=(re.M | re.S))
 
 ASM_FUNCTION_AMDGPU_RE = re.compile(
@@ -432,6 +432,7 @@ def get_run_handler(triple):
       'x86': (scrub_asm_x86, ASM_FUNCTION_X86_RE),
       'i386': (scrub_asm_x86, ASM_FUNCTION_X86_RE),
       'arm64_32-apple-ios': (scrub_asm_arm_eabi, ASM_FUNCTION_AARCH64_DARWIN_RE),
+      'arm64_32-apple-watchos2.0.0': (scrub_asm_arm_eabi, ASM_FUNCTION_AARCH64_DARWIN_RE),
       'aarch64': (scrub_asm_arm_eabi, ASM_FUNCTION_AARCH64_RE),
       'aarch64-apple-darwin': (scrub_asm_arm_eabi, ASM_FUNCTION_AARCH64_DARWIN_RE),
       'aarch64-apple-ios': (scrub_asm_arm_eabi, ASM_FUNCTION_AARCH64_DARWIN_RE),
@@ -484,6 +485,6 @@ def add_checks(output_lines, comment_marker, prefix_list, func_dict,
                func_name, global_vars_seen_dict, is_filtered):
   # Label format is based on ASM string.
   check_label_format = '{} %s-LABEL: %s%s%s'.format(comment_marker)
-  common.add_checks(output_lines, comment_marker, prefix_list, func_dict,
-                    func_name, check_label_format, True, False,
-                    global_vars_seen_dict, is_filtered=is_filtered)
+  return common.add_checks(output_lines, comment_marker, prefix_list, func_dict,
+                           func_name, check_label_format, True, False,
+                           global_vars_seen_dict, is_filtered=is_filtered)

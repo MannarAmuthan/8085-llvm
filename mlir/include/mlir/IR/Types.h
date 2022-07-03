@@ -68,7 +68,7 @@ namespace mlir {
 ///      context and the key type for this storage.
 ///
 ///    - If they have a mutable component, this component must not be a part of
-//       the key.
+///      the key.
 class Type {
 public:
   /// Utility class for implementing types.
@@ -221,6 +221,18 @@ private:
   /// Allow access to 'getInterfaceFor'.
   friend InterfaceBase;
 };
+
+//===----------------------------------------------------------------------===//
+// Core TypeTrait
+//===----------------------------------------------------------------------===//
+
+/// This trait is used to determine if a type is mutable or not. It is attached
+/// on a type if the corresponding ImplType defines a `mutate` function with
+/// a proper signature.
+namespace TypeTrait {
+template <typename ConcreteType>
+using IsMutable = detail::StorageUserTrait::IsMutable<ConcreteType>;
+} // namespace TypeTrait
 
 //===----------------------------------------------------------------------===//
 // Type Utils

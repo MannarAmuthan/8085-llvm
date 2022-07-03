@@ -887,7 +887,7 @@ ASTContext::getCanonicalTemplateTemplateParmDecl(
 
 TargetCXXABI::Kind ASTContext::getCXXABIKind() const {
   auto Kind = getTargetInfo().getCXXABI().getKind();
-  return getLangOpts().CXXABI.getValueOr(Kind);
+  return getLangOpts().CXXABI.value_or(Kind);
 }
 
 CXXABI *ASTContext::createCXXABI(const TargetInfo &T) {
@@ -1707,8 +1707,17 @@ const llvm::fltSemantics &ASTContext::getFloatTypeSemantics(QualType T) const {
   case BuiltinType::BFloat16:
     return Target->getBFloat16Format();
   case BuiltinType::Float16:
-  case BuiltinType::Half:
     return Target->getHalfFormat();
+  case BuiltinType::Half:
+    // For HLSL, when the native half type is disabled, half will be treat as
+    // float.
+    if (getLangOpts().HLSL)
+      if (getLangOpts().NativeHalfType)
+        return Target->getHalfFormat();
+      else
+        return Target->getFloatFormat();
+    else
+      return Target->getHalfFormat();
   case BuiltinType::Float:      return Target->getFloatFormat();
   case BuiltinType::Double:     return Target->getDoubleFormat();
   case BuiltinType::Ibm128:
@@ -2684,7 +2693,11 @@ getSubobjectSizeInBits(const FieldDecl *Field, const ASTContext &Context) {
     if (!RD->isUnion())
       return structHasUniqueObjectRepresentations(Context, RD);
   }
-  if (!Field->getType()->isReferenceType() &&
+
+  // A _BitInt type may not be unique if it has padding bits
+  // but if it is a bitfield the padding bits are not used.
+  bool IsBitIntType = Field->getType()->isBitIntType();
+  if (!Field->getType()->isReferenceType() && !IsBitIntType &&
       !Context.hasUniqueObjectRepresentations(Field->getType()))
     return llvm::None;
 
@@ -2692,9 +2705,17 @@ getSubobjectSizeInBits(const FieldDecl *Field, const ASTContext &Context) {
       Context.toBits(Context.getTypeSizeInChars(Field->getType()));
   if (Field->isBitField()) {
     int64_t BitfieldSize = Field->getBitWidthValue(Context);
-    if (BitfieldSize > FieldSizeInBits)
+    if (IsBitIntType) {
+      if ((unsigned)BitfieldSize >
+          cast<BitIntType>(Field->getType())->getNumBits())
+        return llvm::None;
+    } else if (BitfieldSize > FieldSizeInBits) {
       return llvm::None;
+    }
     FieldSizeInBits = BitfieldSize;
+  } else if (IsBitIntType &&
+             !Context.hasUniqueObjectRepresentations(Field->getType())) {
+    return llvm::None;
   }
   return FieldSizeInBits;
 }
@@ -2792,8 +2813,13 @@ bool ASTContext::hasUniqueObjectRepresentations(QualType Ty) const {
     return false;
 
   // All integrals and enums are unique.
-  if (Ty->isIntegralOrEnumerationType())
+  if (Ty->isIntegralOrEnumerationType()) {
+    // Except _BitInt types that have padding bits.
+    if (const auto *BIT = dyn_cast<BitIntType>(Ty))
+      return getTypeSize(BIT) == BIT->getNumBits();
+
     return true;
+  }
 
   // All other pointers are unique.
   if (Ty->isPointerType())
@@ -2816,8 +2842,7 @@ bool ASTContext::hasUniqueObjectRepresentations(QualType Ty) const {
     Optional<int64_t> StructSize =
         structHasUniqueObjectRepresentations(*this, Record);
 
-    return StructSize &&
-           StructSize.getValue() == static_cast<int64_t>(getTypeSize(Ty));
+    return StructSize && *StructSize == static_cast<int64_t>(getTypeSize(Ty));
   }
 
   // FIXME: More cases to handle here (list by rsmith):
@@ -4451,8 +4476,7 @@ QualType ASTContext::getFunctionTypeInternal(
       QualType, SourceLocation, FunctionType::FunctionTypeExtraBitfields,
       FunctionType::ExceptionType, Expr *, FunctionDecl *,
       FunctionProtoType::ExtParameterInfo, Qualifiers>(
-      NumArgs, EPI.Variadic,
-      FunctionProtoType::hasExtraBitfields(EPI.ExceptionSpec.Type),
+      NumArgs, EPI.Variadic, EPI.requiresFunctionProtoTypeExtraBitfields(),
       ESH.NumExceptionType, ESH.NumExprPtr, ESH.NumFunctionDeclPtr,
       EPI.ExtParameterInfos ? NumArgs : 0,
       EPI.TypeQuals.hasNonFastQualifiers() ? 1 : 0);
@@ -10299,11 +10323,11 @@ QualType ASTContext::mergeTypes(QualType LHS, QualType RHS,
     // Allow __auto_type to match anything; it merges to the type with more
     // information.
     if (const auto *AT = LHS->getAs<AutoType>()) {
-      if (AT->isGNUAutoType())
+      if (!AT->isDeduced() && AT->isGNUAutoType())
         return RHS;
     }
     if (const auto *AT = RHS->getAs<AutoType>()) {
-      if (AT->isGNUAutoType())
+      if (!AT->isDeduced() && AT->isGNUAutoType())
         return LHS;
     }
     return {};
@@ -11742,6 +11766,8 @@ QualType ASTContext::getRealTypeForBitwidth(unsigned DestWidth,
   FloatModeKind Ty =
       getTargetInfo().getRealTypeByWidth(DestWidth, ExplicitType);
   switch (Ty) {
+  case FloatModeKind::Half:
+    return HalfTy;
   case FloatModeKind::Float:
     return FloatTy;
   case FloatModeKind::Double:
@@ -11875,7 +11901,7 @@ ASTContext::getPredefinedStringLiteralFromCache(StringRef Key) const {
   StringLiteral *&Result = StringLiteralCache[Key];
   if (!Result)
     Result = StringLiteral::Create(
-        *this, Key, StringLiteral::Ascii,
+        *this, Key, StringLiteral::Ordinary,
         /*Pascal*/ false, getStringLiteralArrayType(CharTy, Key.size()),
         SourceLocation());
   return Result;

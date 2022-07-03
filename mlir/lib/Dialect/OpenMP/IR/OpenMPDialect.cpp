@@ -184,7 +184,7 @@ verifyScheduleModifiers(OpAsmParser &parser,
     // Translate the string. If it has no value, then it was not a valid
     // modifier!
     auto symbol = symbolizeScheduleModifier(mod);
-    if (!symbol.hasValue())
+    if (!symbol)
       return parser.emitError(parser.getNameLoc())
              << " unknown modifier type: " << mod;
   }
@@ -729,6 +729,14 @@ LogicalResult TaskOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// TaskGroupOp
+//===----------------------------------------------------------------------===//
+LogicalResult TaskGroupOp::verify() {
+  return verifyReductionVarList(*this, task_reductions(),
+                                task_reduction_vars());
+}
+
+//===----------------------------------------------------------------------===//
 // WsLoopOp
 //===----------------------------------------------------------------------===//
 
@@ -740,8 +748,8 @@ void WsLoopOp::build(OpBuilder &builder, OperationState &state,
         /*linear_step_vars=*/ValueRange(), /*reduction_vars=*/ValueRange(),
         /*reductions=*/nullptr, /*schedule_val=*/nullptr,
         /*schedule_chunk_var=*/nullptr, /*schedule_modifier=*/nullptr,
-        /*simd_modifier=*/false, /*collapse_val=*/nullptr, /*nowait=*/false,
-        /*ordered_val=*/nullptr, /*order_val=*/nullptr, /*inclusive=*/false);
+        /*simd_modifier=*/false, /*nowait=*/false, /*ordered_val=*/nullptr,
+        /*order_val=*/nullptr, /*inclusive=*/false);
   state.addAttributes(attributes);
 }
 
@@ -783,8 +791,7 @@ LogicalResult OrderedOp::verify() {
                          << "nested inside a worksharing-loop with ordered "
                          << "clause with parameter present";
 
-  if (container.ordered_valAttr().getInt() !=
-      (int64_t)num_loops_val().getValue())
+  if (container.ordered_valAttr().getInt() != (int64_t)*num_loops_val())
     return emitOpError() << "number of variables in depend clause does not "
                          << "match number of iteration variables in the "
                          << "doacross loop";
@@ -838,6 +845,9 @@ LogicalResult AtomicWriteOp::verify() {
           "memory-order must not be acq_rel or acquire for atomic writes");
     }
   }
+  if (address().getType().cast<PointerLikeType>().getElementType() !=
+      value().getType())
+    return emitError("address must dereference to value type");
   return verifySynchronizationHint(*this, hint_val());
 }
 
@@ -953,6 +963,11 @@ LogicalResult AtomicCaptureOp::verifyRegions() {
   if (getFirstOp()->getAttr("hint_val") || getSecondOp()->getAttr("hint_val"))
     return emitOpError(
         "operations inside capture region must not have hint clause");
+
+  if (getFirstOp()->getAttr("memory_order_val") ||
+      getSecondOp()->getAttr("memory_order_val"))
+    return emitOpError(
+        "operations inside capture region must not have memory_order clause");
   return success();
 }
 
@@ -982,7 +997,8 @@ LogicalResult CancelOp::verify() {
     if (cast<WsLoopOp>(parentOp).nowaitAttr()) {
       return emitError() << "A worksharing construct that is canceled "
                          << "must not have a nowait clause";
-    } else if (cast<WsLoopOp>(parentOp).ordered_valAttr()) {
+    }
+    if (cast<WsLoopOp>(parentOp).ordered_valAttr()) {
       return emitError() << "A worksharing construct that is canceled "
                          << "must not have an ordered clause";
     }

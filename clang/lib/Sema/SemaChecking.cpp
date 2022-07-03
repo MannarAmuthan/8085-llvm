@@ -161,7 +161,7 @@ static bool SemaBuiltinAnnotation(Sema &S, CallExpr *TheCall) {
   // Second argument should be a constant string.
   Expr *StrArg = TheCall->getArg(1)->IgnoreParenCasts();
   StringLiteral *Literal = dyn_cast<StringLiteral>(StrArg);
-  if (!Literal || !Literal->isAscii()) {
+  if (!Literal || !Literal->isOrdinary()) {
     S.Diag(StrArg->getBeginLoc(), diag::err_builtin_annotation_second_arg)
         << StrArg->getSourceRange();
     return true;
@@ -1034,7 +1034,7 @@ void Sema::checkFortifiedBuiltinMemoryFunction(FunctionDecl *FD,
     Optional<unsigned> IndexOptional = TranslateIndex(Index);
     if (!IndexOptional)
       return llvm::None;
-    unsigned NewIndex = IndexOptional.getValue();
+    unsigned NewIndex = *IndexOptional;
     Expr::EvalResult Result;
     Expr *SizeArg = TheCall->getArg(NewIndex);
     if (!SizeArg->EvaluateAsInt(Result, getASTContext()))
@@ -1059,7 +1059,7 @@ void Sema::checkFortifiedBuiltinMemoryFunction(FunctionDecl *FD,
     Optional<unsigned> IndexOptional = TranslateIndex(Index);
     if (!IndexOptional)
       return llvm::None;
-    unsigned NewIndex = IndexOptional.getValue();
+    unsigned NewIndex = *IndexOptional;
 
     const Expr *ObjArg = TheCall->getArg(NewIndex);
     uint64_t Result;
@@ -1074,7 +1074,7 @@ void Sema::checkFortifiedBuiltinMemoryFunction(FunctionDecl *FD,
     Optional<unsigned> IndexOptional = TranslateIndex(Index);
     if (!IndexOptional)
       return llvm::None;
-    unsigned NewIndex = IndexOptional.getValue();
+    unsigned NewIndex = *IndexOptional;
 
     const Expr *ObjArg = TheCall->getArg(NewIndex);
     uint64_t Result;
@@ -1139,7 +1139,7 @@ void Sema::checkFortifiedBuiltinMemoryFunction(FunctionDecl *FD,
     if (!Format)
       return;
 
-    if (!Format->isAscii() && !Format->isUTF8())
+    if (!Format->isOrdinary() && !Format->isUTF8())
       return;
 
     auto Diagnose = [&](unsigned ArgIndex, unsigned DestSize,
@@ -1184,7 +1184,7 @@ void Sema::checkFortifiedBuiltinMemoryFunction(FunctionDecl *FD,
 
     if (auto *Format = dyn_cast<StringLiteral>(FormatExpr)) {
 
-      if (!Format->isAscii() && !Format->isUTF8())
+      if (!Format->isOrdinary() && !Format->isUTF8())
         return;
 
       StringRef FormatStrRef = Format->getString();
@@ -1284,8 +1284,7 @@ void Sema::checkFortifiedBuiltinMemoryFunction(FunctionDecl *FD,
   }
 
   if (!SourceSize || !DestinationSize ||
-      llvm::APSInt::compareValues(SourceSize.getValue(),
-                                  DestinationSize.getValue()) <= 0)
+      llvm::APSInt::compareValues(*SourceSize, *DestinationSize) <= 0)
     return;
 
   StringRef FunctionName = GetFunctionName();
@@ -1874,7 +1873,7 @@ static ExprResult SemaBuiltinLaunder(Sema &S, CallExpr *TheCall) {
       return 2;
     return llvm::Optional<unsigned>{};
   }();
-  if (DiagSelect.hasValue()) {
+  if (DiagSelect) {
     S.Diag(TheCall->getBeginLoc(), diag::err_builtin_launder_invalid_arg)
         << DiagSelect.getValue() << TheCall->getSourceRange();
     return ExprError();
@@ -2265,19 +2264,6 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
   case Builtin::BI__builtin_nontemporal_store:
     return SemaBuiltinNontemporalOverloaded(TheCallResult);
   case Builtin::BI__builtin_memcpy_inline: {
-    if (checkArgCount(*this, TheCall, 3))
-      return ExprError();
-    auto ArgArrayConversionFailed = [&](unsigned Arg) {
-      ExprResult ArgExpr =
-          DefaultFunctionArrayLvalueConversion(TheCall->getArg(Arg));
-      if (ArgExpr.isInvalid())
-        return true;
-      TheCall->setArg(Arg, ArgExpr.get());
-      return false;
-    };
-
-    if (ArgArrayConversionFailed(0) || ArgArrayConversionFailed(1))
-      return true;
     clang::Expr *SizeOp = TheCall->getArg(2);
     // We warn about copying to or from `nullptr` pointers when `size` is
     // greater than 0. When `size` is value dependent we cannot evaluate its
@@ -2288,6 +2274,17 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
       CheckNonNullArgument(*this, TheCall->getArg(0), TheCall->getExprLoc());
       CheckNonNullArgument(*this, TheCall->getArg(1), TheCall->getExprLoc());
     }
+    break;
+  }
+  case Builtin::BI__builtin_memset_inline: {
+    clang::Expr *SizeOp = TheCall->getArg(2);
+    // We warn about filling to `nullptr` pointers when `size` is greater than
+    // 0. When `size` is value dependent we cannot evaluate its value so we bail
+    // out.
+    if (SizeOp->isValueDependent())
+      break;
+    if (!SizeOp->EvaluateKnownConstInt(Context).isZero())
+      CheckNonNullArgument(*this, TheCall->getArg(0), TheCall->getExprLoc());
     break;
   }
 #define BUILTIN(ID, TYPE, ATTRS)
@@ -3252,23 +3249,12 @@ static bool isValidBPFPreserveFieldInfoArg(Expr *Arg) {
           isa<ArraySubscriptExpr>(Arg->IgnoreParens()));
 }
 
-static bool isEltOfVectorTy(ASTContext &Context, CallExpr *Call, Sema &S,
-                            QualType VectorTy, QualType EltTy) {
-  QualType VectorEltTy = VectorTy->castAs<VectorType>()->getElementType();
-  if (!Context.hasSameType(VectorEltTy, EltTy)) {
-    S.Diag(Call->getBeginLoc(), diag::err_typecheck_call_different_arg_types)
-        << Call->getSourceRange() << VectorEltTy << EltTy;
-    return false;
-  }
-  return true;
-}
-
 static bool isValidBPFPreserveTypeInfoArg(Expr *Arg) {
   QualType ArgType = Arg->getType();
   if (ArgType->getAsPlaceholderType())
     return false;
 
-  // for TYPE_EXISTENCE/TYPE_SIZEOF reloc type
+  // for TYPE_EXISTENCE/TYPE_MATCH/TYPE_SIZEOF reloc type
   // format:
   //   1. __builtin_preserve_type_info(*(<type> *)0, flag);
   //   2. <type> var;
@@ -4084,14 +4070,6 @@ bool Sema::CheckPPCBuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
                             diag::err_ppc_builtin_only_on_arch, "10");
   case PPC::BI__builtin_altivec_vgnb:
      return SemaBuiltinConstantArgRange(TheCall, 1, 2, 7);
-  case PPC::BI__builtin_altivec_vec_replace_elt:
-  case PPC::BI__builtin_altivec_vec_replace_unaligned: {
-    QualType VecTy = TheCall->getArg(0)->getType();
-    QualType EltTy = TheCall->getArg(1)->getType();
-    unsigned Width = Context.getIntWidth(EltTy);
-    return SemaBuiltinConstantArgRange(TheCall, 2, 0, Width == 32 ? 12 : 8) ||
-           !isEltOfVectorTy(Context, TheCall, *this, VecTy, EltTy);
-  }
   case PPC::BI__builtin_vsx_xxeval:
      return SemaBuiltinConstantArgRange(TheCall, 3, 0, 255);
   case PPC::BI__builtin_altivec_vsldbi:
@@ -6960,7 +6938,7 @@ bool Sema::CheckObjCString(Expr *Arg) {
   Arg = Arg->IgnoreParenCasts();
   StringLiteral *Literal = dyn_cast<StringLiteral>(Arg);
 
-  if (!Literal || !Literal->isAscii()) {
+  if (!Literal || !Literal->isOrdinary()) {
     Diag(Arg->getBeginLoc(), diag::err_cfstring_literal_not_string_constant)
         << Arg->getSourceRange();
     return true;
@@ -6995,7 +6973,7 @@ ExprResult Sema::CheckOSLogFormatStringArg(Expr *Arg) {
     }
   }
 
-  if (!Literal || (!Literal->isAscii() && !Literal->isUTF8())) {
+  if (!Literal || (!Literal->isOrdinary() && !Literal->isUTF8())) {
     return ExprError(
         Diag(Arg->getBeginLoc(), diag::err_os_log_format_not_string_constant)
         << Arg->getSourceRange());
@@ -8412,7 +8390,7 @@ class FormatStringLiteral {
 
   QualType getType() const { return FExpr->getType(); }
 
-  bool isAscii() const { return FExpr->isAscii(); }
+  bool isAscii() const { return FExpr->isOrdinary(); }
   bool isWide() const { return FExpr->isWide(); }
   bool isUTF8() const { return FExpr->isUTF8(); }
   bool isUTF16() const { return FExpr->isUTF16(); }
@@ -13576,6 +13554,29 @@ static void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
   const BuiltinType *SourceBT = dyn_cast<BuiltinType>(Source);
   const BuiltinType *TargetBT = dyn_cast<BuiltinType>(Target);
 
+  // Strip SVE vector types
+  if (SourceBT && SourceBT->isVLSTBuiltinType()) {
+    // Need the original target type for vector type checks
+    const Type *OriginalTarget = S.Context.getCanonicalType(T).getTypePtr();
+    // Handle conversion from scalable to fixed when msve-vector-bits is
+    // specified
+    if (S.Context.areCompatibleSveTypes(QualType(OriginalTarget, 0),
+                                        QualType(Source, 0)) ||
+        S.Context.areLaxCompatibleSveTypes(QualType(OriginalTarget, 0),
+                                           QualType(Source, 0)))
+      return;
+
+    // If the vector cast is cast between two vectors of the same size, it is
+    // a bitcast, not a conversion.
+    if (S.Context.getTypeSize(Source) == S.Context.getTypeSize(Target))
+      return;
+
+    Source = SourceBT->getSveEltType(S.Context).getTypePtr();
+  }
+
+  if (TargetBT && TargetBT->isVLSTBuiltinType())
+    Target = TargetBT->getSveEltType(S.Context).getTypePtr();
+
   // If the source is floating point...
   if (SourceBT && SourceBT->isFloatingPoint()) {
     // ...and the target is floating point...
@@ -16672,7 +16673,7 @@ void Sema::DiagnoseEmptyLoopBody(const Stmt *S,
     Body = FS->getBody();
     DiagID = diag::warn_empty_for_body;
   } else if (const WhileStmt *WS = dyn_cast<WhileStmt>(S)) {
-    StmtLoc = WS->getCond()->getSourceRange().getEnd();
+    StmtLoc = WS->getRParenLoc();
     Body = WS->getBody();
     DiagID = diag::warn_empty_while_body;
   } else
@@ -17734,20 +17735,18 @@ void Sema::CheckTCBEnforcement(const SourceLocation CallExprLoc,
   // Search through the enforce_tcb and enforce_tcb_leaf attributes to find
   // all TCBs the callee is a part of.
   llvm::StringSet<> CalleeTCBs;
-  for_each(Callee->specific_attrs<EnforceTCBAttr>(),
-           [&](const auto *A) { CalleeTCBs.insert(A->getTCBName()); });
-  for_each(Callee->specific_attrs<EnforceTCBLeafAttr>(),
-           [&](const auto *A) { CalleeTCBs.insert(A->getTCBName()); });
+  for (const auto *A : Callee->specific_attrs<EnforceTCBAttr>())
+    CalleeTCBs.insert(A->getTCBName());
+  for (const auto *A : Callee->specific_attrs<EnforceTCBLeafAttr>())
+    CalleeTCBs.insert(A->getTCBName());
 
   // Go through the TCBs the caller is a part of and emit warnings if Caller
   // is in a TCB that the Callee is not.
-  for_each(
-      Caller->specific_attrs<EnforceTCBAttr>(),
-      [&](const auto *A) {
-        StringRef CallerTCB = A->getTCBName();
-        if (CalleeTCBs.count(CallerTCB) == 0) {
-          this->Diag(CallExprLoc, diag::warn_tcb_enforcement_violation)
-              << Callee << CallerTCB;
-        }
-      });
+  for (const auto *A : Caller->specific_attrs<EnforceTCBAttr>()) {
+    StringRef CallerTCB = A->getTCBName();
+    if (CalleeTCBs.count(CallerTCB) == 0) {
+      this->Diag(CallExprLoc, diag::warn_tcb_enforcement_violation)
+          << Callee << CallerTCB;
+    }
+  }
 }

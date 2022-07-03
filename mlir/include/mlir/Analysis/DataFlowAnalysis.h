@@ -22,34 +22,17 @@
 #ifndef MLIR_ANALYSIS_DATAFLOWANALYSIS_H
 #define MLIR_ANALYSIS_DATAFLOWANALYSIS_H
 
+#include "mlir/Analysis/DataFlowFramework.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/Support/Allocator.h"
 
+/// TODO: Remove this file when SCCP and integer range analysis have been ported
+/// to the new framework.
+
 namespace mlir {
-//===----------------------------------------------------------------------===//
-// ChangeResult
-//===----------------------------------------------------------------------===//
-
-/// A result type used to indicate if a change happened. Boolean operations on
-/// ChangeResult behave as though `Change` is truthy.
-enum class ChangeResult {
-  NoChange,
-  Change,
-};
-inline ChangeResult operator|(ChangeResult lhs, ChangeResult rhs) {
-  return lhs == ChangeResult::Change ? lhs : rhs;
-}
-inline ChangeResult &operator|=(ChangeResult &lhs, ChangeResult rhs) {
-  lhs = lhs | rhs;
-  return lhs;
-}
-inline ChangeResult operator&(ChangeResult lhs, ChangeResult rhs) {
-  return lhs == ChangeResult::NoChange ? lhs : rhs;
-}
-
 //===----------------------------------------------------------------------===//
 // AbstractLatticeElement
 //===----------------------------------------------------------------------===//
@@ -120,7 +103,7 @@ public:
   }
 
   /// Returns true if the value of this lattice hasn't yet been initialized.
-  bool isUninitialized() const final { return !optimisticValue.hasValue(); }
+  bool isUninitialized() const final { return !optimisticValue; }
 
   /// Join the information contained in the 'rhs' lattice into this
   /// lattice. Returns if the state of the current lattice changed.

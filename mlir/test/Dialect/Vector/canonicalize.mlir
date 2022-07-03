@@ -646,10 +646,10 @@ func.func @fold_broadcast_shapecast(%arg0: vector<4xf32>) -> vector<4xf32> {
 
 // -----
 
-// CHECK-LABEL: func @dont_fold_broadcast_shapecast_scalar
+// CHECK-LABEL: func @canonicalize_broadcast_shapecast_scalar
 //       CHECK:   vector.broadcast
-//       CHECK:   vector.shape_cast
-func.func @dont_fold_broadcast_shapecast_scalar(%arg0: f32) -> vector<1xf32> {
+//   CHECK-NOT:   vector.shape_cast
+func.func @canonicalize_broadcast_shapecast_scalar(%arg0: f32) -> vector<1xf32> {
     %0 = vector.broadcast %arg0 : f32 to vector<1x1x1xf32>
     %1 = vector.shape_cast %0 : vector<1x1x1xf32> to vector<1xf32>
     return %1 : vector<1xf32>
@@ -664,6 +664,17 @@ func.func @dont_fold_broadcast_shapecast_diff_shape(%arg0: vector<4xf32>) -> vec
     %0 = vector.broadcast %arg0 : vector<4xf32> to vector<1x2x4xf32>
     %1 = vector.shape_cast %0 : vector<1x2x4xf32> to vector<8xf32>
     return %1 : vector<8xf32>
+}
+
+// -----
+
+// CHECK-LABEL: func @canonicalize_broadcast_shapecast
+//       CHECK:   vector.broadcast
+//   CHECK-NOT:   vector.shape_cast
+func.func @canonicalize_broadcast_shapecast(%arg0: vector<3xf32>) -> vector<8x3xf32> {
+    %0 = vector.broadcast %arg0 : vector<3xf32> to vector<2x4x3xf32>
+    %1 = vector.shape_cast %0 : vector<2x4x3xf32> to vector<8x3xf32>
+    return %1 : vector<8x3xf32>
 }
 
 // -----
@@ -1604,4 +1615,43 @@ func.func @reduce_one_element_vector_mulf(%a : vector<1xf32>, %b: f32) -> f32 {
 func.func @dont_reduce_one_element_vector(%a : vector<4xf32>) -> f32 {
   %s = vector.reduction <add>, %a : vector<4xf32> into f32
   return %s : f32
+}
+
+// -----
+
+// CHECK-LABEL: func @bitcast(
+//  CHECK-SAME:               %[[ARG:.*]]: vector<4x8xf32>) -> vector<4x16xi16> {
+//       CHECK: vector.bitcast %[[ARG:.*]] : vector<4x8xf32> to vector<4x16xi16>
+func.func @bitcast(%a: vector<4x8xf32>) -> vector<4x16xi16> {
+  %0 = vector.bitcast %a : vector<4x8xf32> to vector<4x8xi32>
+  %1 = vector.bitcast %0 : vector<4x8xi32> to vector<4x16xi16>
+  return %1 : vector<4x16xi16>
+}
+
+// -----
+
+// CHECK-LABEL: @insert_strided_slice_splat
+//  CHECK-SAME: (%[[ARG:.*]]: f32)
+//  CHECK-NEXT:   %[[SPLAT:.*]] = vector.splat %[[ARG]] : vector<8x16xf32>
+//  CHECK-NEXT:   return %[[SPLAT]] : vector<8x16xf32>
+func.func @insert_strided_slice_splat(%x: f32) -> (vector<8x16xf32>) {
+  %splat0 = vector.splat %x : vector<4x4xf32>
+  %splat1 = vector.splat %x : vector<8x16xf32>
+  %0 = vector.insert_strided_slice %splat0, %splat1 {offsets = [2, 2], strides = [1, 1]}
+    : vector<4x4xf32> into vector<8x16xf32>
+  return %0 : vector<8x16xf32>
+}
+
+
+// -----
+
+// CHECK-LABEL: @insert_extract_strided_slice
+//  CHECK-SAME: (%[[ARG:.*]]: vector<8x16xf32>)
+//  CHECK-NEXT:   return %[[ARG]] : vector<8x16xf32>
+func.func @insert_extract_strided_slice(%x: vector<8x16xf32>) -> (vector<8x16xf32>) {
+  %0 = vector.extract_strided_slice %x {offsets = [0, 8], sizes = [2, 4], strides = [1, 1]}
+        : vector<8x16xf32> to vector<2x4xf32>
+  %1 = vector.insert_strided_slice %0, %x {offsets = [0, 8], strides = [1, 1]}
+        : vector<2x4xf32> into vector<8x16xf32>
+  return %1 : vector<8x16xf32>
 }

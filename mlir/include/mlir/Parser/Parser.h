@@ -13,6 +13,7 @@
 #ifndef MLIR_PARSER_PARSER_H
 #define MLIR_PARSER_PARSER_H
 
+#include "mlir/IR/AsmState.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <cstddef>
@@ -84,7 +85,7 @@ inline OwningOpRef<ContainerOpT> constructContainerOpForParserIfNecessary(
 /// SSA uses and definitions). `asmState` should only be provided if this
 /// detailed information is desired.
 LogicalResult parseSourceFile(const llvm::SourceMgr &sourceMgr, Block *block,
-                              MLIRContext *context,
+                              const ParserConfig &config,
                               LocationAttr *sourceFileLoc = nullptr,
                               AsmParserState *asmState = nullptr);
 
@@ -96,7 +97,7 @@ LogicalResult parseSourceFile(const llvm::SourceMgr &sourceMgr, Block *block,
 /// non-null, it is populated with a file location representing the start of the
 /// source file that is being parsed.
 LogicalResult parseSourceFile(llvm::StringRef filename, Block *block,
-                              MLIRContext *context,
+                              const ParserConfig &config,
                               LocationAttr *sourceFileLoc = nullptr);
 
 /// This parses the file specified by the indicated filename using the provided
@@ -111,7 +112,7 @@ LogicalResult parseSourceFile(llvm::StringRef filename, Block *block,
 /// `asmState` should only be provided if this detailed information is desired.
 LogicalResult parseSourceFile(llvm::StringRef filename,
                               llvm::SourceMgr &sourceMgr, Block *block,
-                              MLIRContext *context,
+                              const ParserConfig &config,
                               LocationAttr *sourceFileLoc = nullptr,
                               AsmParserState *asmState = nullptr);
 
@@ -123,8 +124,24 @@ LogicalResult parseSourceFile(llvm::StringRef filename,
 /// populated with a file location representing the start of the source file
 /// that is being parsed.
 LogicalResult parseSourceString(llvm::StringRef sourceStr, Block *block,
-                                MLIRContext *context,
+                                const ParserConfig &config,
                                 LocationAttr *sourceFileLoc = nullptr);
+
+namespace detail {
+/// The internal implementation of the templated `parseSourceFile` methods
+/// below, that simply forwards to the non-templated version.
+template <typename ContainerOpT, typename... ParserArgs>
+inline OwningOpRef<ContainerOpT> parseSourceFile(const ParserConfig &config,
+                                                 ParserArgs &&...args) {
+  LocationAttr sourceFileLoc;
+  Block block;
+  if (failed(parseSourceFile(std::forward<ParserArgs>(args)..., &block, config,
+                             &sourceFileLoc)))
+    return OwningOpRef<ContainerOpT>();
+  return detail::constructContainerOpForParserIfNecessary<ContainerOpT>(
+      &block, config.getContext(), sourceFileLoc);
+}
+} // namespace detail
 
 /// This parses the file specified by the indicated SourceMgr. If the source IR
 /// contained a single instance of `ContainerOpT`, it is returned. Otherwise, a
@@ -136,13 +153,8 @@ LogicalResult parseSourceString(llvm::StringRef sourceStr, Block *block,
 /// `SingleBlockImplicitTerminator` trait.
 template <typename ContainerOpT>
 inline OwningOpRef<ContainerOpT>
-parseSourceFile(const llvm::SourceMgr &sourceMgr, MLIRContext *context) {
-  LocationAttr sourceFileLoc;
-  Block block;
-  if (failed(parseSourceFile(sourceMgr, &block, context, &sourceFileLoc)))
-    return OwningOpRef<ContainerOpT>();
-  return detail::constructContainerOpForParserIfNecessary<ContainerOpT>(
-      &block, context, sourceFileLoc);
+parseSourceFile(const llvm::SourceMgr &sourceMgr, const ParserConfig &config) {
+  return detail::parseSourceFile<ContainerOpT>(config, sourceMgr);
 }
 
 /// This parses the file specified by the indicated filename. If the source IR
@@ -154,14 +166,9 @@ parseSourceFile(const llvm::SourceMgr &sourceMgr, MLIRContext *context) {
 /// containing a single block, and must implement the
 /// `SingleBlockImplicitTerminator` trait.
 template <typename ContainerOpT>
-inline OwningOpRef<ContainerOpT> parseSourceFile(llvm::StringRef filename,
-                                                 MLIRContext *context) {
-  LocationAttr sourceFileLoc;
-  Block block;
-  if (failed(parseSourceFile(filename, &block, context, &sourceFileLoc)))
-    return OwningOpRef<ContainerOpT>();
-  return detail::constructContainerOpForParserIfNecessary<ContainerOpT>(
-      &block, context, sourceFileLoc);
+inline OwningOpRef<ContainerOpT> parseSourceFile(StringRef filename,
+                                                 const ParserConfig &config) {
+  return detail::parseSourceFile<ContainerOpT>(config, filename);
 }
 
 /// This parses the file specified by the indicated filename using the provided
@@ -175,14 +182,8 @@ inline OwningOpRef<ContainerOpT> parseSourceFile(llvm::StringRef filename,
 template <typename ContainerOpT>
 inline OwningOpRef<ContainerOpT> parseSourceFile(llvm::StringRef filename,
                                                  llvm::SourceMgr &sourceMgr,
-                                                 MLIRContext *context) {
-  LocationAttr sourceFileLoc;
-  Block block;
-  if (failed(parseSourceFile(filename, sourceMgr, &block, context,
-                             &sourceFileLoc)))
-    return OwningOpRef<ContainerOpT>();
-  return detail::constructContainerOpForParserIfNecessary<ContainerOpT>(
-      &block, context, sourceFileLoc);
+                                                 const ParserConfig &config) {
+  return detail::parseSourceFile<ContainerOpT>(config, filename, sourceMgr);
 }
 
 /// This parses the provided string containing MLIR. If the source IR contained
@@ -195,13 +196,13 @@ inline OwningOpRef<ContainerOpT> parseSourceFile(llvm::StringRef filename,
 /// `SingleBlockImplicitTerminator` trait.
 template <typename ContainerOpT>
 inline OwningOpRef<ContainerOpT> parseSourceString(llvm::StringRef sourceStr,
-                                                   MLIRContext *context) {
+                                                   const ParserConfig &config) {
   LocationAttr sourceFileLoc;
   Block block;
-  if (failed(parseSourceString(sourceStr, &block, context, &sourceFileLoc)))
+  if (failed(parseSourceString(sourceStr, &block, config, &sourceFileLoc)))
     return OwningOpRef<ContainerOpT>();
   return detail::constructContainerOpForParserIfNecessary<ContainerOpT>(
-      &block, context, sourceFileLoc);
+      &block, config.getContext(), sourceFileLoc);
 }
 
 /// This parses a single MLIR attribute to an MLIR context if it was valid.  If

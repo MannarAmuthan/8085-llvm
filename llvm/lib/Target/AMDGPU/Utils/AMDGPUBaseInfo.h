@@ -368,6 +368,11 @@ struct MIMGG16MappingInfo {
 LLVM_READONLY
 const MIMGLZMappingInfo *getMIMGLZMappingInfo(unsigned L);
 
+struct WMMAOpcodeMappingInfo {
+  unsigned Opcode2Addr;
+  unsigned Opcode3Addr;
+};
+
 LLVM_READONLY
 const MIMGMIPMappingInfo *getMIMGMIPMappingInfo(unsigned MIP);
 
@@ -398,6 +403,7 @@ struct MIMGInfo {
   uint8_t MIMGEncoding;
   uint8_t VDataDwords;
   uint8_t VAddrDwords;
+  uint8_t VAddrOperands;
 };
 
 LLVM_READONLY
@@ -454,6 +460,9 @@ bool getVOP2IsSingle(unsigned Opc);
 LLVM_READONLY
 bool getVOP3IsSingle(unsigned Opc);
 
+LLVM_READONLY
+bool isVOPC64DPP(unsigned Opc);
+
 /// Returns true if MAI operation is a double precision GEMM.
 LLVM_READONLY
 bool getMAIIsDGEMM(unsigned Opc);
@@ -472,6 +481,12 @@ const GcnBufferFormatInfo *getGcnBufferFormatInfo(uint8_t Format,
 
 LLVM_READONLY
 int getMCOpcode(uint16_t Opcode, unsigned Gen);
+
+LLVM_READONLY
+unsigned mapWMMA2AddrTo3AddrOpcode(unsigned Opc);
+
+LLVM_READONLY
+unsigned mapWMMA3AddrTo2AddrOpcode(unsigned Opc);
 
 void initDefaultAMDKernelCodeT(amd_kernel_code_t &Header,
                                const MCSubtargetInfo *STI);
@@ -819,6 +834,7 @@ bool isGFX90A(const MCSubtargetInfo &STI);
 bool isGFX940(const MCSubtargetInfo &STI);
 bool hasArchitectedFlatScratch(const MCSubtargetInfo &STI);
 bool hasMAIInsts(const MCSubtargetInfo &STI);
+bool hasVOPD(const MCSubtargetInfo &STI);
 int getTotalNumVGPRs(bool has90AInsts, int32_t ArgNumAGPR, int32_t ArgNumVGPR);
 
 /// Is Reg - scalar register
