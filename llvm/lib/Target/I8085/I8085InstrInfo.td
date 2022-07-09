@@ -202,12 +202,16 @@ let Defs=[SREG,A], Uses=[A] in def ADC : F2<0b10001,(outs), (ins GR8: $rs), "ADC
 let Uses=[H,L] in def ADD_M : F1<0b10000110,(outs), (ins), "ADD M", []>;
 let Uses=[H,L] in def ADC_M : F1<0b10001110,(outs), (ins), "ADC M", []>;
 let Uses=[H,L] in def ANA_M : F1<0b10100110,(outs), (ins), "ANA M", []>;
+let Uses=[H,L] in def ORA_M : F1<0b10110110,(outs), (ins), "ORA M", []>;
+
 
 let Uses=[H,L],Defs=[SREG,A] in def CMP_M : F1<0b10111101,(outs), (ins), "CMP M", []>;
 let Uses=[H,L],Defs=[SREG,A] in def XRA_M : F1<0b10101110,(outs), (ins), "XRA M", []>;
 
 let Defs=[SREG,A], Uses=[A] in def ADI : F5<0b11000110,(outs), (ins i8imm: $k), "ADI $k", []>;
 let Defs=[SREG,A], Uses=[A] in def ACI : F5<0b11001110,(outs), (ins i8imm: $k), "ACI $k", []>;
+let Defs=[SREG,A], Uses=[A] in def SBI : F5<0b11011110,(outs), (ins i8imm: $k), "SBI $k", []>;
+let Defs=[SREG,A], Uses=[A] in def SUI : F5<0b11010110,(outs), (ins i8imm: $k), "SUI $k", []>;
 
 let Constraints = "$rs = $rd", Defs=[SREG]  in {
 

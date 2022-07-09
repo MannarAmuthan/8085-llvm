@@ -11,17 +11,56 @@ let Constraints = "$src = $rd", Defs=[SREG]  in {
               (ins GR32: $src, GR32: $rr),
               "ADD_32\t$rd, $rr",
               [(set i32: $rd, (add i32: $src, i32: $rr))]>;
-  def AND_32
-      : I8085Pseudo<(outs GR32: $rd),
-              (ins GR32: $src, GR32: $rr),
-              "AND_32\t$rd, $rr",
-              [(set i32: $rd, (and i32: $src, i32: $rr))]>; 
 
   def ADDI_32
       : I8085Pseudo<(outs GR32: $rd),
               (ins GR32: $src, i32imm: $k),
               "ADDI_32\t$rd, $k",
               [(set i32: $rd, (add i32: $src, imm: $k))]>;
+
+ 
+  def SUBI_32
+      : I8085Pseudo<(outs GR32: $rd),
+              (ins GR32: $src, i32imm: $k),
+              "SUBI_32\t$rd, $k",
+              [(set i32: $rd, (sub i32: $src, imm: $k))]>; 
+
+
+  def AND_32
+      : I8085Pseudo<(outs GR32: $rd),
+              (ins GR32: $src, GR32: $rr),
+              "AND_32\t$rd, $rr",
+              [(set i32: $rd, (and i32: $src, i32: $rr))]>; 
+
+  def XOR_32
+      : I8085Pseudo<(outs GR32: $rd),
+              (ins GR32: $src, GR32: $rr),
+              "XOR_32\t$rd, $rr",
+              [(set i32: $rd, (xor i32: $src, i32: $rr))]>;
+
+  def OR_32
+      : I8085Pseudo<(outs GR32: $rd),
+              (ins GR32: $src, GR32: $rr),
+              "OR_32\t$rd, $rr",
+              [(set i32: $rd, (or i32: $src, i32: $rr))]>;                          
+  
+  def ANDI_32
+      : I8085Pseudo<(outs GR32: $rd),
+              (ins GR32: $src, i32imm: $k),
+              "ANDI_32\t$rd, $k",
+              [(set i32: $rd, (and i32: $src, imm: $k))]>; 
+
+  def XORI_32
+      : I8085Pseudo<(outs GR32: $rd),
+              (ins GR32: $src, i32imm: $k),
+              "XORI_32\t$rd, $k",
+              [(set i32: $rd, (xor i32: $src, imm: $k))]>; 
+
+  def ORI_32
+      : I8085Pseudo<(outs GR32: $rd),
+              (ins GR32: $src, i32imm: $k),
+              "ORI_32\t$rd, $k",
+              [(set i32: $rd, (or i32: $src, imm: $k))]>; 
 
   def SHL_32
       : I8085InserterPseudo<(outs GR32: $rd),
@@ -250,7 +289,7 @@ def IsNeg32 : ImmLeaf<i32, [{
 }], imm32_Neg_Form>;
 
 
-def : Pat<(add i32: $src1, (IsNeg32 :$src2)),(SUB_32 i32: $src1, (LOAD_32 (imm32_Neg_Form imm: $src2)))>;
+def : Pat<(add i32: $src1, (IsNeg32 :$src2)),(SUBI_32 i32: $src1, (imm32_Neg_Form imm: $src2))>;
 
 
 def : Pat<(i32(load(I8085Wrapper tglobaladdr

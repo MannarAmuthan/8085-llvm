@@ -61,6 +61,8 @@ private:
   bool expandMBB(Block &MBB);
   bool expandMI(Block &MBB, BlockIt MBBI);
   template <unsigned OP> bool expand(Block &MBB, BlockIt MBBI);
+  bool binOperationWithImmediateOperand(unsigned opCode, Block &MBB, BlockIt MBBI);
+  bool binOperation(unsigned opCode, Block &MBB, BlockIt MBBI);
 
   MachineInstrBuilder buildMI(Block &MBB, BlockIt MBBI, unsigned Opcode) {
     return BuildMI(MBB, MBBI, MBBI->getDebugLoc(), TII->get(Opcode));
@@ -120,6 +122,99 @@ bool I8085ExpandPseudo32::runOnMachineFunction(MachineFunction &MF) {
 
   return Modified;
 }
+
+uint8_t high(uint64_t input){return (input >> 8) & 0xFF;}
+
+uint8_t low(uint64_t input){return input & 0xFF;}
+
+bool I8085ExpandPseudo32::binOperationWithImmediateOperand(unsigned opCode, Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned operandOne = MI.getOperand(1).getReg();
+  unsigned destReg = operandOne; 
+  uint64_t immToAdd = MI.getOperand(2).getImm();
+  
+  int address[]={11,12,13,14,15,16,17,18};
+  int index = 0;
+
+  uint8_t nibbleOne = immToAdd & 0x000000FF  ;
+  uint8_t nibbleTwo = (immToAdd >> 8) & 0x000000FF  ;
+  uint8_t nibbleThree = (immToAdd >> 16) & 0x000000FF  ;
+  uint8_t nibbleFour = (immToAdd >> 24) & 0x000000FF  ;
+
+  uint8_t values[]={nibbleOne,nibbleTwo,nibbleThree,nibbleFour};
+
+  if(destReg==I8085::IBX){  
+    index=4; 
+  }
+
+  
+  for(int i=0;i<4;i++){
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i]);
+      buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
+
+      buildMI(MBB, MBBI, opCode).addImm(values[i]);
+
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
+      buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
+  }            
+
+  MI.eraseFromParent();
+  return true;
+}
+
+bool I8085ExpandPseudo32::binOperation(unsigned opCode, Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned operandOne = MI.getOperand(1).getReg();
+  unsigned destReg = operandOne; 
+  unsigned operandTwo = MI.getOperand(2).getReg();
+  
+  int address[]={11,12,13,14,15,16,17,18};
+  int index = 0;
+
+  if(destReg==I8085::IBX){  
+      index=4; 
+  }
+
+  for(int i=0;i<4;i++){
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i]);
+      buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
+
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+4]);
+
+      buildMI(MBB, MBBI, opCode);
+
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
+      buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
+  }            
+
+  MI.eraseFromParent();
+  return true;
+}
+
+template <> bool I8085ExpandPseudo32::expand<I8085::XOR_32>(Block &MBB, BlockIt MBBI) {
+  return binOperation(I8085::XRA_M,MBB,MBBI);
+}
+template <> bool I8085ExpandPseudo32::expand<I8085::OR_32>(Block &MBB, BlockIt MBBI) {
+  return binOperation(I8085::ORA_M,MBB,MBBI);
+}
+template <> bool I8085ExpandPseudo32::expand<I8085::AND_32>(Block &MBB, BlockIt MBBI) {
+  return binOperation(I8085::ANA_M,MBB,MBBI);
+}
+
+template <> bool I8085ExpandPseudo32::expand<I8085::XORI_32>(Block &MBB, BlockIt MBBI) {
+  return binOperationWithImmediateOperand(I8085::XRI,MBB,MBBI);
+}
+template <> bool I8085ExpandPseudo32::expand<I8085::ORI_32>(Block &MBB, BlockIt MBBI) {
+  return binOperationWithImmediateOperand(I8085::ORI,MBB,MBBI);
+}
+template <> bool I8085ExpandPseudo32::expand<I8085::ANDI_32>(Block &MBB, BlockIt MBBI) {
+  return binOperationWithImmediateOperand(I8085::ANI,MBB,MBBI);
+}
+
 
 template <> bool I8085ExpandPseudo32::expand<I8085::RR_32>(Block &MBB, BlockIt MBBI) {
   const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
@@ -454,39 +549,6 @@ template <> bool I8085ExpandPseudo32::expand<I8085::AEXT8TO32>(Block &MBB, Block
   return expand<I8085::ZEXT8TO32>(MBB, MI);
 }
 
-
-template <> bool I8085ExpandPseudo32::expand<I8085::AND_32>(Block &MBB, BlockIt MBBI) {
-  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
-  MachineInstr &MI = *MBBI;
-
-  unsigned operandOne = MI.getOperand(1).getReg();
-  unsigned destReg = operandOne; 
-  unsigned operandTwo = MI.getOperand(2).getReg();
-  
-  int address[]={11,12,13,14,15,16,17,18};
-  int index = 0;
-
-  if(destReg==I8085::IBX){  
-      index=4; 
-  }
-
-  
-  for(int i=0;i<4;i++){
-      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i]);
-      buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
-
-      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+4]);
-
-      buildMI(MBB, MBBI, I8085::ANA_M);
-
-      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
-      buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
-  }            
-
-  MI.eraseFromParent();
-  return true;
-}
-
 template <> bool I8085ExpandPseudo32::expand<I8085::MOV_32>(Block &MBB, BlockIt MBBI) {
   const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
   MachineInstr &MI = *MBBI;
@@ -582,6 +644,48 @@ template <> bool I8085ExpandPseudo32::expand<I8085::ADD_32>(Block &MBB, BlockIt 
   return true;
 }
 
+template <> bool I8085ExpandPseudo32::expand<I8085::SUBI_32>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned operandOne = MI.getOperand(1).getReg();
+  unsigned destReg = operandOne; 
+  uint64_t immToAdd = MI.getOperand(2).getImm();
+  
+  int address[]={11,12,13,14,15,16,17,18};
+  int index = 0;
+
+  uint8_t nibbleOne = immToAdd & 0x000000FF  ;
+  uint8_t nibbleTwo = (immToAdd >> 8) & 0x000000FF  ;
+  uint8_t nibbleThree = (immToAdd >> 16) & 0x000000FF  ;
+  uint8_t nibbleFour = (immToAdd >> 24) & 0x000000FF  ;
+
+  uint8_t values[]={nibbleOne,nibbleTwo,nibbleThree,nibbleFour};
+
+  if(destReg==I8085::IBX){  
+    index=4; 
+  }
+
+  
+  for(int i=0;i<4;i++){
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i]);
+      buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
+
+      if(i>0){ 
+        buildMI(MBB, MBBI, I8085::SBI).addImm(values[i]);
+      }
+      else {
+        buildMI(MBB, MBBI, I8085::SUI).addImm(values[i]);
+      }
+
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
+      buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
+  }            
+
+  MI.eraseFromParent();
+  return true;
+}
+
 template <> bool I8085ExpandPseudo32::expand<I8085::SUB_32>(Block &MBB, BlockIt MBBI) {
   const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
   MachineInstr &MI = *MBBI;
@@ -644,10 +748,10 @@ template <> bool I8085ExpandPseudo32::expand<I8085::ADDI_32>(Block &MBB, BlockIt
       buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
 
       if(i>0){ 
-        buildMI(MBB, MBBI, I8085::ADI).addImm(values[i]);
+        buildMI(MBB, MBBI, I8085::ACI).addImm(values[i]);
       }
       else {
-        buildMI(MBB, MBBI, I8085::ACI).addImm(values[i]);
+        buildMI(MBB, MBBI, I8085::ADI).addImm(values[i]);
       }
 
       buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
@@ -683,10 +787,6 @@ template <> bool I8085ExpandPseudo32::expand<I8085::LOAD_32_WITH_ADDR>(Block &MB
   MI.eraseFromParent();
   return true;
 }
-
-uint8_t high(uint64_t input){return (input >> 8) & 0xFF;}
-
-uint8_t low(uint64_t input){return input & 0xFF;}
 
 template <> bool I8085ExpandPseudo32::expand<I8085::LOAD_32>(Block &MBB, BlockIt MBBI) {
   const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
@@ -849,6 +949,12 @@ bool I8085ExpandPseudo32::expandMI(Block &MBB, BlockIt MBBI) {
     return expand<Op>(MBB, MI)
 
   switch (Opcode) {
+    EXPAND(I8085::XORI_32);
+    EXPAND(I8085::ORI_32);
+    EXPAND(I8085::ANDI_32);
+    EXPAND(I8085::XOR_32);
+    EXPAND(I8085::OR_32);
+    EXPAND(I8085::AND_32);
     EXPAND(I8085::RL_32);
     EXPAND(I8085::RR_32);
     EXPAND(I8085::SEXT32_INREG_16);
@@ -866,8 +972,8 @@ bool I8085ExpandPseudo32::expandMI(Block &MBB, BlockIt MBBI) {
     EXPAND(I8085::JMP_32_IF_POSITIVE);
     EXPAND(I8085::JMP_32_IF_SAME_SIGN);
     EXPAND(I8085::JMP_32_IF_NOT_EQUAL);
-    EXPAND(I8085::AND_32);
     EXPAND(I8085::MOV_32);
+    EXPAND(I8085::SUBI_32);
     EXPAND(I8085::SUB_32);
     EXPAND(I8085::ADD_32);
     EXPAND(I8085::ADDI_32);
