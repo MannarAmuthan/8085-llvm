@@ -95,6 +95,12 @@ bool I8085ExpandPseudo32::expandMBB(MachineBasicBlock &MBB) {
 }
 
 bool I8085ExpandPseudo32::runOnMachineFunction(MachineFunction &MF) {
+
+  LLVM_DEBUG({
+    dbgs() << "********** Expand 32 bit register pseudo instructions **********\n"
+           << "********** Function: " << MF.getName() << '\n';
+  });
+
   bool Modified = false;
 
   const I8085Subtarget &STI = MF.getSubtarget<I8085Subtarget>();

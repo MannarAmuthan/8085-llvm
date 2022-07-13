@@ -40,14 +40,12 @@ using namespace llvm;
 MCInstrInfo *llvm::createI8085MCInstrInfo() {
   MCInstrInfo *X = new MCInstrInfo();
   InitI8085MCInstrInfo(X);
-
   return X;
 }
 
 static MCRegisterInfo *createI8085MCRegisterInfo(const Triple &TT) {
   MCRegisterInfo *X = new MCRegisterInfo();
   InitI8085MCRegisterInfo(X, 0);
-
   return X;
 }
 

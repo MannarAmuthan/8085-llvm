@@ -688,20 +688,20 @@ SDValue I8085TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
 
     assert(VA.isMemLoc());
 
-    if(VA.getLocMemOffset()>0){
-      SDValue PtrOff = DAG.getNode(
-            ISD::ADD, DL, getPointerTy(DAG.getDataLayout()),
-            DAG.getRegister(I8085::SP, getPointerTy(DAG.getDataLayout())),
-            DAG.getIntPtrConstant(VA.getLocMemOffset(), DL));
-      MemOpChains.push_back(
-          DAG.getStore(Chain, DL, Arg, PtrOff,MachinePointerInfo()));
-    }
-    else{
+    // if(VA.getLocMemOffset()>0){
+    //   SDValue PtrOff = DAG.getNode(
+    //         ISD::ADD, DL, getPointerTy(DAG.getDataLayout()),
+    //         DAG.getRegister(I8085::SP, getPointerTy(DAG.getDataLayout())),
+    //         DAG.getIntPtrConstant(VA.getLocMemOffset(), DL));
+    //   MemOpChains.push_back(
+    //       DAG.getStore(Chain, DL, Arg, PtrOff,MachinePointerInfo()));
+    // }
+    // else{
       SDValue ptrConstant = DAG.getConstant(0,DL,MVT::i16);
       MemOpChains.push_back(
           DAG.getStore(Chain, DL, Arg, ptrConstant,MachinePointerInfo())
       );
-    }
+    // }
 
     }
 
@@ -800,14 +800,6 @@ SDValue I8085TargetLowering::LowerCallResult(
   for (unsigned i = 0, e = ResultMemLocs.size(); i != e; ++i) {
     int Offset = ResultMemLocs[i].first;
     unsigned Index = ResultMemLocs[i].second;
-
-    
-
-    // SDValue StackPtr = DAG.getRegister(I8085::SP, MVT::i16);
-    // SDValue SpLoc = DAG.getNode(ISD::ADD, dl, MVT::i16, StackPtr,DAG.getConstant(Offset, dl, MVT::i16));
-    // SDValue Load = DAG.getLoad(MVT::i32, dl, Chain, SpLoc, MachinePointerInfo());
-    // InVals[Index] = Load;
-    // MemOpChains.push_back(Load.getValue(1));
     
     SDValue ptrConstant = DAG.getConstant(Offset,dl,MVT::i16);
     SDValue Load = DAG.getLoad(MVT::i32, dl, Chain, ptrConstant, MachinePointerInfo());

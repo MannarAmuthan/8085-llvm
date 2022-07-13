@@ -90,19 +90,17 @@ def LOAD_32 : I8085Pseudo<(outs GR32: $dst),
 
 def STORE_32 : I8085Pseudo<(outs),
                             (ins mspi: $dst, GR32: $src),
-                            "STORE_32 $dst, $src", [(store i32
-                                                     : $src, addr
-                                                     : $dst)]>;
+                            "STORE_32 $dst, $src", [(store i32: $src, addr: $dst)]>;
+                            
 
 def LOAD_32_WITH_ADDR : I8085Pseudo<(outs GR32: $dst),
                        (ins mspi: $src),
                        "LOAD $dst, $src", [(set i32: $dst, (load addr: $src))]>;    
 
 
-
 def STORE_32_AT_OFFSET_WITH_SP : I8085Pseudo<(outs),
                        (ins GR32: $src, i16imm: $offset),
-                       "STORE_32_AT_OFFSET_WITH_SP\t$offset, $src", [(store i32: $src, imm: $offset)]>;                    
+                       "STORE_32_SP_AT_OFFSET\t$offset, $src", [(store i32: $src, imm: $offset)]>;                    
 
 
 def LOAD_32_OFFSET_WITH_SP : I8085Pseudo<(outs GR32: $dst),
@@ -112,6 +110,10 @@ def LOAD_32_OFFSET_WITH_SP : I8085Pseudo<(outs GR32: $dst),
 def LOAD_32_WITH_IMM_ADDR : I8085Pseudo<(outs GR32: $dst),
                        (ins imm16Addr: $src),
                        "LOAD_32_ADDR $dst, $src", []>;
+
+def LOAD_32_ADDR_CONTENT : I8085Pseudo<(outs GR32: $dst),
+                       (ins GR32: $src),
+                       "LOAD_32_ADDR_CONTENT $dst, $src", [(set i32: $dst, (load i32: $src))]>;
 
 }
 
@@ -200,11 +202,6 @@ def MOV_32 : I8085Pseudo<(outs GR32: $rd),
 
 
 let isBarrier = 1, isBranch = 1, isTerminator = 1 , Defs=[SREG] in {
-//    def JMP_8_IF : I8085Pseudo<(outs),(ins GR8: $reg, addressTarget:$k),
-//                                            "JMP_8_IF $reg, $k", []>;
-
-//    def JMP_16_IF : I8085Pseudo<(outs),(ins GR16: $reg, addressTarget:$k),
-//                                            "JMP_16_IF $reg, $k", []>; 
 
    def JMP_32_IF_NOT_EQUAL : I8085Pseudo<(outs),(ins GR32: $lhs, GR32: $rhs, addressTarget:$k),
                                            "JMP_32_IF_NOT_EQUAL $lhs, $rhs, $k", []>; 

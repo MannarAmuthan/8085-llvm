@@ -70,11 +70,9 @@ void I8085InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
         .addReg(srcLow, getKillRegState(KillSrc));    
   }
   else{
-
   Opc = I8085::MOV_32;
   BuildMI(MBB, MI, DL, get(Opc), DestReg)
         .addReg(SrcReg, getKillRegState(KillSrc));
-
   }
 }
 
@@ -146,8 +144,7 @@ void I8085InstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
     Opcode = I8085::STORE_8;
   } else if (TRI->isTypeLegalForClass(*RC, MVT::i16)) {
     Opcode = I8085::STORE_16;
-  } 
-  else if (TRI->isTypeLegalForClass(*RC, MVT::i32)) {
+  } else if (TRI->isTypeLegalForClass(*RC, MVT::i32)) {
     Opcode = I8085::STORE_32;
   } else {
     llvm_unreachable("Cannot store this register into a stack slot!");

@@ -83,12 +83,6 @@ def memspi : Operand<iPTR> {
   let MIOperandInfo = (ops GPRSP, i16imm); 
 }
 
-
-// def rcalltarget_13 : Operand<i16> {
-//   let PrintMethod = "printPCRelImm";
-//   let EncoderMethod = "encodeRelCondBrTarget<I8085::fixup_13_pcrel>";
-// }
-
 def imm16Addr : Operand<i16> { 
   let EncoderMethod = "encodeImm<I8085::fixup_16, 0>";
 }
@@ -380,12 +374,8 @@ def LOAD_16 : I8085Pseudo<(outs GR16: $dst),
                                              : $src)]>; 
 
 def STORE_16 : I8085Pseudo<(outs),
-                            (ins mspi
-                             : $dst, GR16
-                             : $src),
-                            "STORE_16 $dst, $src", [(store i16
-                                                     : $src, addr
-                                                     : $dst)]>;
+                            (ins mspi: $dst, GR16: $src),
+                            "STORE_16 $dst, $src", [(store i16: $src, addr: $dst)]>;
 
 def STORE_8 : I8085Pseudo<(outs),
                         (ins mspi: $memri,

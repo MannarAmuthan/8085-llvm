@@ -150,39 +150,6 @@ I8085::Fixups I8085MCExpr::getFixupKind() const {
   I8085::Fixups Kind = I8085::Fixups::LastTargetFixupKind;
 
   switch (getKind()) {
-  case VK_I8085_LO8:
-    Kind = isNegated() ? I8085::fixup_lo8_ldi_neg : I8085::fixup_lo8_ldi;
-    break;
-  case VK_I8085_HI8:
-    Kind = isNegated() ? I8085::fixup_hi8_ldi_neg : I8085::fixup_hi8_ldi;
-    break;
-  case VK_I8085_HH8:
-    Kind = isNegated() ? I8085::fixup_hh8_ldi_neg : I8085::fixup_hh8_ldi;
-    break;
-  case VK_I8085_HHI8:
-    Kind = isNegated() ? I8085::fixup_ms8_ldi_neg : I8085::fixup_ms8_ldi;
-    break;
-
-  case VK_I8085_PM_LO8:
-    Kind = isNegated() ? I8085::fixup_lo8_ldi_pm_neg : I8085::fixup_lo8_ldi_pm;
-    break;
-  case VK_I8085_PM_HI8:
-    Kind = isNegated() ? I8085::fixup_hi8_ldi_pm_neg : I8085::fixup_hi8_ldi_pm;
-    break;
-  case VK_I8085_PM_HH8:
-    Kind = isNegated() ? I8085::fixup_hh8_ldi_pm_neg : I8085::fixup_hh8_ldi_pm;
-    break;
-  case VK_I8085_PM:
-  case VK_I8085_GS:
-    Kind = I8085::fixup_16_pm;
-    break;
-  case VK_I8085_LO8_GS:
-    Kind = I8085::fixup_lo8_ldi_gs;
-    break;
-  case VK_I8085_HI8_GS:
-    Kind = I8085::fixup_hi8_ldi_gs;
-    break;
-
   case VK_I8085_None:
     llvm_unreachable("Uninitialized expression");
   }
