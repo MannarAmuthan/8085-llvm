@@ -946,6 +946,32 @@ template <> bool I8085ExpandPseudo32::expand<I8085::LOAD_32_OFFSET_WITH_SP>(Bloc
   return true;
 }
 
+template <> bool I8085ExpandPseudo32::expand<I8085::LOAD_32_WITH_IMM_ADDR>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned destReg = MI.getOperand(0).getReg();
+
+  const GlobalValue* amount = MI.getOperand(1).getGlobal();
+  
+  int address[]={11,12,13,14,15,16,17,18};
+  int index = 0;
+
+  if(destReg==I8085::IBX){  index=4; }
+
+  
+  for(int i=0;i<4;i++){
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addGlobalAddress(amount,i);
+      buildMI(MBB, MBBI, I8085::DAD).addReg(I8085::SP);
+      buildMI(MBB, MBBI, I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
+      buildMI(MBB, MBBI, I8085::MOV_M).addReg(I8085::A);
+  }            
+
+  MI.eraseFromParent();
+  return true;
+}
+
 bool I8085ExpandPseudo32::expandMI(Block &MBB, BlockIt MBBI) {
   MachineInstr &MI = *MBBI;
   int Opcode = MBBI->getOpcode();
@@ -986,6 +1012,7 @@ bool I8085ExpandPseudo32::expandMI(Block &MBB, BlockIt MBBI) {
     EXPAND(I8085::LOAD_32);
     EXPAND(I8085::STORE_32);
     EXPAND(I8085::LOAD_32_WITH_ADDR);
+    EXPAND(I8085::LOAD_32_WITH_IMM_ADDR);
   }
 #undef EXPAND
   return false;

@@ -83,7 +83,7 @@ def memspi : Operand<iPTR> {
   let MIOperandInfo = (ops GPRSP, i16imm); 
 }
 
-def imm16Addr : Operand<i16> { 
+def imm16Addr : Operand<i16> {
   let EncoderMethod = "encodeImm<I8085::fixup_16, 0>";
 }
 
