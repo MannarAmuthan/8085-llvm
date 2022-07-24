@@ -333,7 +333,8 @@ def mspi : Operand<iPTR> {
 }
 
 
-def LXI : F4<0b0001,(outs GR8: $rd), (ins i16imm: $k), "LXI $rd, $k", []>;                  
+def LXI : F4<0b0001,(outs GR8: $rd), (ins i16imm: $k), "LXI $rd, $k", []>;
+def INX : F8<0b0011,(outs GR8: $rd), (ins), "INX $rd", []>;
 
 let Uses = [H,L] in {
   let Defs=[SREG,H,L] in def DAD : F7<(outs), (ins GR16: $rs), "DAD $rs", []>;

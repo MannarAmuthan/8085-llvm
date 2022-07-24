@@ -258,3 +258,20 @@ class F7<dag outs, dag ins, string asmstr, list<dag> pattern>
   let Inst{3-0} = 0b1001;
 }
 
+
+//===----------------------------------------------------------------------===//
+// INX Instr Format
+// |00DD|xxxx|
+// x - Instruction Specific Opcode
+//        0011 - INX
+//===----------------------------------------------------------------------===//
+class F8<bits<4> opcode,dag outs, dag ins, string asmstr, list<dag> pattern>
+    : I8085Inst8<outs, ins, asmstr, pattern> {
+  
+  bits<3> rd;
+
+  let Inst{7-6} = 0b00;
+  let Inst{5-4} = rd{2-1};
+  let Inst{3-0} = opcode;
+}
+

@@ -112,8 +112,8 @@ def LOAD_32_WITH_IMM_ADDR : I8085Pseudo<(outs GR32: $dst),
                        "LOAD_32_ADDR $dst, $src", []>;
 
 def LOAD_32_ADDR_CONTENT : I8085Pseudo<(outs GR32: $dst),
-                       (ins GR32: $src),
-                       "LOAD_32_ADDR_CONTENT $dst, $src", [(set i32: $dst, (load i32: $src))]>;
+                       (ins GR16: $src),
+                       "LOAD_32_ADDR_CONTENT $dst, $src", [(set i32: $dst, (load i16: $src))]>;
 
 }
 

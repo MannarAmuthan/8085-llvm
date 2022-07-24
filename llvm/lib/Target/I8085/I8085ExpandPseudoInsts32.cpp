@@ -972,6 +972,44 @@ template <> bool I8085ExpandPseudo32::expand<I8085::LOAD_32_WITH_IMM_ADDR>(Block
   return true;
 }
 
+template <> bool I8085ExpandPseudo32::expand<I8085::LOAD_32_ADDR_CONTENT>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned destReg = MI.getOperand(0).getReg();
+  unsigned srcReg = MI.getOperand(1).getReg();
+
+  unsigned opOneLow,opOneHigh;
+
+  if(srcReg==I8085::BC){  opOneLow=I8085::C;  opOneHigh=I8085::B; }
+  if(srcReg==I8085::DE){  opOneLow=I8085::E;  opOneHigh=I8085::D; }
+  
+  int address[]={11,12,13,14,15,16,17,18};
+  int index = 0;
+
+  if(destReg==I8085::IBX){  index=4; }
+  
+  for(int i=0;i<4;i++){
+      buildMI(MBB, MBBI,  I8085::MOV).addReg(I8085::H, RegState::Define).addReg(opOneHigh);
+      buildMI(MBB, MBBI,  I8085::MOV).addReg(I8085::L, RegState::Define).addReg(opOneLow);
+      
+      if(i>0){
+        buildMI(MBB, MBBI, I8085::INX).addReg(I8085::H,RegState::Define);
+      }
+
+      buildMI(MBB, MBBI,  I8085::MOV_FROM_M).addReg(I8085::A,RegState::Define);
+
+      buildMI(MBB, MBBI,  I8085::MOV).addReg(opOneHigh, RegState::Define).addReg(I8085::H);
+      buildMI(MBB, MBBI,  I8085::MOV).addReg(opOneLow, RegState::Define).addReg(I8085::L);
+
+      buildMI(MBB, MBBI, I8085::LXI).addReg(I8085::H,RegState::Define).addImm(address[i+index]);
+      buildMI(MBB, MBBI,  I8085::MOV_M).addReg(I8085::A);
+  }            
+
+  MI.eraseFromParent();
+  return true;
+}
+
 bool I8085ExpandPseudo32::expandMI(Block &MBB, BlockIt MBBI) {
   MachineInstr &MI = *MBBI;
   int Opcode = MBBI->getOpcode();
@@ -1013,6 +1051,7 @@ bool I8085ExpandPseudo32::expandMI(Block &MBB, BlockIt MBBI) {
     EXPAND(I8085::STORE_32);
     EXPAND(I8085::LOAD_32_WITH_ADDR);
     EXPAND(I8085::LOAD_32_WITH_IMM_ADDR);
+    EXPAND(I8085::LOAD_32_ADDR_CONTENT);
   }
 #undef EXPAND
   return false;

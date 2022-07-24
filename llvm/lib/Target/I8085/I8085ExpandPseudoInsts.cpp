@@ -118,6 +118,52 @@ bool I8085ExpandPseudo::runOnMachineFunction(MachineFunction &MF) {
 }
 
 template <>
+bool I8085ExpandPseudo::expand<I8085::LOAD_16_ADDR_CONTENT>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned srcLowReg,srcHighReg;
+  unsigned destLowReg,destHighReg;
+
+  unsigned destReg = MI.getOperand(0).getReg();
+  unsigned srcReg = MI.getOperand(1).getReg();
+
+  if(srcReg==I8085::BC){srcLowReg=I8085::C; srcHighReg=I8085::B;}
+  if(srcReg==I8085::DE){srcLowReg=I8085::E; srcHighReg=I8085::D;}
+
+  if(destReg==I8085::BC){destLowReg=I8085::C; destHighReg=I8085::B;}
+  if(destReg==I8085::DE){destLowReg=I8085::E; destHighReg=I8085::D;}
+
+  buildMI(MBB, MBBI,  I8085::MOV).addReg(I8085::H, RegState::Define).addReg(srcHighReg);
+  buildMI(MBB, MBBI,  I8085::MOV).addReg(I8085::L, RegState::Define).addReg(srcLowReg);
+  buildMI(MBB, MBBI,  I8085::MOV_FROM_M).addReg(destLowReg ,RegState::Define);
+  buildMI(MBB, MBBI,  I8085::INX).addReg(I8085::H, RegState::Define);
+  buildMI(MBB, MBBI,  I8085::MOV_FROM_M).addReg(destHighReg ,RegState::Define);
+
+  MI.eraseFromParent();
+  return true;
+}
+
+template <>
+bool I8085ExpandPseudo::expand<I8085::LOAD_8_ADDR_CONTENT>(Block &MBB, BlockIt MBBI) {
+  const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
+  MachineInstr &MI = *MBBI;
+
+  unsigned lowReg,highReg;
+  unsigned destReg = MI.getOperand(0).getReg();
+  unsigned srcReg = MI.getOperand(1).getReg();
+
+  if(srcReg==I8085::BC){lowReg=I8085::C; highReg=I8085::B;}
+  if(srcReg==I8085::DE){lowReg=I8085::E; highReg=I8085::D;}
+
+  buildMI(MBB, MBBI,  I8085::MOV).addReg(I8085::H, RegState::Define).addReg(highReg);
+  buildMI(MBB, MBBI,  I8085::MOV).addReg(I8085::L, RegState::Define).addReg(lowReg);
+  buildMI(MBB, MBBI,  I8085::MOV_FROM_M).addReg(destReg ,RegState::Define);
+  MI.eraseFromParent();
+  return true;
+}
+
+template <>
 bool I8085ExpandPseudo::expand<I8085::STORE_8>(Block &MBB, BlockIt MBBI) {
   const I8085Subtarget &STI = MBB.getParent()->getSubtarget<I8085Subtarget>();
   MachineInstr &MI = *MBBI;
@@ -1267,6 +1313,8 @@ bool I8085ExpandPseudo::expandMI(Block &MBB, BlockIt MBBI) {
     return expand<Op>(MBB, MI)
 
   switch (Opcode) {
+    EXPAND(I8085::LOAD_16_ADDR_CONTENT);
+    EXPAND(I8085::LOAD_8_ADDR_CONTENT);
     EXPAND(I8085::STORE_16_AT_OFFSET_WITH_SP);
     EXPAND(I8085::STORE_8_AT_OFFSET_WITH_SP);
     EXPAND(I8085::JMP_16_IF_POSITIVE);
