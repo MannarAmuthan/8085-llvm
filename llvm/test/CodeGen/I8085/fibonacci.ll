@@ -1,0 +1,476 @@
+; RUN: llc -mattr=i8085,sram < %s -march=i8085 -verify-machineinstrs  | FileCheck %s
+
+define signext i16 @fibonacci(i16 noundef signext %0) #0 {
+  
+;CHECK-LABEL: fibonacci:                              
+;CHECK-LABEL: LBB00:
+	;CHECK: LXI H, 65522
+	;CHECK: DAD SP
+	;CHECK: SPHL
+	;CHECK: LXI H, 17
+	;CHECK: DAD SP
+	;CHECK: MOV B, M
+	;CHECK: LXI H, 16
+	;CHECK: DAD SP
+	;CHECK: MOV C, M
+	;CHECK: LXI H, 11
+	;CHECK: DAD SP
+	;CHECK: MOV M, B
+	;CHECK: LXI H, 10
+	;CHECK: DAD SP
+	;CHECK: MOV M, C
+	;CHECK: LXI H, 15
+	;CHECK: MOV M, C
+	;CHECK: LXI H, 16
+	;CHECK: MOV M, B
+	;CHECK: MOV A, B
+	;CHECK: ADI 128
+	;CHECK: SBB A
+	;CHECK: LXI H, 18
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 17
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 11
+	;CHECK: MVI M, 1
+	;CHECK: LXI H, 12
+	;CHECK: MVI M, 0
+	;CHECK: LXI H, 13
+	;CHECK: MVI M, 0
+	;CHECK: LXI H, 14
+	;CHECK: MVI M, 0
+	;CHECK: LXI H, 15
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 11
+	;CHECK: XRA M
+	;CHECK: ANI 128
+	;CHECK: JZ LBB01
+	;CHECK: JMP LBB03
+;CHECK-LABEL: LBB01:
+	;CHECK: LXI H, 11
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 6
+	;CHECK: DAD SP
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 12
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 7
+	;CHECK: DAD SP
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 13
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 8
+	;CHECK: DAD SP
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 14
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 9
+	;CHECK: DAD SP
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 15
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 11
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 16
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 12
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 17
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 13
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 18
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 14
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 15
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 2
+	;CHECK: DAD SP
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 16
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 3
+	;CHECK: DAD SP
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 17
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 4
+	;CHECK: DAD SP
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 18
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 5
+	;CHECK: DAD SP
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 6
+	;CHECK: DAD SP
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 15
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 7
+	;CHECK: DAD SP
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 16
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 8
+	;CHECK: DAD SP
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 17
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 9
+	;CHECK: DAD SP
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 18
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 11
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 15
+	;CHECK: SUB M
+	;CHECK: LXI H, 11
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 12
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 16
+	;CHECK: SBB M
+	;CHECK: LXI H, 12
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 13
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 17
+	;CHECK: SBB M
+	;CHECK: LXI H, 13
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 14
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 18
+	;CHECK: SBB M
+	;CHECK: LXI H, 14
+	;CHECK: MOV M, A
+	;CHECK: JC LBB02
+	;CHECK: LXI H, 6
+	;CHECK: DAD SP
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 11
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 7
+	;CHECK: DAD SP
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 12
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 8
+	;CHECK: DAD SP
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 13
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 9
+	;CHECK: DAD SP
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 14
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 2
+	;CHECK: DAD SP
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 15
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 3
+	;CHECK: DAD SP
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 16
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 4
+	;CHECK: DAD SP
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 17
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 5
+	;CHECK: DAD SP
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 18
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 15
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 11
+	;CHECK: CMP M
+	;CHECK: JNZ LBB05
+	;CHECK: LXI H, 16
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 12
+	;CHECK: CMP M
+	;CHECK: JNZ LBB05
+	;CHECK: LXI H, 17
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 13
+	;CHECK: CMP M
+	;CHECK: JNZ LBB05
+	;CHECK: LXI H, 18
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 14
+	;CHECK: CMP M
+	;CHECK: JNZ LBB05
+	;CHECK: JMP LBB02
+;CHECK-LABEL: LBB02:
+	;CHECK: MVI B, 0
+	;CHECK: JMP LBB06
+;CHECK-LABEL: LBB03:
+	;CHECK: LXI H, 18
+	;CHECK: MOV A, M
+	;CHECK: ANI 128
+	;CHECK: JZ LBB04
+	;CHECK: JMP LBB07
+;CHECK-LABEL: LBB04:
+	;CHECK: MVI B, 1
+	;CHECK: JMP LBB08
+;CHECK-LABEL: LBB05:
+	;CHECK: MVI B, 1
+	;CHECK: JMP LBB06
+;CHECK-LABEL: LBB06:
+	;CHECK: JMP LBB09
+;CHECK-LABEL: LBB07:
+	;CHECK: MVI B, 0
+	;CHECK: JMP LBB08
+;CHECK-LABEL: LBB08:
+	;CHECK: JMP LBB09
+;CHECK-LABEL: LBB09:
+	;CHECK: MOV A, B
+	;CHECK: ORI 0
+	;CHECK: JNZ LBB011
+	;CHECK: JMP LBB010
+;CHECK-LABEL: LBB010:
+	;CHECK: LXI H, 11
+	;CHECK: DAD SP
+	;CHECK: MOV B, M
+	;CHECK: LXI H, 10
+	;CHECK: DAD SP
+	;CHECK: MOV C, M
+	;CHECK: LXI H, 13
+	;CHECK: DAD SP
+	;CHECK: MOV M, B
+	;CHECK: LXI H, 12
+	;CHECK: DAD SP
+	;CHECK: MOV M, C
+	;CHECK: JMP LBB012
+;CHECK-LABEL: LBB011:
+	;CHECK: MVI B, 0
+	;CHECK: MVI C, 1
+	;CHECK: LXI H, 11
+	;CHECK: DAD SP
+	;CHECK: MOV D, M
+	;CHECK: LXI H, 10
+	;CHECK: DAD SP
+	;CHECK: MOV E, M
+	;CHECK: MOV A, E
+	;CHECK: SUB C
+	;CHECK: MOV E, A
+	;CHECK: MOV A, D
+	;CHECK: SBB B
+	;CHECK: MOV D, A
+	;CHECK: LXI H, 1
+	;CHECK: DAD SP
+	;CHECK: MOV M, D
+	;CHECK: LXI H, 0
+	;CHECK: DAD SP
+	;CHECK: MOV M, E
+	;CHECK: CALL fibonacci
+	;CHECK: LXI H, 7
+	;CHECK: DAD SP
+	;CHECK: MOV M, B
+	;CHECK: LXI H, 6
+	;CHECK: DAD SP
+	;CHECK: MOV M, C
+	;CHECK: MVI D, 0
+	;CHECK: MVI E, 2
+	;CHECK: LXI H, 11
+	;CHECK: DAD SP
+	;CHECK: MOV B, M
+	;CHECK: LXI H, 10
+	;CHECK: DAD SP
+	;CHECK: MOV C, M
+	;CHECK: MOV A, C
+	;CHECK: SUB E
+	;CHECK: MOV C, A
+	;CHECK: MOV A, B
+	;CHECK: SBB D
+	;CHECK: MOV B, A
+	;CHECK: LXI H, 1
+	;CHECK: DAD SP
+	;CHECK: MOV M, B
+	;CHECK: LXI H, 0
+	;CHECK: DAD SP
+	;CHECK: MOV M, C
+	;CHECK: LXI H, 7
+	;CHECK: DAD SP
+	;CHECK: MOV B, M
+	;CHECK: LXI H, 6
+	;CHECK: DAD SP
+	;CHECK: MOV C, M
+	;CHECK: LXI H, 14
+	;CHECK: MVI M, 0
+	;CHECK: LXI H, 13
+	;CHECK: MVI M, 0
+	;CHECK: LXI H, 12
+	;CHECK: MOV M, B
+	;CHECK: LXI H, 11
+	;CHECK: MOV M, C
+	;CHECK: LXI H, 11
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 6
+	;CHECK: DAD SP
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 12
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 7
+	;CHECK: DAD SP
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 13
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 8
+	;CHECK: DAD SP
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 14
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 9
+	;CHECK: DAD SP
+	;CHECK: MOV M, A
+	;CHECK: CALL fibonacci
+	;CHECK: LXI H, 14
+	;CHECK: MVI M, 0
+	;CHECK: LXI H, 13
+	;CHECK: MVI M, 0
+	;CHECK: LXI H, 12
+	;CHECK: MOV M, B
+	;CHECK: LXI H, 11
+	;CHECK: MOV M, C
+	;CHECK: LXI H, 6
+	;CHECK: DAD SP
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 15
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 7
+	;CHECK: DAD SP
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 16
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 8
+	;CHECK: DAD SP
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 17
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 9
+	;CHECK: DAD SP
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 18
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 11
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 15
+	;CHECK: ADD M
+	;CHECK: LXI H, 15
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 12
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 16
+	;CHECK: ADC M
+	;CHECK: LXI H, 16
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 13
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 17
+	;CHECK: ADC M
+	;CHECK: LXI H, 17
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 14
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 18
+	;CHECK: ADC M
+	;CHECK: LXI H, 18
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 15
+	;CHECK: MOV C, M
+	;CHECK: LXI H, 16
+	;CHECK: MOV B, M
+	;CHECK: LXI H, 13
+	;CHECK: DAD SP
+	;CHECK: MOV M, B
+	;CHECK: LXI H, 12
+	;CHECK: DAD SP
+	;CHECK: MOV M, C
+;CHECK-LABEL: LBB012:
+	;CHECK: LXI H, 13
+	;CHECK: DAD SP
+	;CHECK: MOV B, M
+	;CHECK: LXI H, 12
+	;CHECK: DAD SP
+	;CHECK: MOV C, M
+	;CHECK: LXI H, 11
+	;CHECK: MOV M, C
+	;CHECK: LXI H, 12
+	;CHECK: MOV M, B
+	;CHECK: MOV A, B
+	;CHECK: ADI 128
+	;CHECK: SBB A
+	;CHECK: LXI H, 14
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 13
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 11
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 16
+	;CHECK: DAD SP
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 12
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 17
+	;CHECK: DAD SP
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 13
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 18
+	;CHECK: DAD SP
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 14
+	;CHECK: MOV A, M
+	;CHECK: LXI H, 19
+	;CHECK: DAD SP
+	;CHECK: MOV M, A
+	;CHECK: LXI H, 14
+	;CHECK: DAD SP
+	;CHECK: SPHL
+	;CHECK: RET
+ 
+ 
+  %2 = alloca i16, align 2
+  %3 = alloca i16, align 2
+  store i16 %0, ptr %3, align 2
+  %4 = load i16, ptr %3, align 2
+  %5 = sext i16 %4 to i32
+  %6 = icmp sle i32 %5, 1
+  br i1 %6, label %7, label %9
+
+7:                                                ; preds = %1
+  %8 = load i16, ptr %3, align 2
+  store i16 %8, ptr %2, align 2
+  br label %24
+
+9:                                                ; preds = %1
+  %10 = load i16, ptr %3, align 2
+  %11 = sext i16 %10 to i32
+  %12 = sub nsw i32 %11, 1
+  %13 = trunc i32 %12 to i16
+  %14 = call signext i16 @fibonacci(i16 noundef signext %13)
+  %15 = sext i16 %14 to i32
+  %16 = load i16, ptr %3, align 2
+  %17 = sext i16 %16 to i32
+  %18 = sub nsw i32 %17, 2
+  %19 = trunc i32 %18 to i16
+  %20 = call signext i16 @fibonacci(i16 noundef signext %19)
+  %21 = sext i16 %20 to i32
+  %22 = add nsw i32 %15, %21
+  %23 = trunc i32 %22 to i16
+  store i16 %23, ptr %2, align 2
+  br label %24
+
+24:                                               ; preds = %9, %7
+  %25 = load i16, ptr %2, align 2
+  ret i16 %25
+}
+
