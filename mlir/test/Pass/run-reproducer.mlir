@@ -1,3 +1,4 @@
+// RUN: mlir-opt %s -dump-pass-pipeline 2>&1 | FileCheck %s
 // RUN: mlir-opt %s -mlir-print-ir-before=cse 2>&1 | FileCheck -check-prefix=BEFORE %s
 
 func.func @foo() {
@@ -12,15 +13,17 @@ func.func @bar() {
 {-#
   external_resources: {
     mlir_reproducer: {
-      pipeline: "func.func(cse,canonicalize)",
+      verify_each: true,
+      // CHECK:  builtin.module(func.func(cse,canonicalize{ max-iterations=1 region-simplify=false top-down=false}))
+      pipeline: "builtin.module(func.func(cse,canonicalize{max-iterations=1 region-simplify=false top-down=false}))",
       disable_threading: true
     }
   }
 #-}
 
-// BEFORE: // -----// IR Dump Before{{.*}}CSE //----- //
+// BEFORE: // -----// IR Dump Before{{.*}}CSE (cse) //----- //
 // BEFORE-NEXT: func @foo()
-// BEFORE: // -----// IR Dump Before{{.*}}CSE //----- //
+// BEFORE: // -----// IR Dump Before{{.*}}CSE (cse) //----- //
 // BEFORE-NEXT: func @bar()
-// BEFORE-NOT: // -----// IR Dump Before{{.*}}Canonicalizer //----- //
+// BEFORE-NOT: // -----// IR Dump Before{{.*}}Canonicalizer (canonicalize) //----- //
 // BEFORE-NOT: // -----// IR Dump After

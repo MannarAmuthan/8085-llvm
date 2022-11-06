@@ -8,12 +8,11 @@ add_mlir_dialect_library(MLIRSCFDialect
   MLIRSCFOpsIncGen
 
   LINK_LIBS PUBLIC
-  MLIRArithmeticDialect
+  MLIRArithDialect
   MLIRBufferizationDialect
   MLIRControlFlowDialect
   MLIRIR
   MLIRLoopLikeInterface
-  MLIRParallelCombiningOpInterface
   MLIRSideEffectInterfaces
   )
 

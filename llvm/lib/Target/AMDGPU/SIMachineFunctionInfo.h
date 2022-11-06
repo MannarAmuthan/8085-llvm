@@ -191,6 +191,7 @@ struct SIArgumentInfo {
   Optional<SIArgument> WorkGroupIDY;
   Optional<SIArgument> WorkGroupIDZ;
   Optional<SIArgument> WorkGroupInfo;
+  Optional<SIArgument> LDSKernelId;
   Optional<SIArgument> PrivateSegmentWaveByteOffset;
 
   Optional<SIArgument> ImplicitArgPtr;
@@ -215,6 +216,7 @@ template <> struct MappingTraits<SIArgumentInfo> {
     YamlIO.mapOptional("workGroupIDY", AI.WorkGroupIDY);
     YamlIO.mapOptional("workGroupIDZ", AI.WorkGroupIDZ);
     YamlIO.mapOptional("workGroupInfo", AI.WorkGroupInfo);
+    YamlIO.mapOptional("LDSKernelId", AI.LDSKernelId);
     YamlIO.mapOptional("privateSegmentWaveByteOffset",
                        AI.PrivateSegmentWaveByteOffset);
 
@@ -349,11 +351,14 @@ template <> struct MappingTraits<SIMachineFunctionInfo> {
 class SIMachineFunctionInfo final : public AMDGPUMachineFunction {
   friend class GCNTargetMachine;
 
+  // State of MODE register, assumed FP mode.
+  AMDGPU::SIModeRegisterDefaults Mode;
+
   // Registers that may be reserved for spilling purposes. These may be the same
   // as the input registers.
   Register ScratchRSrcReg = AMDGPU::PRIVATE_RSRC_REG;
 
-  // This is the the unswizzled offset from the current dispatch's scratch wave
+  // This is the unswizzled offset from the current dispatch's scratch wave
   // base to the beginning of the current function's frame.
   Register FrameOffsetReg = AMDGPU::FP_REG;
 
@@ -418,6 +423,7 @@ private:
   bool WorkGroupIDY : 1;
   bool WorkGroupIDZ : 1;
   bool WorkGroupInfo : 1;
+  bool LDSKernelId : 1;
   bool PrivateSegmentWaveByteOffset : 1;
 
   bool WorkItemIDX : 1; // Always initialized.
@@ -456,7 +462,7 @@ public:
     // VGPR used for SGPR spills
     Register VGPR;
 
-    // If the VGPR is is used for SGPR spills in a non-entrypoint function, the
+    // If the VGPR is used for SGPR spills in a non-entrypoint function, the
     // stack slot used to save/restore it in the prolog/epilog.
     Optional<int> FI;
 
@@ -549,6 +555,10 @@ public:
     WWMReservedRegs.insert(Reg);
   }
 
+  AMDGPU::SIModeRegisterDefaults getMode() const {
+    return Mode;
+  }
+
   ArrayRef<SIRegisterInfo::SpilledReg>
   getSGPRToVGPRSpills(int FrameIndex) const {
     auto I = SGPRToVGPRSpills.find(FrameIndex);
@@ -608,6 +618,7 @@ public:
   Register addDispatchID(const SIRegisterInfo &TRI);
   Register addFlatScratchInit(const SIRegisterInfo &TRI);
   Register addImplicitBufferPtr(const SIRegisterInfo &TRI);
+  Register addLDSKernelId();
 
   /// Increment user SGPRs used for padding the argument list only.
   Register addReservedUserSGPR() {
@@ -704,6 +715,8 @@ public:
   bool hasWorkGroupInfo() const {
     return WorkGroupInfo;
   }
+
+  bool hasLDSKernelId() const { return LDSKernelId; }
 
   bool hasPrivateSegmentWaveByteOffset() const {
     return PrivateSegmentWaveByteOffset;
@@ -978,7 +991,7 @@ public:
 
   // \returns true if a function has a use of AGPRs via inline asm or
   // has a call which may use it.
-  bool mayUseAGPRs(const MachineFunction &MF) const;
+  bool mayUseAGPRs(const Function &F) const;
 
   // \returns true if a function needs or may need AGPRs.
   bool usesAGPRs(const MachineFunction &MF) const;

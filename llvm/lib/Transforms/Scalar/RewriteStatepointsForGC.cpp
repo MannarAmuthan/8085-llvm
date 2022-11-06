@@ -1430,10 +1430,7 @@ normalizeForInvokeSafepoint(BasicBlock *BB, BasicBlock *InvokeParent,
 // machine model for purposes of optimization.  We have to strip these on
 // both function declarations and call sites.
 static constexpr Attribute::AttrKind FnAttrsToStrip[] =
-  {Attribute::ReadNone, Attribute::ReadOnly, Attribute::WriteOnly,
-   Attribute::ArgMemOnly, Attribute::InaccessibleMemOnly,
-   Attribute::InaccessibleMemOrArgMemOnly,
-   Attribute::NoSync, Attribute::NoFree};
+  {Attribute::Memory, Attribute::NoSync, Attribute::NoFree};
 
 // Create new attribute set containing only attributes which can be transferred
 // from original call to the safepoint.
@@ -1702,10 +1699,20 @@ makeStatepointExplicitImpl(CallBase *Call, /* to replace */
       auto &Context = Call->getContext();
       auto &DL = Call->getModule()->getDataLayout();
       auto GetBaseAndOffset = [&](Value *Derived) {
-        assert(PointerToBase.count(Derived));
+        Value *Base = nullptr;
+        // Optimizations in unreachable code might substitute the real pointer
+        // with undef, poison or null-derived constant. Return null base for
+        // them to be consistent with the handling in the main algorithm in
+        // findBaseDefiningValue.
+        if (isa<Constant>(Derived))
+          Base =
+              ConstantPointerNull::get(cast<PointerType>(Derived->getType()));
+        else {
+          assert(PointerToBase.count(Derived));
+          Base = PointerToBase.find(Derived)->second;
+        }
         unsigned AddressSpace = Derived->getType()->getPointerAddressSpace();
         unsigned IntPtrSize = DL.getPointerSizeInBits(AddressSpace);
-        Value *Base = PointerToBase.find(Derived)->second;
         Value *Base_int = Builder.CreatePtrToInt(
             Base, Type::getIntNTy(Context, IntPtrSize));
         Value *Derived_int = Builder.CreatePtrToInt(
@@ -2072,8 +2079,12 @@ static void relocationViaAlloca(
 
       auto InsertClobbersAt = [&](Instruction *IP) {
         for (auto *AI : ToClobber) {
-          auto PT = cast<PointerType>(AI->getAllocatedType());
-          Constant *CPN = ConstantPointerNull::get(PT);
+          auto AT = AI->getAllocatedType();
+          Constant *CPN;
+          if (AT->isVectorTy())
+            CPN = ConstantAggregateZero::get(AT);
+          else
+            CPN = ConstantPointerNull::get(cast<PointerType>(AT));
           new StoreInst(CPN, AI, IP);
         }
       };
@@ -2433,7 +2444,7 @@ static void rematerializeLiveValues(CallBase *Call,
           assert(LastValue);
           ClonedValue->replaceUsesOfWith(LastValue, LastClonedValue);
 #ifndef NDEBUG
-          for (auto OpValue : ClonedValue->operand_values()) {
+          for (auto *OpValue : ClonedValue->operand_values()) {
             // Assert that cloned instruction does not use any instructions from
             // this chain other than LastClonedValue
             assert(!is_contained(ChainToBase, OpValue) &&
@@ -2487,7 +2498,7 @@ static void rematerializeLiveValues(CallBase *Call,
   }
 
   // Remove rematerializaed values from the live set
-  for (auto LiveValue: LiveValuesToBeDeleted) {
+  for (auto *LiveValue: LiveValuesToBeDeleted) {
     Info.LiveSet.remove(LiveValue);
   }
 }
@@ -3256,7 +3267,7 @@ static void recomputeLiveInValues(GCPtrLivenessData &RevisedLivenessData,
 
   // We may have base pointers which are now live that weren't before.  We need
   // to update the PointerToBase structure to reflect this.
-  for (auto V : Updated)
+  for (auto *V : Updated)
     PointerToBase.insert({ V, V });
 
   Info.LiveSet = Updated;

@@ -21,11 +21,10 @@ TEST(InferShapeTest, inferRankReducedShapeIdentity) {
   OpBuilder b(&ctx);
   auto sourceMemref = MemRefType::get({10, 5}, b.getIndexType());
   auto reducedType = SubViewOp::inferRankReducedResultType(
-      /*resultRank=*/1, sourceMemref, {2, 3}, {1, 2}, {1, 1});
-  AffineExpr dim0;
-  bindDims(&ctx, dim0);
-  auto expectedType =
-      MemRefType::get({2}, b.getIndexType(), AffineMap::get(1, 0, dim0 + 13));
+      /*resultShape=*/{2}, sourceMemref, {2, 3}, {1, 2}, {1, 1});
+  auto expectedType = MemRefType::get(
+      {2}, b.getIndexType(),
+      StridedLayoutAttr::get(&ctx, /*offset=*/13, /*strides=*/{1}));
   EXPECT_EQ(reducedType, expectedType);
 }
 
@@ -38,9 +37,10 @@ TEST(InferShapeTest, inferRankReducedShapeNonIdentity) {
   auto sourceMemref = MemRefType::get({10, 5}, b.getIndexType(),
                                       AffineMap::get(2, 0, 1000 * dim0 + dim1));
   auto reducedType = SubViewOp::inferRankReducedResultType(
-      /*resultRank=*/1, sourceMemref, {2, 3}, {1, 2}, {1, 1});
-  auto expectedType =
-      MemRefType::get({2}, b.getIndexType(), AffineMap::get(1, 0, dim0 + 2003));
+      /*resultShape=*/{2}, sourceMemref, {2, 3}, {1, 2}, {1, 1});
+  auto expectedType = MemRefType::get(
+      {2}, b.getIndexType(),
+      StridedLayoutAttr::get(&ctx, /*offset=*/2003, /*strides=*/{1}));
   EXPECT_EQ(reducedType, expectedType);
 }
 
@@ -52,9 +52,9 @@ TEST(InferShapeTest, inferRankReducedShapeToScalar) {
   auto sourceMemref = MemRefType::get({10, 5}, b.getIndexType(),
                                       AffineMap::get(2, 0, 1000 * dim0 + dim1));
   auto reducedType = SubViewOp::inferRankReducedResultType(
-      /*resultRank=*/0, sourceMemref, {2, 3}, {1, 1}, {1, 1});
-  auto expectedType =
-      MemRefType::get({}, b.getIndexType(),
-                      AffineMap::get(0, 0, b.getAffineConstantExpr(2003)));
+      /*resultShape=*/{}, sourceMemref, {2, 3}, {1, 1}, {1, 1});
+  auto expectedType = MemRefType::get(
+      {}, b.getIndexType(),
+      StridedLayoutAttr::get(&ctx, /*offset=*/2003, /*strides=*/{}));
   EXPECT_EQ(reducedType, expectedType);
 }

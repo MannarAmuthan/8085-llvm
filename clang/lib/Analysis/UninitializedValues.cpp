@@ -46,7 +46,8 @@ static bool isTrackedVar(const VarDecl *vd, const DeclContext *dc) {
       !vd->isExceptionVariable() && !vd->isInitCapture() &&
       !vd->isImplicit() && vd->getDeclContext() == dc) {
     QualType ty = vd->getType();
-    return ty->isScalarType() || ty->isVectorType() || ty->isRecordType();
+    return ty->isScalarType() || ty->isVectorType() || ty->isRecordType() ||
+           ty->isRVVType();
   }
   return false;
 }
@@ -149,7 +150,7 @@ public:
                  const VarDecl *vd) {
     const Optional<unsigned> &idx = declToIndex.getValueIndex(vd);
     assert(idx);
-    return getValueVector(block)[idx.getValue()];
+    return getValueVector(block)[idx.value()];
   }
 };
 
@@ -210,7 +211,7 @@ void CFGBlockValues::resetScratch() {
 ValueVector::reference CFGBlockValues::operator[](const VarDecl *vd) {
   const Optional<unsigned> &idx = declToIndex.getValueIndex(vd);
   assert(idx);
-  return scratch[idx.getValue()];
+  return scratch[idx.value()];
 }
 
 //------------------------------------------------------------------------====//

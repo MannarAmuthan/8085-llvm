@@ -11,6 +11,7 @@
 //===---------------------------------------------------------------------===//
 
 #include "RISCV.h"
+#include "RISCVMachineFunctionInfo.h"
 #include "RISCVSubtarget.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -72,8 +73,7 @@ static void addUses(const MachineInstr &MI,
 // returns true if all uses of OrigMI only depend on the lower word of its
 // output, so we can transform OrigMI to the corresponding W-version.
 // TODO: handle multiple interdependent transformations
-static bool isAllUsesReadW(const MachineInstr &OrigMI,
-                           MachineRegisterInfo &MRI) {
+static bool hasAllWUsers(const MachineInstr &OrigMI, MachineRegisterInfo &MRI) {
 
   SmallPtrSet<const MachineInstr *, 4> Visited;
   SmallVector<const MachineInstr *, 4> Worklist;
@@ -117,10 +117,17 @@ static bool isAllUsesReadW(const MachineInstr &OrigMI,
     case RISCV::CTZW:
     case RISCV::CPOPW:
     case RISCV::SLLI_UW:
+    case RISCV::FMV_H_X:
+    case RISCV::FMV_W_X:
+    case RISCV::FCVT_H_W:
+    case RISCV::FCVT_H_WU:
     case RISCV::FCVT_S_W:
     case RISCV::FCVT_S_WU:
     case RISCV::FCVT_D_W:
     case RISCV::FCVT_D_WU:
+    case RISCV::SEXT_B:
+    case RISCV::SEXT_H:
+    case RISCV::ZEXT_H_RV64:
       continue;
 
     // these overwrite higher input bits, otherwise the lower word of output
@@ -166,8 +173,6 @@ static bool isAllUsesReadW(const MachineInstr &OrigMI,
     case RISCV::CLMUL:
     case RISCV::ORC_B:
     case RISCV::ORN:
-    case RISCV::SEXT_B:
-    case RISCV::SEXT_H:
     case RISCV::SH1ADD:
     case RISCV::SH1ADD_UW:
     case RISCV::SH2ADD:
@@ -175,7 +180,6 @@ static bool isAllUsesReadW(const MachineInstr &OrigMI,
     case RISCV::SH3ADD:
     case RISCV::SH3ADD_UW:
     case RISCV::XNOR:
-    case RISCV::ZEXT_H_RV64:
       addUses(*MI, Worklist, MRI);
       continue;
     default:
@@ -253,7 +257,7 @@ static bool isSignExtendingOpW(MachineInstr &MI, MachineRegisterInfo &MRI,
   case RISCV::ADDI:
     if (MI.getOperand(1).isReg() && MI.getOperand(1).getReg() == RISCV::X0)
       return true;
-    if (isAllUsesReadW(MI, MRI)) {
+    if (hasAllWUsers(MI, MRI)) {
       // transform to ADDIW
       FixableDef.insert(&MI);
       return true;
@@ -275,16 +279,17 @@ static bool isSignExtendingOpW(MachineInstr &MI, MachineRegisterInfo &MRI,
     // SLLIW reads the lowest 5 bits, while SLLI reads lowest 6 bits
     if (MI.getOperand(2).getImm() >= 32)
       return false;
-    LLVM_FALLTHROUGH;
+    [[fallthrough]];
   case RISCV::ADD:
   case RISCV::LD:
   case RISCV::LWU:
   case RISCV::MUL:
   case RISCV::SUB:
-    if (isAllUsesReadW(MI, MRI)) {
+    if (hasAllWUsers(MI, MRI)) {
       FixableDef.insert(&MI);
       return true;
     }
+    break;
   }
 
   return false;
@@ -315,9 +320,21 @@ static bool isSignExtendedW(MachineInstr &OrigMI, MachineRegisterInfo &MRI,
       // Unknown opcode, give up.
       return false;
     case RISCV::COPY: {
-      Register SrcReg = MI->getOperand(1).getReg();
+      const MachineFunction *MF = MI->getMF();
+      const RISCVMachineFunctionInfo *RVFI =
+          MF->getInfo<RISCVMachineFunctionInfo>();
 
-      // TODO: Handle arguments and returns from calls?
+      // If this is the entry block and the register is livein, see if we know
+      // it is sign extended.
+      if (MI->getParent() == &MF->front()) {
+        Register VReg = MI->getOperand(0).getReg();
+        if (MF->getRegInfo().isLiveIn(VReg))
+          return RVFI->isSExt32Register(VReg);
+      }
+
+      // TODO: Handle returns from calls?
+
+      Register SrcReg = MI->getOperand(1).getReg();
 
       // If this is a copy from another register, check its source instruction.
       if (!SrcReg.isVirtual())
@@ -337,7 +354,7 @@ static bool isSignExtendedW(MachineInstr &OrigMI, MachineRegisterInfo &MRI,
     case RISCV::BSETI:
       if (MI->getOperand(2).getImm() >= 31)
         return false;
-      LLVM_FALLTHROUGH;
+      [[fallthrough]];
     case RISCV::REM:
     case RISCV::ANDI:
     case RISCV::ORI:
@@ -443,8 +460,7 @@ bool RISCVSExtWRemoval::runOnMachineFunction(MachineFunction &MF) {
       MachineInstr *MI = &*I++;
 
       // We're looking for the sext.w pattern ADDIW rd, rs1, 0.
-      if (MI->getOpcode() != RISCV::ADDIW || !MI->getOperand(2).isImm() ||
-          MI->getOperand(2).getImm() != 0 || !MI->getOperand(1).isReg())
+      if (!RISCV::isSEXT_W(*MI))
         continue;
 
       // Input should be a virtual register.
@@ -457,7 +473,7 @@ bool RISCVSExtWRemoval::runOnMachineFunction(MachineFunction &MF) {
   }
 
   bool MadeChange = false;
-  for (auto MI : SExtWRemovalCands) {
+  for (auto *MI : SExtWRemovalCands) {
     SmallPtrSet<MachineInstr *, 4> FixableDef;
     Register SrcReg = MI->getOperand(1).getReg();
     MachineInstr &SrcMI = *MRI.getVRegDef(SrcReg);
@@ -479,7 +495,7 @@ bool RISCVSExtWRemoval::runOnMachineFunction(MachineFunction &MF) {
           BuildMI(MBB, Fixable, DL, ST.getInstrInfo()->get(Code));
       for (auto Op : Fixable->operands())
         Replacement.add(Op);
-      for (auto Op : Fixable->memoperands())
+      for (auto *Op : Fixable->memoperands())
         Replacement.addMemOperand(Op);
 
       LLVM_DEBUG(dbgs() << "Replacing " << *Fixable);

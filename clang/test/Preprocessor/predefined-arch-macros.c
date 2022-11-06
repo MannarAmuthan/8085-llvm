@@ -1791,6 +1791,12 @@
 // RUN: %clang -march=alderlake -m32 -E -dM %s -o - 2>&1 \
 // RUN:     -target i386-unknown-linux \
 // RUN:   | FileCheck -match-full-lines %s -check-prefix=CHECK_ADL_M32
+// RUN: %clang -march=raptorlake -m32 -E -dM %s -o - 2>&1 \
+// RUN:     -target i386-unknown-linux \
+// RUN:   | FileCheck -match-full-lines %s -check-prefix=CHECK_ADL_M32
+// RUN: %clang -march=meteorlake -m32 -E -dM %s -o - 2>&1 \
+// RUN:     -target i386-unknown-linux \
+// RUN:   | FileCheck -match-full-lines %s -check-prefix=CHECK_ADL_M32
 // CHECK_ADL_M32: #define __ADX__ 1
 // CHECK_ADL_M32: #define __AES__ 1
 // CHECK_ADL_M32: #define __AVX2__ 1
@@ -1851,6 +1857,12 @@
 // CHECK_ADL_M32: #define i386 1
 
 // RUN: %clang -march=alderlake -m64 -E -dM %s -o - 2>&1 \
+// RUN:     -target i386-unknown-linux \
+// RUN:   | FileCheck -match-full-lines %s -check-prefix=CHECK_ADL_M64
+// RUN: %clang -march=raptorlake -m64 -E -dM %s -o - 2>&1 \
+// RUN:     -target i386-unknown-linux \
+// RUN:   | FileCheck -match-full-lines %s -check-prefix=CHECK_ADL_M64
+// RUN: %clang -march=meteorlake -m64 -E -dM %s -o - 2>&1 \
 // RUN:     -target i386-unknown-linux \
 // RUN:   | FileCheck -match-full-lines %s -check-prefix=CHECK_ADL_M64
 // CHECK_ADL_M64: #define __ADX__ 1
@@ -3216,6 +3228,7 @@
 // CHECK_ZNVER2_M32: #define __POPCNT__ 1
 // CHECK_ZNVER2_M32: #define __PRFCHW__ 1
 // CHECK_ZNVER2_M32: #define __RDPID__ 1
+// CHECK_ZNVER2_M32: #define __RDPRU__ 1
 // CHECK_ZNVER2_M32: #define __RDRND__ 1
 // CHECK_ZNVER2_M32: #define __RDSEED__ 1
 // CHECK_ZNVER2_M32: #define __SHA__ 1
@@ -3266,6 +3279,7 @@
 // CHECK_ZNVER2_M64: #define __POPCNT__ 1
 // CHECK_ZNVER2_M64: #define __PRFCHW__ 1
 // CHECK_ZNVER2_M64: #define __RDPID__ 1
+// CHECK_ZNVER2_M64: #define __RDPRU__ 1
 // CHECK_ZNVER2_M64: #define __RDRND__ 1
 // CHECK_ZNVER2_M64: #define __RDSEED__ 1
 // CHECK_ZNVER2_M64: #define __SHA__ 1
@@ -3318,6 +3332,7 @@
 // CHECK_ZNVER3_M32: #define __POPCNT__ 1
 // CHECK_ZNVER3_M32: #define __PRFCHW__ 1
 // CHECK_ZNVER3_M32: #define __RDPID__ 1
+// CHECK_ZNVER3_M32: #define __RDPRU__ 1
 // CHECK_ZNVER3_M32: #define __RDRND__ 1
 // CHECK_ZNVER3_M32: #define __RDSEED__ 1
 // CHECK_ZNVER3_M32: #define __SHA__ 1
@@ -3368,6 +3383,7 @@
 // CHECK_ZNVER3_M64: #define __POPCNT__ 1
 // CHECK_ZNVER3_M64: #define __PRFCHW__ 1
 // CHECK_ZNVER3_M64: #define __RDPID__ 1
+// CHECK_ZNVER3_M64: #define __RDPRU__ 1
 // CHECK_ZNVER3_M64: #define __RDRND__ 1
 // CHECK_ZNVER3_M64: #define __RDSEED__ 1
 // CHECK_ZNVER3_M64: #define __SHA__ 1

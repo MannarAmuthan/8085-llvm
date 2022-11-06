@@ -7,6 +7,7 @@ passed the condition.
 
 import lldb
 import lldbsuite.test.lldbutil as lldbutil
+from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
 
 
@@ -14,6 +15,7 @@ class TestTwoHitsOneActual(TestBase):
 
     NO_DEBUG_INFO_TESTCASE = True
 
+    @skipIf(oslist=["linux"], archs=["arm", "aarch64"])
     def test_two_hits_one_actual(self):
         """There can be many tests in a test case - describe this test here."""
         self.build()
@@ -55,8 +57,8 @@ class TestTwoHitsOneActual(TestBase):
             process.Continue()
             for thread in process.threads:
                 if thread.id == main_thread.id:
-                    self.assertEqual(thread.stop_reason, lldb.eStopReasonBreakpoint)
+                    self.assertStopReason(thread.stop_reason, lldb.eStopReasonBreakpoint)
                 else:
-                    self.assertEqual(thread.stop_reason, lldb.eStopReasonNone)
+                    self.assertStopReason(thread.stop_reason, lldb.eStopReasonNone)
 
                 

@@ -406,11 +406,21 @@ template <typename W, int P>
 ValueWithRealFlags<Real<W, P>> Real<W, P>::MOD(
     const Real &y, Rounding rounding) const {
   ValueWithRealFlags<Real> result;
-  Real quotient{Divide(y, rounding).AccumulateFlags(result.flags)};
-  Real toInt{quotient.ToWholeNumber(common::RoundingMode::ToZero)
-                 .AccumulateFlags(result.flags)};
-  Real product{toInt.Multiply(y, rounding).AccumulateFlags(result.flags)};
-  result.value = Subtract(product, rounding).AccumulateFlags(result.flags);
+  auto quotient{Divide(y, rounding)};
+  if (quotient.value.IsInfinite() && IsFinite() && y.IsFinite() &&
+      !y.IsZero()) {
+    // x/y overflowed -- so it must be an integer in this representation and
+    // the result must be a zero.
+    if (IsNegative()) {
+      result.value = Real{}.Negate(); // -0.
+    }
+  } else {
+    Real toInt{quotient.AccumulateFlags(result.flags)
+                   .ToWholeNumber(common::RoundingMode::ToZero)
+                   .AccumulateFlags(result.flags)};
+    Real product{toInt.Multiply(y, rounding).AccumulateFlags(result.flags)};
+    result.value = Subtract(product, rounding).AccumulateFlags(result.flags);
+  }
   return result;
 }
 
@@ -419,11 +429,21 @@ template <typename W, int P>
 ValueWithRealFlags<Real<W, P>> Real<W, P>::MODULO(
     const Real &y, Rounding rounding) const {
   ValueWithRealFlags<Real> result;
-  Real quotient{Divide(y, rounding).AccumulateFlags(result.flags)};
-  Real toInt{quotient.ToWholeNumber(common::RoundingMode::Down)
-                 .AccumulateFlags(result.flags)};
-  Real product{toInt.Multiply(y, rounding).AccumulateFlags(result.flags)};
-  result.value = Subtract(product, rounding).AccumulateFlags(result.flags);
+  auto quotient{Divide(y, rounding)};
+  if (quotient.value.IsInfinite() && IsFinite() && y.IsFinite() &&
+      !y.IsZero()) {
+    // x/y overflowed -- so it must be an integer in this representation and
+    // the result must be a zero.
+    if (y.IsNegative()) {
+      result.value = Real{}.Negate(); // -0.
+    }
+  } else {
+    Real toInt{quotient.AccumulateFlags(result.flags)
+                   .ToWholeNumber(common::RoundingMode::Down)
+                   .AccumulateFlags(result.flags)};
+    Real product{toInt.Multiply(y, rounding).AccumulateFlags(result.flags)};
+    result.value = Subtract(product, rounding).AccumulateFlags(result.flags);
+  }
   return result;
 }
 
@@ -729,10 +749,28 @@ template <typename W, int P> Real<W, P> Real<W, P>::SPACING() const {
     return TINY();
   } else {
     Real result;
-    result.Normalize(
-        false, Exponent() - binaryPrecision + 1, Fraction::MASKL(1));
+    result.Normalize(false, Exponent(), Fraction::MASKR(1));
     return result;
   }
+}
+
+// 16.9.171
+template <typename W, int P>
+Real<W, P> Real<W, P>::SET_EXPONENT(std::int64_t expo) const {
+  if (IsNotANumber()) {
+    return *this;
+  } else if (IsInfinite()) {
+    return NotANumber();
+  } else if (IsZero()) {
+    return *this;
+  } else {
+    return SCALE(Integer<64>(expo - UnbiasedExponent() - 1)).value;
+  }
+}
+
+// 16.9.171
+template <typename W, int P> Real<W, P> Real<W, P>::FRACTION() const {
+  return SET_EXPONENT(0);
 }
 
 template class Real<Integer<16>, 11>;

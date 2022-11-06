@@ -159,7 +159,7 @@ struct ProgramPoint
   ProgramPoint(ParentTy point = nullptr) : ParentTy(point) {}
   /// Allow implicit conversions from operation wrappers.
   /// TODO: For Windows only. Find a better solution.
-  template <typename OpT, typename = typename std::enable_if_t<
+  template <typename OpT, typename = std::enable_if_t<
                               std::is_convertible<OpT, Operation *>::value &&
                               !std::is_same<OpT, Operation *>::value>>
   ProgramPoint(OpT op) : ParentTy(op) {}
@@ -226,7 +226,6 @@ public:
   /// Push a work item onto the worklist.
   void enqueue(WorkItem item) { worklist.push(std::move(item)); }
 
-protected:
   /// Get the state associated with the given program point. If it does not
   /// exist, create an uninitialized state.
   template <typename StateT, typename PointT>
@@ -289,12 +288,8 @@ public:
   /// Create the analysis state at the given program point.
   AnalysisState(ProgramPoint point) : point(point) {}
 
-  /// Returns true if the analysis state is uninitialized.
-  virtual bool isUninitialized() const = 0;
-
-  /// Force an uninitialized analysis state to initialize itself with a default
-  /// value.
-  virtual ChangeResult defaultInitialize() = 0;
+  /// Returns the program point this static is located at.
+  ProgramPoint getPoint() const { return point; }
 
   /// Print the contents of the analysis state.
   virtual void print(raw_ostream &os) const = 0;

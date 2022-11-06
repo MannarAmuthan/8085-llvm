@@ -133,14 +133,28 @@ const Symbol *ProcedureDesignator::GetInterfaceSymbol() const {
 
 bool ProcedureDesignator::IsElemental() const {
   if (const Symbol * interface{GetInterfaceSymbol()}) {
-    return interface->attrs().test(semantics::Attr::ELEMENTAL);
+    return IsElementalProcedure(*interface);
   } else if (const Symbol * symbol{GetSymbol()}) {
-    return symbol->attrs().test(semantics::Attr::ELEMENTAL);
+    return IsElementalProcedure(*symbol);
   } else if (const auto *intrinsic{std::get_if<SpecificIntrinsic>(&u)}) {
     return intrinsic->characteristics.value().attrs.test(
         characteristics::Procedure::Attr::Elemental);
   } else {
     DIE("ProcedureDesignator::IsElemental(): no case");
+  }
+  return false;
+}
+
+bool ProcedureDesignator::IsPure() const {
+  if (const Symbol * interface{GetInterfaceSymbol()}) {
+    return IsPureProcedure(*interface);
+  } else if (const Symbol * symbol{GetSymbol()}) {
+    return IsPureProcedure(*symbol);
+  } else if (const auto *intrinsic{std::get_if<SpecificIntrinsic>(&u)}) {
+    return intrinsic->characteristics.value().attrs.test(
+        characteristics::Procedure::Attr::Pure);
+  } else {
+    DIE("ProcedureDesignator::IsPure(): no case");
   }
   return false;
 }

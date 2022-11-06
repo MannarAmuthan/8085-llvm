@@ -210,7 +210,7 @@ def OMPC_Depend : Clause<"depend"> {
 }
 def OMPC_Device : Clause<"device"> {
   let clangClass = "OMPDeviceClause";
-  let flangClass = "ScalarIntExpr";
+  let flangClass = "OmpDeviceClause";
 }
 def OMPC_Threads : Clause<"threads"> { let clangClass = "OMPThreadsClause"; }
 def OMPC_Simd : Clause<"simd"> { let clangClass = "OMPSIMDClause"; }
@@ -526,6 +526,7 @@ def OMP_Critical : Directive<"critical"> {
 }
 def OMP_TaskYield : Directive<"taskyield"> {}
 def OMP_Barrier : Directive<"barrier"> {}
+def OMP_Error : Directive<"error"> {}
 def OMP_TaskWait : Directive<"taskwait"> {
   let allowedClauses = [
     VersionedClause<OMPC_Depend, 50>

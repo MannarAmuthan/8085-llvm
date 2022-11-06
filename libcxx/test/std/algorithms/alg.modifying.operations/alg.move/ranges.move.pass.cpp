@@ -9,7 +9,6 @@
 // <algorithm>
 
 // UNSUPPORTED: c++03, c++11, c++14, c++17
-// UNSUPPORTED: libcpp-has-no-incomplete-ranges
 
 // template<input_iterator I, sentinel_for<I> S, weakly_incrementable O>
 //   requires indirectly_movable<I, O>
@@ -95,6 +94,15 @@ constexpr void test_in_iterators() {
   test_iterators<contiguous_iterator<int*>, Out>();
 }
 
+template <class Out>
+constexpr void test_proxy_in_iterators() {
+  test_iterators<ProxyIterator<cpp20_input_iterator<int*>>, Out, sentinel_wrapper<ProxyIterator<cpp20_input_iterator<int*>>>>();
+  test_iterators<ProxyIterator<forward_iterator<int*>>, Out>();
+  test_iterators<ProxyIterator<bidirectional_iterator<int*>>, Out>();
+  test_iterators<ProxyIterator<random_access_iterator<int*>>, Out>();
+  test_iterators<ProxyIterator<contiguous_iterator<int*>>, Out>();
+}
+
 struct IteratorWithMoveIter {
   using value_type = int;
   using difference_type = int;
@@ -122,6 +130,12 @@ constexpr bool test() {
   test_in_iterators<random_access_iterator<int*>>();
   test_in_iterators<contiguous_iterator<int*>>();
 
+  test_proxy_in_iterators<ProxyIterator<cpp20_input_iterator<int*>>>();
+  test_proxy_in_iterators<ProxyIterator<forward_iterator<int*>>>();
+  test_proxy_in_iterators<ProxyIterator<bidirectional_iterator<int*>>>();
+  test_proxy_in_iterators<ProxyIterator<random_access_iterator<int*>>>();
+  test_proxy_in_iterators<ProxyIterator<contiguous_iterator<int*>>>();
+
   { // check that a move-only type works
     {
       MoveOnly a[] = {1, 2, 3};
@@ -135,6 +149,29 @@ constexpr bool test() {
       MoveOnly a[] = {1, 2, 3};
       MoveOnly b[3];
       std::ranges::move(std::begin(a), std::end(a), std::begin(b));
+      assert(b[0].get() == 1);
+      assert(b[1].get() == 2);
+      assert(b[2].get() == 3);
+    }
+  }
+
+  { // check that a move-only type works for ProxyIterator
+    {
+      MoveOnly a[] = {1, 2, 3};
+      MoveOnly b[3];
+      ProxyRange proxyA{a};
+      ProxyRange proxyB{b};
+      std::ranges::move(proxyA, std::begin(proxyB));
+      assert(b[0].get() == 1);
+      assert(b[1].get() == 2);
+      assert(b[2].get() == 3);
+    }
+    {
+      MoveOnly a[] = {1, 2, 3};
+      MoveOnly b[3];
+      ProxyRange proxyA{a};
+      ProxyRange proxyB{b};
+      std::ranges::move(std::begin(proxyA), std::end(proxyA), std::begin(proxyB));
       assert(b[0].get() == 1);
       assert(b[1].get() == 2);
       assert(b[2].get() == 3);

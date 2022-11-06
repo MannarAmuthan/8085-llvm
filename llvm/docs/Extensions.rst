@@ -377,7 +377,8 @@ this directive, all symbols are considered address-significant.
 
   .addrsig_sym sym
 
-This marks ``sym`` as address-significant.
+If ``sym`` is not otherwise referenced or defined anywhere else in the file,
+this directive is a no-op. Otherwise, mark ``sym`` as address-significant.
 
 ``SHT_LLVM_SYMPART`` Section (symbol partition specification)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -449,6 +450,18 @@ Example:
    .uleb128  .LBB0_1-.Lfunc_begin0        # BB_1 offset relative to the function entry
    .uleb128  .LBB_END0_1-.LBB0_1          # BB_1 size
    .byte     y                            # BB_1 metadata
+
+``SHT_LLVM_OFFLOADING`` Section (offloading data)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+This section stores the binary data used to perform offloading device linking
+and execution, creating a fat binary. This section is emitted during compilation
+of offloading languages such as OpenMP or CUDA. If the data is intended to be
+used by the device linker only, it should use the ``SHF_EXCLUDE`` flag so it is
+automatically stripped from the final executable or shared library.
+
+The binary data stored in this section conforms to a custom binary format used
+for storing offloading metadata. This format is effectively a string table
+containing metadata accompanied by a device image.
 
 CodeView-Dependent
 ------------------

@@ -208,8 +208,6 @@ private:
 
       if (!Elt)
         LV.markOverdefined(); // Unknown sort of constant.
-      else if (isa<UndefValue>(Elt))
-        ; // Undef values remain unknown.
       else
         LV.markConstant(Elt); // Constants are constant.
     }
@@ -341,6 +339,13 @@ public:
     return A->second.PredInfo->getPredicateInfoFor(I);
   }
 
+  const LoopInfo &getLoopInfo(Function &F) {
+    auto A = AnalysisResults.find(&F);
+    assert(A != AnalysisResults.end() && A->second.LI &&
+           "Need LoopInfo analysis results for function.");
+    return *A->second.LI;
+  }
+
   DomTreeUpdater getDTU(Function &F) {
     auto A = AnalysisResults.find(&F);
     assert(A != AnalysisResults.end() && "Need analysis results for function.");
@@ -356,8 +361,7 @@ public:
     // We only track the contents of scalar globals.
     if (GV->getValueType()->isSingleValueType()) {
       ValueLatticeElement &IV = TrackedGlobals[GV];
-      if (!isa<UndefValue>(GV->getInitializer()))
-        IV.markConstant(GV->getInitializer());
+      IV.markConstant(GV->getInitializer());
     }
   }
 
@@ -822,9 +826,6 @@ void SCCPInstVisitor::visitCastInst(CastInst &I) {
   if (Constant *OpC = getConstant(OpSt)) {
     // Fold the constant as we build.
     Constant *C = ConstantFoldCastOperand(I.getOpcode(), OpC, I.getType(), DL);
-    if (isa<UndefValue>(C))
-      return;
-    // Propagate constant value
     markConstant(&I, C);
   } else if (I.getDestTy()->isIntegerTy()) {
     auto &LV = getValueState(&I);
@@ -959,18 +960,14 @@ void SCCPInstVisitor::visitUnaryOperator(Instruction &I) {
   if (isOverdefined(IV))
     return (void)markOverdefined(&I);
 
-  if (isConstant(V0State)) {
-    Constant *C = ConstantExpr::get(I.getOpcode(), getConstant(V0State));
-
-    // op Y -> undef.
-    if (isa<UndefValue>(C))
-      return;
-    return (void)markConstant(IV, &I, C);
-  }
-
-  // If something is undef, wait for it to resolve.
-  if (!isOverdefined(V0State))
+  // If something is unknown/undef, wait for it to resolve.
+  if (V0State.isUnknownOrUndef())
     return;
+
+  if (isConstant(V0State))
+    if (Constant *C = ConstantFoldUnaryOpOperand(I.getOpcode(),
+                                                 getConstant(V0State), DL))
+      return (void)markConstant(IV, &I, C);
 
   markOverdefined(&I);
 }
@@ -999,9 +996,6 @@ void SCCPInstVisitor::visitBinaryOperator(Instruction &I) {
     Value *R = simplifyBinOp(I.getOpcode(), V1, V2, SimplifyQuery(DL));
     auto *C = dyn_cast_or_null<Constant>(R);
     if (C) {
-      // X op Y -> undef.
-      if (isa<UndefValue>(C))
-        return;
       // Conservatively assume that the result may be based on operands that may
       // be undef. Note that we use mergeInValue to combine the constant with
       // the existing lattice value for I, as different constants might be found
@@ -1048,10 +1042,8 @@ void SCCPInstVisitor::visitCmpInst(CmpInst &I) {
   auto V1State = getValueState(Op1);
   auto V2State = getValueState(Op2);
 
-  Constant *C = V1State.getCompare(I.getPredicate(), I.getType(), V2State);
+  Constant *C = V1State.getCompare(I.getPredicate(), I.getType(), V2State, DL);
   if (C) {
-    if (isa<UndefValue>(C))
-      return;
     ValueLatticeElement CV;
     CV.markConstant(C);
     mergeInValue(&I, CV);
@@ -1095,8 +1087,6 @@ void SCCPInstVisitor::visitGetElementPtrInst(GetElementPtrInst &I) {
   auto Indices = makeArrayRef(Operands.begin() + 1, Operands.end());
   Constant *C =
       ConstantExpr::getGetElementPtr(I.getSourceElementType(), Ptr, Indices);
-  if (isa<UndefValue>(C))
-    return;
   markConstant(&I, C);
 }
 
@@ -1174,11 +1164,8 @@ void SCCPInstVisitor::visitLoadInst(LoadInst &I) {
     }
 
     // Transform load from a constant into a constant if possible.
-    if (Constant *C = ConstantFoldLoadFromConstPtr(Ptr, I.getType(), DL)) {
-      if (isa<UndefValue>(C))
-        return;
+    if (Constant *C = ConstantFoldLoadFromConstPtr(Ptr, I.getType(), DL))
       return (void)markConstant(IV, &I, C);
-    }
   }
 
   // Fall back to metadata.
@@ -1208,6 +1195,8 @@ void SCCPInstVisitor::handleCallOverdefined(CallBase &CB) {
     for (const Use &A : CB.args()) {
       if (A.get()->getType()->isStructTy())
         return markOverdefined(&CB); // Can't handle struct args.
+      if (A.get()->getType()->isMetadataTy())
+        continue;                    // Carried in CB, not allowed in Operands.
       ValueLatticeElement State = getValueState(A);
 
       if (State.isUnknownOrUndef())
@@ -1223,12 +1212,8 @@ void SCCPInstVisitor::handleCallOverdefined(CallBase &CB) {
 
     // If we can constant fold this, mark the result of the call as a
     // constant.
-    if (Constant *C = ConstantFoldCall(&CB, F, Operands, &GetTLI(*F))) {
-      // call -> undef.
-      if (isa<UndefValue>(C))
-        return;
+    if (Constant *C = ConstantFoldCall(&CB, F, Operands, &GetTLI(*F)))
       return (void)markConstant(&CB, C);
-    }
   }
 
   // Fall back to metadata.
@@ -1544,6 +1529,10 @@ bool SCCPSolver::markBlockExecutable(BasicBlock *BB) {
 
 const PredicateBase *SCCPSolver::getPredicateInfoFor(Instruction *I) {
   return Visitor->getPredicateInfoFor(I);
+}
+
+const LoopInfo &SCCPSolver::getLoopInfo(Function &F) {
+  return Visitor->getLoopInfo(F);
 }
 
 DomTreeUpdater SCCPSolver::getDTU(Function &F) { return Visitor->getDTU(F); }

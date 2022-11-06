@@ -701,7 +701,8 @@ Optional<ValueLatticeElement> LazyValueInfoImpl::solveBlockValueNonLocal(
     // to overdefined.
     if (Result.isOverdefined()) {
       LLVM_DEBUG(dbgs() << " compute BB '" << BB->getName()
-                        << "' - overdefined because of pred (non local).\n");
+                        << "' - overdefined because of pred '"
+                        << Pred->getName() << "' (non local).\n");
       return Result;
     }
   }
@@ -921,7 +922,7 @@ Optional<ValueLatticeElement> LazyValueInfoImpl::solveBlockValueCast(
   if (!LHSRes)
     // More work to do before applying this transfer rule.
     return None;
-  const ConstantRange &LHSRange = LHSRes.getValue();
+  const ConstantRange &LHSRange = LHSRes.value();
 
   const unsigned ResultBitWidth = CI->getType()->getIntegerBitWidth();
 
@@ -946,8 +947,8 @@ Optional<ValueLatticeElement> LazyValueInfoImpl::solveBlockValueBinaryOpImpl(
     // More work to do before applying this transfer rule.
     return None;
 
-  const ConstantRange &LHSRange = LHSRes.getValue();
-  const ConstantRange &RHSRange = RHSRes.getValue();
+  const ConstantRange &LHSRange = LHSRes.value();
+  const ConstantRange &RHSRange = RHSRes.value();
   return ValueLatticeElement::getRange(OpFn(LHSRange, RHSRange));
 }
 
@@ -1859,9 +1860,27 @@ LazyValueInfo::Tristate LazyValueInfo::getPredicateAt(unsigned P, Value *LHS,
     return getPredicateAt(CmpInst::getSwappedPredicate(Pred), RHS, C, CxtI,
                           UseBlockValue);
 
-  // Got two non-Constant values. While we could handle them somewhat,
-  // by getting their constant ranges, and applying ConstantRange::icmp(),
-  // so far it did not appear to be profitable.
+  // Got two non-Constant values. Try to determine the comparison results based
+  // on the block values of the two operands, e.g. because they have
+  // non-overlapping ranges.
+  if (UseBlockValue) {
+    Module *M = CxtI->getModule();
+    ValueLatticeElement L =
+        getImpl(PImpl, AC, M).getValueInBlock(LHS, CxtI->getParent(), CxtI);
+    if (L.isOverdefined())
+      return LazyValueInfo::Unknown;
+
+    ValueLatticeElement R =
+        getImpl(PImpl, AC, M).getValueInBlock(RHS, CxtI->getParent(), CxtI);
+    Type *Ty = CmpInst::makeCmpResultType(LHS->getType());
+    if (Constant *Res = L.getCompare((CmpInst::Predicate)P, Ty, R,
+                                     M->getDataLayout())) {
+      if (Res->isNullValue())
+        return LazyValueInfo::False;
+      if (Res->isOneValue())
+        return LazyValueInfo::True;
+    }
+  }
   return LazyValueInfo::Unknown;
 }
 
@@ -1896,7 +1915,7 @@ void LazyValueInfoAnnotatedWriter::emitBasicBlockStartAnnot(
     const BasicBlock *BB, formatted_raw_ostream &OS) {
   // Find if there are latticevalues defined for arguments of the function.
   auto *F = BB->getParent();
-  for (auto &Arg : F->args()) {
+  for (const auto &Arg : F->args()) {
     ValueLatticeElement Result = LVIImpl->getValueInBlock(
         const_cast<Argument *>(&Arg), const_cast<BasicBlock *>(BB));
     if (Result.isUnknown())
@@ -1932,12 +1951,12 @@ void LazyValueInfoAnnotatedWriter::emitInstructionAnnot(
   printResult(ParentBB);
   // Print the LVI analysis results for the immediate successor blocks, that
   // are dominated by `ParentBB`.
-  for (auto *BBSucc : successors(ParentBB))
+  for (const auto *BBSucc : successors(ParentBB))
     if (DT.dominates(ParentBB, BBSucc))
       printResult(BBSucc);
 
   // Print LVI in blocks where `I` is used.
-  for (auto *U : I->users())
+  for (const auto *U : I->users())
     if (auto *UseI = dyn_cast<Instruction>(U))
       if (!isa<PHINode>(UseI) || DT.dominates(ParentBB, UseI->getParent()))
         printResult(UseI->getParent());

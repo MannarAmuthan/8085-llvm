@@ -18,6 +18,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Triple.h"
+#include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/StackSafetyAnalysis.h"
 #include "llvm/Analysis/ValueTracking.h"
@@ -180,11 +181,31 @@ static cl::opt<bool> ClWithTls(
              "platforms that support this"),
     cl::Hidden, cl::init(true));
 
-static cl::opt<bool>
-    ClRecordStackHistory("hwasan-record-stack-history",
-                         cl::desc("Record stack frames with tagged allocations "
-                                  "in a thread-local ring buffer"),
-                         cl::Hidden, cl::init(true));
+// Mode for selecting how to insert frame record info into the stack ring
+// buffer.
+enum RecordStackHistoryMode {
+  // Do not record frame record info.
+  none,
+
+  // Insert instructions into the prologue for storing into the stack ring
+  // buffer directly.
+  instr,
+
+  // Add a call to __hwasan_add_frame_record in the runtime.
+  libcall,
+};
+
+static cl::opt<RecordStackHistoryMode> ClRecordStackHistory(
+    "hwasan-record-stack-history",
+    cl::desc("Record stack frames with tagged allocations in a thread-local "
+             "ring buffer"),
+    cl::values(clEnumVal(none, "Do not record stack ring history"),
+               clEnumVal(instr, "Insert instructions into the prologue for "
+                                "storing into the stack ring buffer directly"),
+               clEnumVal(libcall, "Add a call to __hwasan_add_frame_record for "
+                                  "storing into the stack ring buffer")),
+    cl::Hidden, cl::init(instr));
+
 static cl::opt<bool>
     ClInstrumentMemIntrinsics("hwasan-instrument-mem-intrinsics",
                               cl::desc("instrument memory intrinsics"),
@@ -287,7 +308,6 @@ public:
   void getInterestingMemoryOperands(
       Instruction *I, SmallVectorImpl<InterestingMemoryOperand> &Interesting);
 
-  bool isInterestingAlloca(const AllocaInst &AI);
   void tagAlloca(IRBuilder<> &IRB, AllocaInst *AI, Value *Tag, size_t Size);
   Value *tagPointer(IRBuilder<> &IRB, Type *Ty, Value *PtrLong, Value *Tag);
   Value *untagPointer(IRBuilder<> &IRB, Value *PtrLong);
@@ -313,6 +333,7 @@ public:
 
   Value *getPC(IRBuilder<> &IRB);
   Value *getSP(IRBuilder<> &IRB);
+  Value *getFrameRecordInfo(IRBuilder<> &IRB);
 
   void instrumentPersonalityFunctions();
 
@@ -378,6 +399,7 @@ private:
 
   FunctionCallee HwasanTagMemoryFunc;
   FunctionCallee HwasanGenerateTagFunc;
+  FunctionCallee HwasanRecordFrameRecordFunc;
 
   Constant *ShadowGlobal;
 
@@ -401,9 +423,15 @@ PreservedAnalyses HWAddressSanitizerPass::run(Module &M,
   auto &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
   for (Function &F : M)
     Modified |= HWASan.sanitizeFunction(F, FAM);
-  if (Modified)
-    return PreservedAnalyses::none();
-  return PreservedAnalyses::all();
+  if (!Modified)
+    return PreservedAnalyses::all();
+
+  PreservedAnalyses PA = PreservedAnalyses::none();
+  // GlobalsAA is considered stateless and does not get invalidated unless
+  // explicitly invalidated; PreservedAnalyses::none() is not enough. Sanitizers
+  // make changes that require GlobalsAA to be invalidated.
+  PA.abandon<GlobalsAA>();
+  return PA;
 }
 void HWAddressSanitizerPass::printPipeline(
     raw_ostream &OS, function_ref<StringRef(StringRef)> MapClassName2PassName) {
@@ -469,12 +497,10 @@ void HWAddressSanitizer::createHwasanCtorComdat() {
       new GlobalVariable(M, Int8Arr0Ty, true, GlobalVariable::ExternalLinkage,
                          nullptr, "__start_hwasan_globals");
   Start->setVisibility(GlobalValue::HiddenVisibility);
-  Start->setDSOLocal(true);
   auto Stop =
       new GlobalVariable(M, Int8Arr0Ty, true, GlobalVariable::ExternalLinkage,
                          nullptr, "__stop_hwasan_globals");
   Stop->setVisibility(GlobalValue::HiddenVisibility);
-  Stop->setDSOLocal(true);
 
   // Null-terminated so actually 8 bytes, which are required in order to align
   // the note properly.
@@ -488,7 +514,6 @@ void HWAddressSanitizer::createHwasanCtorComdat() {
   Note->setSection(".note.hwasan.globals");
   Note->setComdat(NoteComdat);
   Note->setAlignment(Align(4));
-  Note->setDSOLocal(true);
 
   // The pointers in the note need to be relative so that the note ends up being
   // placed in rodata, which is the standard location for notes.
@@ -629,6 +654,9 @@ void HWAddressSanitizer::initializeCallbacks(Module &M) {
   HwasanGenerateTagFunc =
       M.getOrInsertFunction("__hwasan_generate_tag", Int8Ty);
 
+  HwasanRecordFrameRecordFunc = M.getOrInsertFunction(
+      "__hwasan_add_frame_record", IRB.getVoidTy(), Int64Ty);
+
   ShadowGlobal = M.getOrInsertGlobal("__hwasan_shadow",
                                      ArrayType::get(IRB.getInt8Ty(), 0));
 
@@ -683,7 +711,7 @@ Value *HWAddressSanitizer::getShadowNonTls(IRBuilder<> &IRB) {
 }
 
 bool HWAddressSanitizer::ignoreAccess(Instruction *Inst, Value *Ptr) {
-  // Do not instrument acesses from different address spaces; we cannot deal
+  // Do not instrument accesses from different address spaces; we cannot deal
   // with them.
   Type *PtrTy = cast<PointerType>(Ptr->getType()->getScalarType());
   if (PtrTy->getPointerAddressSpace() != 0)
@@ -1132,6 +1160,21 @@ Value *HWAddressSanitizer::getSP(IRBuilder<> &IRB) {
   return CachedSP;
 }
 
+Value *HWAddressSanitizer::getFrameRecordInfo(IRBuilder<> &IRB) {
+  // Prepare ring buffer data.
+  Value *PC = getPC(IRB);
+  Value *SP = getSP(IRB);
+
+  // Mix SP and PC.
+  // Assumptions:
+  // PC is 0x0000PPPPPPPPPPPP  (48 bits are meaningful, others are zero)
+  // SP is 0xsssssssssssSSSS0  (4 lower bits are zero)
+  // We only really need ~20 lower non-zero bits (SSSS), so we mix like this:
+  //       0xSSSSPPPPPPPPPPPP
+  SP = IRB.CreateShl(SP, 44);
+  return IRB.CreateOr(PC, SP);
+}
+
 void HWAddressSanitizer::emitPrologue(IRBuilder<> &IRB, bool WithFrameRecord) {
   if (!Mapping.InTls)
     ShadowBase = getShadowNonTls(IRB);
@@ -1141,50 +1184,67 @@ void HWAddressSanitizer::emitPrologue(IRBuilder<> &IRB, bool WithFrameRecord) {
   if (!WithFrameRecord && ShadowBase)
     return;
 
-  Value *SlotPtr = getHwasanThreadSlotPtr(IRB, IntptrTy);
-  assert(SlotPtr);
+  Value *SlotPtr = nullptr;
+  Value *ThreadLong = nullptr;
+  Value *ThreadLongMaybeUntagged = nullptr;
 
-  Value *ThreadLong = IRB.CreateLoad(IntptrTy, SlotPtr);
-  // Extract the address field from ThreadLong. Unnecessary on AArch64 with TBI.
-  Value *ThreadLongMaybeUntagged =
-      TargetTriple.isAArch64() ? ThreadLong : untagPointer(IRB, ThreadLong);
+  auto getThreadLongMaybeUntagged = [&]() {
+    if (!SlotPtr)
+      SlotPtr = getHwasanThreadSlotPtr(IRB, IntptrTy);
+    if (!ThreadLong)
+      ThreadLong = IRB.CreateLoad(IntptrTy, SlotPtr);
+    // Extract the address field from ThreadLong. Unnecessary on AArch64 with
+    // TBI.
+    return TargetTriple.isAArch64() ? ThreadLong
+                                    : untagPointer(IRB, ThreadLong);
+  };
 
   if (WithFrameRecord) {
-    StackBaseTag = IRB.CreateAShr(ThreadLong, 3);
+    switch (ClRecordStackHistory) {
+    case libcall: {
+      // Emit a runtime call into hwasan rather than emitting instructions for
+      // recording stack history.
+      Value *FrameRecordInfo = getFrameRecordInfo(IRB);
+      IRB.CreateCall(HwasanRecordFrameRecordFunc, {FrameRecordInfo});
+      break;
+    }
+    case instr: {
+      ThreadLongMaybeUntagged = getThreadLongMaybeUntagged();
 
-    // Prepare ring buffer data.
-    Value *PC = getPC(IRB);
-    Value *SP = getSP(IRB);
+      StackBaseTag = IRB.CreateAShr(ThreadLong, 3);
 
-    // Mix SP and PC.
-    // Assumptions:
-    // PC is 0x0000PPPPPPPPPPPP  (48 bits are meaningful, others are zero)
-    // SP is 0xsssssssssssSSSS0  (4 lower bits are zero)
-    // We only really need ~20 lower non-zero bits (SSSS), so we mix like this:
-    //       0xSSSSPPPPPPPPPPPP
-    SP = IRB.CreateShl(SP, 44);
+      // Store data to ring buffer.
+      Value *FrameRecordInfo = getFrameRecordInfo(IRB);
+      Value *RecordPtr = IRB.CreateIntToPtr(ThreadLongMaybeUntagged,
+                                            IntptrTy->getPointerTo(0));
+      IRB.CreateStore(FrameRecordInfo, RecordPtr);
 
-    // Store data to ring buffer.
-    Value *RecordPtr =
-        IRB.CreateIntToPtr(ThreadLongMaybeUntagged, IntptrTy->getPointerTo(0));
-    IRB.CreateStore(IRB.CreateOr(PC, SP), RecordPtr);
-
-    // Update the ring buffer. Top byte of ThreadLong defines the size of the
-    // buffer in pages, it must be a power of two, and the start of the buffer
-    // must be aligned by twice that much. Therefore wrap around of the ring
-    // buffer is simply Addr &= ~((ThreadLong >> 56) << 12).
-    // The use of AShr instead of LShr is due to
-    //   https://bugs.llvm.org/show_bug.cgi?id=39030
-    // Runtime library makes sure not to use the highest bit.
-    Value *WrapMask = IRB.CreateXor(
-        IRB.CreateShl(IRB.CreateAShr(ThreadLong, 56), 12, "", true, true),
-        ConstantInt::get(IntptrTy, (uint64_t)-1));
-    Value *ThreadLongNew = IRB.CreateAnd(
-        IRB.CreateAdd(ThreadLong, ConstantInt::get(IntptrTy, 8)), WrapMask);
-    IRB.CreateStore(ThreadLongNew, SlotPtr);
+      // Update the ring buffer. Top byte of ThreadLong defines the size of the
+      // buffer in pages, it must be a power of two, and the start of the buffer
+      // must be aligned by twice that much. Therefore wrap around of the ring
+      // buffer is simply Addr &= ~((ThreadLong >> 56) << 12).
+      // The use of AShr instead of LShr is due to
+      //   https://bugs.llvm.org/show_bug.cgi?id=39030
+      // Runtime library makes sure not to use the highest bit.
+      Value *WrapMask = IRB.CreateXor(
+          IRB.CreateShl(IRB.CreateAShr(ThreadLong, 56), 12, "", true, true),
+          ConstantInt::get(IntptrTy, (uint64_t)-1));
+      Value *ThreadLongNew = IRB.CreateAnd(
+          IRB.CreateAdd(ThreadLong, ConstantInt::get(IntptrTy, 8)), WrapMask);
+      IRB.CreateStore(ThreadLongNew, SlotPtr);
+      break;
+    }
+    case none: {
+      llvm_unreachable(
+          "A stack history recording mode should've been selected.");
+    }
+    }
   }
 
   if (!ShadowBase) {
+    if (!ThreadLongMaybeUntagged)
+      ThreadLongMaybeUntagged = getThreadLongMaybeUntagged();
+
     // Get shadow base address by aligning RecordPtr up.
     // Note: this is not correct if the pointer is already aligned.
     // Runtime library will make sure this never happens.
@@ -1333,24 +1393,6 @@ bool HWAddressSanitizer::instrumentStack(memtag::StackInfo &SInfo,
   return true;
 }
 
-bool HWAddressSanitizer::isInterestingAlloca(const AllocaInst &AI) {
-  return (AI.getAllocatedType()->isSized() &&
-          // FIXME: instrument dynamic allocas, too
-          AI.isStaticAlloca() &&
-          // alloca() may be called with 0 size, ignore it.
-          memtag::getAllocaSizeInBytes(AI) > 0 &&
-          // We are only interested in allocas not promotable to registers.
-          // Promotable allocas are common under -O0.
-          !isAllocaPromotable(&AI) &&
-          // inalloca allocas are not treated as static, and we don't want
-          // dynamic alloca instrumentation for them as well.
-          !AI.isUsedWithInAlloca() &&
-          // swifterror allocas are register promoted by ISel
-          !AI.isSwiftError()) &&
-         // safe allocas are not interesting
-         !(SSI && SSI->isSafe(AI));
-}
-
 bool HWAddressSanitizer::sanitizeFunction(Function &F,
                                           FunctionAnalysisManager &FAM) {
   if (&F == HwasanCtorFunction)
@@ -1365,8 +1407,7 @@ bool HWAddressSanitizer::sanitizeFunction(Function &F,
   SmallVector<MemIntrinsic *, 16> IntrinToInstrument;
   SmallVector<Instruction *, 8> LandingPadVec;
 
-  memtag::StackInfoBuilder SIB(
-      [this](const AllocaInst &AI) { return isInterestingAlloca(AI); });
+  memtag::StackInfoBuilder SIB(SSI);
   for (auto &Inst : instructions(F)) {
     if (InstrumentStack) {
       SIB.visit(Inst);
@@ -1408,7 +1449,7 @@ bool HWAddressSanitizer::sanitizeFunction(Function &F,
   Instruction *InsertPt = &*F.getEntryBlock().begin();
   IRBuilder<> EntryIRB(InsertPt);
   emitPrologue(EntryIRB,
-               /*WithFrameRecord*/ ClRecordStackHistory &&
+               /*WithFrameRecord*/ ClRecordStackHistory != none &&
                    Mapping.WithFrameRecord &&
                    !SInfo.AllocasToInstrument.empty());
 
@@ -1438,8 +1479,8 @@ bool HWAddressSanitizer::sanitizeFunction(Function &F,
     instrumentMemAccess(Operand);
 
   if (ClInstrumentMemIntrinsics && !IntrinToInstrument.empty()) {
-    for (auto Inst : IntrinToInstrument)
-      instrumentMemIntrinsic(cast<MemIntrinsic>(Inst));
+    for (auto *Inst : IntrinToInstrument)
+      instrumentMemIntrinsic(Inst);
   }
 
   ShadowBase = nullptr;

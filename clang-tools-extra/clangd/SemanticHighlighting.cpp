@@ -66,6 +66,23 @@ bool canHighlightName(DeclarationName Name) {
   llvm_unreachable("invalid name kind");
 }
 
+bool isUniqueDefinition(const NamedDecl *Decl) {
+  if (auto *Func = dyn_cast<FunctionDecl>(Decl))
+    return Func->isThisDeclarationADefinition();
+  if (auto *Klass = dyn_cast<CXXRecordDecl>(Decl))
+    return Klass->isThisDeclarationADefinition();
+  if (auto *Iface = dyn_cast<ObjCInterfaceDecl>(Decl))
+    return Iface->isThisDeclarationADefinition();
+  if (auto *Proto = dyn_cast<ObjCProtocolDecl>(Decl))
+    return Proto->isThisDeclarationADefinition();
+  if (auto *Var = dyn_cast<VarDecl>(Decl))
+    return Var->isThisDeclarationADefinition();
+  return isa<TemplateTypeParmDecl>(Decl) ||
+         isa<NonTypeTemplateParmDecl>(Decl) ||
+         isa<TemplateTemplateParmDecl>(Decl) || isa<ObjCCategoryDecl>(Decl) ||
+         isa<ObjCImplDecl>(Decl);
+}
+
 llvm::Optional<HighlightingKind> kindForType(const Type *TP,
                                              const HeuristicResolver *Resolver);
 llvm::Optional<HighlightingKind>
@@ -164,7 +181,7 @@ kindForType(const Type *TP, const HeuristicResolver *Resolver) {
 
 // Whether T is const in a loose sense - is a variable with this type readonly?
 bool isConst(QualType T) {
-  if (T.isNull() || T->isDependentType())
+  if (T.isNull())
     return false;
   T = T.getNonReferenceType();
   if (T.isConstQualified())
@@ -523,6 +540,8 @@ llvm::Optional<HighlightingModifier> scopeModifier(const Type *T) {
 /// e.g. highlights dependent names and 'auto' as the underlying type.
 class CollectExtraHighlightings
     : public RecursiveASTVisitor<CollectExtraHighlightings> {
+  using Base = RecursiveASTVisitor<CollectExtraHighlightings>;
+
 public:
   CollectExtraHighlightings(HighlightingsBuilder &H) : H(H) {}
 
@@ -530,6 +549,21 @@ public:
     highlightMutableReferenceArguments(E->getConstructor(),
                                        {E->getArgs(), E->getNumArgs()});
 
+    return true;
+  }
+
+  bool TraverseConstructorInitializer(CXXCtorInitializer *Init) {
+    if (Init->isMemberInitializer())
+      if (auto *Member = Init->getMember())
+        highlightMutableReferenceArgument(Member->getType(), Init->getInit());
+    return Base::TraverseConstructorInitializer(Init);
+  }
+
+  bool VisitPredefinedExpr(PredefinedExpr *E) {
+    H.addToken(E->getLocation(), HighlightingKind::LocalVariable)
+        .addModifier(HighlightingModifier::Static)
+        .addModifier(HighlightingModifier::Readonly)
+        .addModifier(HighlightingModifier::FunctionScope);
     return true;
   }
 
@@ -542,8 +576,8 @@ public:
     // FIXME: consider highlighting parameters of some other overloaded
     // operators as well
     llvm::ArrayRef<const Expr *> Args = {E->getArgs(), E->getNumArgs()};
-    if (const auto callOp = dyn_cast<CXXOperatorCallExpr>(E)) {
-      switch (callOp->getOperator()) {
+    if (auto *CallOp = dyn_cast<CXXOperatorCallExpr>(E)) {
+      switch (CallOp->getOperator()) {
       case OO_Call:
       case OO_Subscript:
         Args = Args.drop_front(); // Drop object parameter
@@ -559,6 +593,33 @@ public:
     return true;
   }
 
+  void highlightMutableReferenceArgument(QualType T, const Expr *Arg) {
+    if (!Arg)
+      return;
+
+    // Is this parameter passed by non-const reference?
+    // FIXME The condition T->idDependentType() could be relaxed a bit,
+    // e.g. std::vector<T>& is dependent but we would want to highlight it
+    if (!T->isLValueReferenceType() ||
+        T.getNonReferenceType().isConstQualified() || T->isDependentType()) {
+      return;
+    }
+
+    llvm::Optional<SourceLocation> Location;
+
+    // FIXME Add "unwrapping" for ArraySubscriptExpr and UnaryOperator,
+    //  e.g. highlight `a` in `a[i]`
+    // FIXME Handle dependent expression types
+    if (auto *DR = dyn_cast<DeclRefExpr>(Arg))
+      Location = DR->getLocation();
+    else if (auto *M = dyn_cast<MemberExpr>(Arg))
+      Location = M->getMemberLoc();
+
+    if (Location)
+      H.addExtraModifier(*Location,
+                         HighlightingModifier::UsedAsMutableReference);
+  }
+
   void
   highlightMutableReferenceArguments(const FunctionDecl *FD,
                                      llvm::ArrayRef<const Expr *const> Args) {
@@ -571,31 +632,7 @@ public:
       // highlighting modifier to the corresponding expression
       for (size_t I = 0;
            I < std::min(size_t(ProtoType->getNumParams()), Args.size()); ++I) {
-        auto T = ProtoType->getParamType(I);
-
-        // Is this parameter passed by non-const reference?
-        // FIXME The condition !T->idDependentType() could be relaxed a bit,
-        // e.g. std::vector<T>& is dependent but we would want to highlight it
-        if (T->isLValueReferenceType() &&
-            !T.getNonReferenceType().isConstQualified() &&
-            !T->isDependentType()) {
-          if (auto *Arg = Args[I]) {
-            llvm::Optional<SourceLocation> Location;
-
-            // FIXME Add "unwrapping" for ArraySubscriptExpr and UnaryOperator,
-            //  e.g. highlight `a` in `a[i]`
-            // FIXME Handle dependent expression types
-            if (auto *DR = dyn_cast<DeclRefExpr>(Arg)) {
-              Location = DR->getLocation();
-            } else if (auto *M = dyn_cast<MemberExpr>(Arg)) {
-              Location = M->getMemberLoc();
-            }
-
-            if (Location)
-              H.addExtraModifier(*Location,
-                                 HighlightingModifier::UsedAsMutableReference);
-          }
-        }
+        highlightMutableReferenceArgument(ProtoType->getParamType(I), Args[I]);
       }
     }
   }
@@ -608,6 +645,31 @@ public:
         Tok.addModifier(*Mod);
       if (isDefaultLibrary(L.getTypePtr()))
         Tok.addModifier(HighlightingModifier::DefaultLibrary);
+    }
+    return true;
+  }
+
+  bool VisitCXXDestructorDecl(CXXDestructorDecl *D) {
+    if (auto *TI = D->getNameInfo().getNamedTypeInfo()) {
+      SourceLocation Loc = TI->getTypeLoc().getBeginLoc();
+      H.addExtraModifier(Loc, HighlightingModifier::ConstructorOrDestructor);
+      H.addExtraModifier(Loc, HighlightingModifier::Declaration);
+      if (D->isThisDeclarationADefinition())
+        H.addExtraModifier(Loc, HighlightingModifier::Definition);
+    }
+    return true;
+  }
+
+  bool VisitCXXMemberCallExpr(CXXMemberCallExpr *CE) {
+    // getMethodDecl can return nullptr with member pointers, e.g.
+    // `(foo.*pointer_to_member_fun)(arg);`
+    if (isa_and_present<CXXDestructorDecl>(CE->getMethodDecl())) {
+      if (auto *ME = dyn_cast<MemberExpr>(CE->getCallee())) {
+        if (auto *TI = ME->getMemberNameInfo().getNamedTypeInfo()) {
+          H.addExtraModifier(TI->getTypeLoc().getBeginLoc(),
+                             HighlightingModifier::ConstructorOrDestructor);
+        }
+      }
     }
     return true;
   }
@@ -640,7 +702,7 @@ public:
   // We handle objective-C selectors specially, because one reference can
   // cover several non-contiguous tokens.
   void highlightObjCSelector(const ArrayRef<SourceLocation> &Locs, bool Decl,
-                             bool Class, bool DefaultLibrary) {
+                             bool Def, bool Class, bool DefaultLibrary) {
     HighlightingKind Kind =
         Class ? HighlightingKind::StaticMethod : HighlightingKind::Method;
     for (SourceLocation Part : Locs) {
@@ -648,6 +710,8 @@ public:
           H.addToken(Part, Kind).addModifier(HighlightingModifier::ClassScope);
       if (Decl)
         Tok.addModifier(HighlightingModifier::Declaration);
+      if (Def)
+        Tok.addModifier(HighlightingModifier::Definition);
       if (Class)
         Tok.addModifier(HighlightingModifier::Static);
       if (DefaultLibrary)
@@ -658,8 +722,9 @@ public:
   bool VisitObjCMethodDecl(ObjCMethodDecl *OMD) {
     llvm::SmallVector<SourceLocation> Locs;
     OMD->getSelectorLocs(Locs);
-    highlightObjCSelector(Locs, /*Decl=*/true, OMD->isClassMethod(),
-                          isDefaultLibrary(OMD));
+    highlightObjCSelector(Locs, /*Decl=*/true,
+                          OMD->isThisDeclarationADefinition(),
+                          OMD->isClassMethod(), isDefaultLibrary(OMD));
     return true;
   }
 
@@ -669,8 +734,8 @@ public:
     bool DefaultLibrary = false;
     if (ObjCMethodDecl *OMD = OME->getMethodDecl())
       DefaultLibrary = isDefaultLibrary(OMD);
-    highlightObjCSelector(Locs, /*Decl=*/false, OME->isClassMessage(),
-                          DefaultLibrary);
+    highlightObjCSelector(Locs, /*Decl=*/false, /*Def=*/false,
+                          OME->isClassMessage(), DefaultLibrary);
     return true;
   }
 
@@ -839,11 +904,17 @@ std::vector<HighlightingToken> getSemanticHighlightings(ParsedAST &AST) {
             Tok.addModifier(HighlightingModifier::DefaultLibrary);
           if (Decl->isDeprecated())
             Tok.addModifier(HighlightingModifier::Deprecated);
-          // Do not treat an UnresolvedUsingValueDecl as a declaration.
-          // It's more common to think of it as a reference to the
-          // underlying declaration.
-          if (R.IsDecl && !isa<UnresolvedUsingValueDecl>(Decl))
-            Tok.addModifier(HighlightingModifier::Declaration);
+          if (isa<CXXConstructorDecl>(Decl))
+            Tok.addModifier(HighlightingModifier::ConstructorOrDestructor);
+          if (R.IsDecl) {
+            // Do not treat an UnresolvedUsingValueDecl as a declaration.
+            // It's more common to think of it as a reference to the
+            // underlying declaration.
+            if (!isa<UnresolvedUsingValueDecl>(Decl))
+              Tok.addModifier(HighlightingModifier::Declaration);
+            if (isUniqueDefinition(Decl))
+              Tok.addModifier(HighlightingModifier::Definition);
+          }
         }
       },
       AST.getHeuristicResolver());
@@ -913,7 +984,11 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, HighlightingKind K) {
 llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, HighlightingModifier K) {
   switch (K) {
   case HighlightingModifier::Declaration:
-    return OS << "decl"; // abbrevation for common case
+    return OS << "decl"; // abbreviation for common case
+  case HighlightingModifier::Definition:
+    return OS << "def"; // abbrevation for common case
+  case HighlightingModifier::ConstructorOrDestructor:
+    return OS << "constrDestr";
   default:
     return OS << toSemanticTokenModifier(K);
   }
@@ -931,7 +1006,7 @@ bool operator<(const HighlightingToken &L, const HighlightingToken &R) {
 std::vector<SemanticToken>
 toSemanticTokens(llvm::ArrayRef<HighlightingToken> Tokens,
                  llvm::StringRef Code) {
-  assert(std::is_sorted(Tokens.begin(), Tokens.end()));
+  assert(llvm::is_sorted(Tokens));
   std::vector<SemanticToken> Result;
   // In case we split a HighlightingToken into multiple tokens (e.g. because it
   // was spanning multiple lines), this tracks the last one. This prevents
@@ -1045,6 +1120,8 @@ llvm::StringRef toSemanticTokenModifier(HighlightingModifier Modifier) {
   switch (Modifier) {
   case HighlightingModifier::Declaration:
     return "declaration";
+  case HighlightingModifier::Definition:
+    return "definition";
   case HighlightingModifier::Deprecated:
     return "deprecated";
   case HighlightingModifier::Readonly:
@@ -1063,6 +1140,8 @@ llvm::StringRef toSemanticTokenModifier(HighlightingModifier Modifier) {
     return "defaultLibrary";
   case HighlightingModifier::UsedAsMutableReference:
     return "usedAsMutableReference"; // nonstandard
+  case HighlightingModifier::ConstructorOrDestructor:
+    return "constructorOrDestructor"; // nonstandard
   case HighlightingModifier::FunctionScope:
     return "functionScope"; // nonstandard
   case HighlightingModifier::ClassScope:

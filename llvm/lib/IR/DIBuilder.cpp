@@ -84,7 +84,9 @@ void DIBuilder::finalize() {
   }
 
   if (!AllEnumTypes.empty())
-    CUNode->replaceEnumTypes(MDTuple::get(VMContext, AllEnumTypes));
+    CUNode->replaceEnumTypes(MDTuple::get(
+        VMContext, SmallVector<Metadata *, 16>(AllEnumTypes.begin(),
+                                               AllEnumTypes.end())));
 
   SmallVector<Metadata *, 16> RetainValues;
   // Declarations and definitions of the same type may be retained. Some
@@ -348,11 +350,11 @@ DIBuilder::createReferenceType(unsigned Tag, DIType *RTy, uint64_t SizeInBits,
 DIDerivedType *DIBuilder::createTypedef(DIType *Ty, StringRef Name,
                                         DIFile *File, unsigned LineNo,
                                         DIScope *Context, uint32_t AlignInBits,
+                                        DINode::DIFlags Flags,
                                         DINodeArray Annotations) {
   return DIDerivedType::get(VMContext, dwarf::DW_TAG_typedef, Name, File,
                             LineNo, getNonCompileUnitScope(Context), Ty, 0,
-                            AlignInBits, 0, None, DINode::FlagZero, nullptr,
-                            Annotations);
+                            AlignInBits, 0, None, Flags, nullptr, Annotations);
 }
 
 DIDerivedType *DIBuilder::createFriend(DIType *Ty, DIType *FriendTy) {
@@ -556,7 +558,7 @@ DICompositeType *DIBuilder::createEnumerationType(
       getNonCompileUnitScope(Scope), UnderlyingType, SizeInBits, AlignInBits, 0,
       IsScoped ? DINode::FlagEnumClass : DINode::FlagZero, Elements, 0, nullptr,
       nullptr, UniqueIdentifier);
-  AllEnumTypes.push_back(CTy);
+  AllEnumTypes.emplace_back(CTy);
   trackIfUnresolved(CTy);
   return CTy;
 }

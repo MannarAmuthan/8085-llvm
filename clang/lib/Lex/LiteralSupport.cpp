@@ -311,8 +311,9 @@ static unsigned ProcessCharEscape(const char *ThisTokBegin,
           << tok::r_brace;
     else if (!HadError) {
       Diag(Diags, Features, Loc, ThisTokBegin, EscapeBegin, ThisTokBuf,
-           diag::ext_delimited_escape_sequence)
-          << /*delimited*/ 0;
+           Features.CPlusPlus2b ? diag::warn_cxx2b_delimited_escape_sequence
+                                : diag::ext_delimited_escape_sequence)
+          << /*delimited*/ 0 << (Features.CPlusPlus ? 1 : 0);
     }
   }
 
@@ -544,7 +545,6 @@ static bool ProcessNamedUCNEscape(const char *ThisTokBegin,
            diag::err_delimited_escape_missing_brace)
           << StringRef(&ThisTokBuf[-1], 1);
     }
-    ThisTokBuf++;
     return false;
   }
   ThisTokBuf++;
@@ -641,8 +641,9 @@ static bool ProcessUCNEscape(const char *ThisTokBegin, const char *&ThisTokBuf,
 
   if ((IsDelimitedEscapeSequence || IsNamedEscapeSequence) && Diags)
     Diag(Diags, Features, Loc, ThisTokBegin, UcnBegin, ThisTokBuf,
-         diag::ext_delimited_escape_sequence)
-        << (IsNamedEscapeSequence ? 1 : 0);
+         Features.CPlusPlus2b ? diag::warn_cxx2b_delimited_escape_sequence
+                              : diag::ext_delimited_escape_sequence)
+        << (IsNamedEscapeSequence ? 1 : 0) << (Features.CPlusPlus ? 1 : 0);
 
   return true;
 }
@@ -764,13 +765,13 @@ static void EncodeUCNEscape(const char *ThisTokBegin, const char *&ThisTokBuf,
   switch (bytesToWrite) { // note: everything falls through.
   case 4:
     *--ResultBuf = (UTF8)((UcnVal | byteMark) & byteMask); UcnVal >>= 6;
-    LLVM_FALLTHROUGH;
+    [[fallthrough]];
   case 3:
     *--ResultBuf = (UTF8)((UcnVal | byteMark) & byteMask); UcnVal >>= 6;
-    LLVM_FALLTHROUGH;
+    [[fallthrough]];
   case 2:
     *--ResultBuf = (UTF8)((UcnVal | byteMark) & byteMask); UcnVal >>= 6;
-    LLVM_FALLTHROUGH;
+    [[fallthrough]];
   case 1:
     *--ResultBuf = (UTF8) (UcnVal | firstByteMark[bytesToWrite]);
   }
@@ -1035,7 +1036,7 @@ NumericLiteralParser::NumericLiteralParser(StringRef TokSpelling,
           break;
         }
       }
-      LLVM_FALLTHROUGH;
+      [[fallthrough]];
     case 'j':
     case 'J':
       if (isImaginary) break;   // Cannot be repeated.

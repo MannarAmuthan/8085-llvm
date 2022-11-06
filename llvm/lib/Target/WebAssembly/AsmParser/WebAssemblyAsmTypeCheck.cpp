@@ -74,9 +74,9 @@ bool WebAssemblyAsmTypeCheck::typeError(SMLoc ErrorLoc, const Twine &Msg) {
   // which are mostly not helpful.
   if (TypeErrorThisFunction)
     return true;
-  // If we're currently in unreachable code, we surpress errors as well.
+  // If we're currently in unreachable code, we suppress errors completely.
   if (Unreachable)
-    return true;
+    return false;
   TypeErrorThisFunction = true;
   dumpTypeStack("current stack: ");
   return Parser.Error(ErrorLoc, Msg);
@@ -87,15 +87,14 @@ bool WebAssemblyAsmTypeCheck::popType(SMLoc ErrorLoc,
   if (Stack.empty()) {
     return typeError(ErrorLoc,
                      EVT ? StringRef("empty stack while popping ") +
-                               WebAssembly::typeToString(EVT.getValue())
+                               WebAssembly::typeToString(EVT.value())
                          : StringRef("empty stack while popping value"));
   }
   auto PVT = Stack.pop_back_val();
-  if (EVT && EVT.getValue() != PVT) {
+  if (EVT && EVT.value() != PVT) {
     return typeError(
         ErrorLoc, StringRef("popped ") + WebAssembly::typeToString(PVT) +
-                                    ", expected " +
-                                    WebAssembly::typeToString(EVT.getValue()));
+                      ", expected " + WebAssembly::typeToString(EVT.value()));
   }
   return false;
 }
@@ -185,7 +184,7 @@ bool WebAssemblyAsmTypeCheck::getGlobal(SMLoc ErrorLoc, const MCInst &Inst,
     default:
       break;
     }
-    LLVM_FALLTHROUGH;
+    [[fallthrough]];
   default:
     return typeError(ErrorLoc, StringRef("symbol ") + WasmSym->getName() +
                                     " missing .globaltype");
