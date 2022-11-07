@@ -413,8 +413,8 @@ static void analyzeArguments(TargetLowering::CallLoweringInfo *CLI,
   ArrayRef<MCPhysReg> RegList8;
   ArrayRef<MCPhysReg> RegList16;
 
-    RegList8 = makeArrayRef(RegList8I8085, array_lengthof(RegList8I8085));
-    RegList16 = makeArrayRef(RegList16I8085, array_lengthof(RegList16I8085));
+    RegList8 = makeArrayRef(RegList8I8085, std::size(RegList8I8085));
+    RegList16 = makeArrayRef(RegList16I8085, std::size(RegList16I8085));
 
 
   unsigned NumArgs = Args.size();
@@ -506,8 +506,8 @@ static void analyzeReturnValues(const SmallVectorImpl<ArgT> &Args,
   ArrayRef<MCPhysReg> RegList8;
   ArrayRef<MCPhysReg> RegList16;
 
-    RegList8 = makeArrayRef(RegList8I8085, array_lengthof(RegList8I8085));
-    RegList16 = makeArrayRef(RegList16I8085, array_lengthof(RegList16I8085));
+    RegList8 = makeArrayRef(RegList8I8085, std::size(RegList8I8085));
+    RegList16 = makeArrayRef(RegList16I8085, std::size(RegList16I8085));
 
 
   // GCC-ABI says that the size is rounded up to the next even number,
@@ -745,8 +745,7 @@ SDValue I8085TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   InFlag = Chain.getValue(1);
 
   // Create the CALLSEQ_END node.
-  Chain = DAG.getCALLSEQ_END(Chain, DAG.getIntPtrConstant(NumBytes, DL, true),
-                             DAG.getIntPtrConstant(0, DL, true), InFlag, DL);
+  Chain = DAG.getCALLSEQ_END(Chain, NumBytes,0, InFlag, DL);
 
   if (!Ins.empty()) {
     InFlag = Chain.getValue(1);
