@@ -44,21 +44,16 @@ class I8085MachineFunctionInfo : public MachineFunctionInfo {
   /// FrameIndex for start of varargs area.
   int VarArgsFrameIndex;
 
-public:
-  I8085MachineFunctionInfo()
-      : HasSpills(false), HasAllocas(false), HasStackArgs(false),
-        IsInterruptHandler(false), IsSignalHandler(false),
-        CalleeSavedFrameSize(0), VarArgsFrameIndex(0) {}
-
-  explicit I8085MachineFunctionInfo(MachineFunction &MF)
+  public:
+  I8085MachineFunctionInfo(const Function &F, const TargetSubtargetInfo *STI)
       : HasSpills(false), HasAllocas(false), HasStackArgs(false),
         CalleeSavedFrameSize(0), VarArgsFrameIndex(0) {
-    unsigned CallConv = MF.getFunction().getCallingConv();
+    CallingConv::ID CallConv = F.getCallingConv();
 
-    this->IsInterruptHandler = CallConv == CallingConv::I8085_INTR ||
-                               MF.getFunction().hasFnAttribute("interrupt");
-    this->IsSignalHandler = CallConv == CallingConv::I8085_SIGNAL ||
-                            MF.getFunction().hasFnAttribute("signal");
+    this->IsInterruptHandler =
+        CallConv == CallingConv::I8085_INTR || F.hasFnAttribute("interrupt");
+    this->IsSignalHandler =
+        CallConv == CallingConv::I8085_SIGNAL || F.hasFnAttribute("signal");
   }
 
   bool getHasSpills() const { return HasSpills; }

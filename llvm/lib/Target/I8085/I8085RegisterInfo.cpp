@@ -88,7 +88,7 @@ I8085RegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC,
 /// Fold a frame offset shared between two add instructions into a single one.
 
 
-void I8085RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
+bool I8085RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
                                           int SPAdj, unsigned FIOperandNum,
                                           RegScavenger *RS) const {                                      
   assert(SPAdj == 0 && "Unexpected SPAdj value");
@@ -122,6 +122,8 @@ void I8085RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   MI.getOperand(FIOperandNum).ChangeToRegister(I8085::SP, false);
   assert(isUInt<6>(Offset) && "Offset is out of range");
   MI.getOperand(FIOperandNum + 1).ChangeToImmediate(Offset);
+
+  return false;
 }
 
 Register I8085RegisterInfo::getFrameRegister(const MachineFunction &MF) const {

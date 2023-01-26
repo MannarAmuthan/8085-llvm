@@ -27,7 +27,6 @@
 #include "mlir/IR/PatternMatch.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 namespace {
@@ -380,7 +379,7 @@ mlir::LogicalResult fir::ArrayCoorOp::verify() {
     } else {
       auto s = shapeTy.cast<fir::ShiftType>();
       shapeTyRank = s.getRank();
-      if (!getMemref().getType().isa<fir::BoxType>())
+      if (!getMemref().getType().isa<fir::BaseBoxType>())
         return emitOpError("shift can only be provided with fir.box memref");
     }
     if (arrDim && arrDim != shapeTyRank)
@@ -449,7 +448,7 @@ mlir::LogicalResult fir::ArrayLoadOp::verify() {
     } else {
       auto s = shapeTy.cast<fir::ShiftType>();
       shapeTyRank = s.getRank();
-      if (!getMemref().getType().isa<fir::BoxType>())
+      if (!getMemref().getType().isa<fir::BaseBoxType>())
         return emitOpError("shift can only be provided with fir.box memref");
     }
     if (arrDim && arrDim != shapeTyRank)
@@ -601,7 +600,27 @@ mlir::LogicalResult fir::ArrayModifyOp::verify() {
 // BoxAddrOp
 //===----------------------------------------------------------------------===//
 
-mlir::OpFoldResult fir::BoxAddrOp::fold(llvm::ArrayRef<mlir::Attribute> opnds) {
+void fir::BoxAddrOp::build(mlir::OpBuilder &builder,
+                           mlir::OperationState &result, mlir::Value val) {
+  mlir::Type type =
+      llvm::TypeSwitch<mlir::Type, mlir::Type>(val.getType())
+          .Case<fir::BoxType>([&](fir::BoxType ty) -> mlir::Type {
+            mlir::Type eleTy = ty.getEleTy();
+            if (fir::isa_ref_type(eleTy))
+              return eleTy;
+            return fir::ReferenceType::get(eleTy);
+          })
+          .Case<fir::BoxCharType>([&](fir::BoxCharType ty) -> mlir::Type {
+            return fir::ReferenceType::get(ty.getEleTy());
+          })
+          .Case<fir::BoxProcType>(
+              [&](fir::BoxProcType ty) { return ty.getEleTy(); })
+          .Default([&](const auto &) { return mlir::Type{}; });
+  assert(type && "bad val type");
+  build(builder, result, type, val);
+}
+
+mlir::OpFoldResult fir::BoxAddrOp::fold(FoldAdaptor adaptor) {
   if (auto *v = getVal().getDefiningOp()) {
     if (auto box = mlir::dyn_cast<fir::EmboxOp>(v)) {
       if (!box.getSlice()) // Fold only if not sliced
@@ -617,8 +636,7 @@ mlir::OpFoldResult fir::BoxAddrOp::fold(llvm::ArrayRef<mlir::Attribute> opnds) {
 // BoxCharLenOp
 //===----------------------------------------------------------------------===//
 
-mlir::OpFoldResult
-fir::BoxCharLenOp::fold(llvm::ArrayRef<mlir::Attribute> opnds) {
+mlir::OpFoldResult fir::BoxCharLenOp::fold(FoldAdaptor adaptor) {
   if (auto v = getVal().getDefiningOp()) {
     if (auto box = mlir::dyn_cast<fir::EmboxCharOp>(v))
       return box.getLen();
@@ -655,8 +673,18 @@ void fir::CallOp::print(mlir::OpAsmPrinter &p) {
   else
     p << getOperand(0);
   p << '(' << (*this)->getOperands().drop_front(isDirect ? 0 : 1) << ')';
-  p.printOptionalAttrDict((*this)->getAttrs(),
-                          {fir::CallOp::getCalleeAttrNameStr()});
+
+  // Print 'fastmath<...>' (if it has non-default value) before
+  // any other attributes.
+  mlir::arith::FastMathFlagsAttr fmfAttr = getFastmathAttr();
+  if (fmfAttr.getValue() != mlir::arith::FastMathFlags::none) {
+    p << ' ' << mlir::arith::FastMathFlagsAttr::getMnemonic();
+    p.printStrippedAttrOrType(fmfAttr);
+  }
+
+  p.printOptionalAttrDict(
+      (*this)->getAttrs(),
+      {fir::CallOp::getCalleeAttrNameStr(), getFastmathAttrName()});
   auto resultTypes{getResultTypes()};
   llvm::SmallVector<mlir::Type> argTypes(
       llvm::drop_begin(getOperandTypes(), isDirect ? 0 : 1));
@@ -678,8 +706,18 @@ mlir::ParseResult fir::CallOp::parse(mlir::OpAsmParser &parser,
       return mlir::failure();
 
   mlir::Type type;
-  if (parser.parseOperandList(operands, mlir::OpAsmParser::Delimiter::Paren) ||
-      parser.parseOptionalAttrDict(attrs) || parser.parseColon() ||
+  if (parser.parseOperandList(operands, mlir::OpAsmParser::Delimiter::Paren))
+    return mlir::failure();
+
+  // Parse 'fastmath<...>', if present.
+  mlir::arith::FastMathFlagsAttr fmfAttr;
+  llvm::StringRef fmfAttrName = getFastmathAttrName(result.name);
+  if (mlir::succeeded(parser.parseOptionalKeyword(fmfAttrName)))
+    if (parser.parseCustomAttributeWithFallback(fmfAttr, mlir::Type{},
+                                                fmfAttrName, attrs))
+      return mlir::failure();
+
+  if (parser.parseOptionalAttrDict(attrs) || parser.parseColon() ||
       parser.parseType(type))
     return mlir::failure();
 
@@ -866,7 +904,7 @@ void fir::ConvertOp::getCanonicalizationPatterns(
                  ForwardConstantConvertPattern>(context);
 }
 
-mlir::OpFoldResult fir::ConvertOp::fold(llvm::ArrayRef<mlir::Attribute> opnds) {
+mlir::OpFoldResult fir::ConvertOp::fold(FoldAdaptor adaptor) {
   if (getValue().getType() == getType())
     return getValue();
   if (matchPattern(getValue(), mlir::m_Op<fir::ConvertOp>())) {
@@ -918,7 +956,8 @@ mlir::LogicalResult fir::ConvertOp::verify() {
       (inType.isa<fir::BoxProcType>() && outType.isa<fir::BoxProcType>()) ||
       (fir::isa_complex(inType) && fir::isa_complex(outType)) ||
       (fir::isBoxedRecordType(inType) && fir::isPolymorphicType(outType)) ||
-      (fir::isPolymorphicType(inType) && fir::isPolymorphicType(outType)))
+      (fir::isPolymorphicType(inType) && fir::isPolymorphicType(outType)) ||
+      (fir::isPolymorphicType(inType) && outType.isa<BoxType>()))
     return mlir::success();
   return emitOpError("invalid type conversion");
 }
@@ -1063,23 +1102,22 @@ mlir::FunctionType fir::DispatchOp::getFunctionType() {
 // DispatchTableOp
 //===----------------------------------------------------------------------===//
 
-void fir::DispatchTableOp::appendTableEntry(mlir::Operation *op) {
-  assert(mlir::isa<fir::DTEntryOp>(*op) && "operation must be a DTEntryOp");
-  auto &block = getBlock();
-  block.getOperations().insert(block.end(), op);
-}
-
 mlir::ParseResult fir::DispatchTableOp::parse(mlir::OpAsmParser &parser,
                                               mlir::OperationState &result) {
   // Parse the name as a symbol reference attribute.
-  mlir::SymbolRefAttr nameAttr;
-  if (parser.parseAttribute(nameAttr, mlir::SymbolTable::getSymbolAttrName(),
-                            result.attributes))
+  mlir::StringAttr nameAttr;
+  if (parser.parseSymbolName(nameAttr, mlir::SymbolTable::getSymbolAttrName(),
+                             result.attributes))
     return mlir::failure();
 
-  // Convert the parsed name attr into a string attr.
-  result.attributes.set(mlir::SymbolTable::getSymbolAttrName(),
-                        nameAttr.getRootReference());
+  if (!failed(parser.parseOptionalKeyword(getExtendsKeyword()))) {
+    mlir::StringAttr parent;
+    if (parser.parseLParen() ||
+        parser.parseAttribute(parent, getParentAttrNameStr(),
+                              result.attributes) ||
+        parser.parseRParen())
+      return mlir::failure();
+  }
 
   // Parse the optional table body.
   mlir::Region *body = result.addRegion();
@@ -1093,11 +1131,11 @@ mlir::ParseResult fir::DispatchTableOp::parse(mlir::OpAsmParser &parser,
 }
 
 void fir::DispatchTableOp::print(mlir::OpAsmPrinter &p) {
-  auto tableName = getOperation()
-                       ->getAttrOfType<mlir::StringAttr>(
-                           mlir::SymbolTable::getSymbolAttrName())
-                       .getValue();
-  p << " @" << tableName;
+  p << ' ';
+  p.printSymbolName(getSymName());
+  if (getParent())
+    p << ' ' << getExtendsKeyword() << '('
+      << (*this)->getAttr(getParentAttrNameStr()) << ')';
 
   mlir::Region &body = getOperation()->getRegion(0);
   if (!body.empty()) {
@@ -1108,10 +1146,27 @@ void fir::DispatchTableOp::print(mlir::OpAsmPrinter &p) {
 }
 
 mlir::LogicalResult fir::DispatchTableOp::verify() {
+  if (getRegion().empty())
+    return mlir::success();
   for (auto &op : getBlock())
     if (!mlir::isa<fir::DTEntryOp, fir::FirEndOp>(op))
       return op.emitOpError("dispatch table must contain dt_entry");
   return mlir::success();
+}
+
+void fir::DispatchTableOp::build(mlir::OpBuilder &builder,
+                                 mlir::OperationState &result,
+                                 llvm::StringRef name, mlir::Type type,
+                                 llvm::StringRef parent,
+                                 llvm::ArrayRef<mlir::NamedAttribute> attrs) {
+  result.addRegion();
+  result.addAttribute(mlir::SymbolTable::getSymbolAttrName(),
+                      builder.getStringAttr(name));
+  if (!parent.empty())
+    result.addAttribute(getParentAttrNameStr(), builder.getStringAttr(parent));
+  // result.addAttribute(getSymbolAttrNameStr(),
+  //                     mlir::SymbolRefAttr::get(builder.getContext(), name));
+  result.addAttributes(attrs);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1145,8 +1200,8 @@ mlir::LogicalResult fir::EmboxOp::verify() {
     return emitOpError("shape must not be provided for a scalar");
   if (getSlice() && !isArray)
     return emitOpError("slice must not be provided for a scalar");
-  if (getTdesc() && !getResult().getType().isa<fir::ClassType>())
-    return emitOpError("tdesc must be used with fir.class result type");
+  if (getSourceBox() && !getResult().getType().isa<fir::ClassType>())
+    return emitOpError("source_box must be used with fir.class result type");
   return mlir::success();
 }
 
@@ -2266,7 +2321,8 @@ mlir::LogicalResult fir::ReboxOp::verify() {
     // the types is a character with dynamic length, the other type can be any
     // character type.
     const bool typeCanMismatch =
-        inputEleTy.isa<fir::RecordType>() ||
+        inputEleTy.isa<fir::RecordType>() || outEleTy.isa<mlir::NoneType>() ||
+        (inputEleTy.isa<mlir::NoneType>() && outEleTy.isa<fir::RecordType>()) ||
         (getSlice() && inputEleTy.isa<fir::CharacterType>()) ||
         areCompatibleCharacterTypes(inputEleTy, outEleTy);
     if (!typeCanMismatch)
@@ -2493,11 +2549,11 @@ getMutableSuccessorOperands(unsigned pos, mlir::MutableOperandRange operands,
       mlir::MutableOperandRange::OperandSegment(pos, targetOffsetAttr));
 }
 
-llvm::Optional<mlir::OperandRange> fir::SelectOp::getCompareOperands(unsigned) {
+std::optional<mlir::OperandRange> fir::SelectOp::getCompareOperands(unsigned) {
   return {};
 }
 
-llvm::Optional<llvm::ArrayRef<mlir::Value>>
+std::optional<llvm::ArrayRef<mlir::Value>>
 fir::SelectOp::getCompareOperands(llvm::ArrayRef<mlir::Value>, unsigned) {
   return {};
 }
@@ -2507,7 +2563,7 @@ mlir::SuccessorOperands fir::SelectOp::getSuccessorOperands(unsigned oper) {
       oper, getTargetArgsMutable(), getTargetOffsetAttr()));
 }
 
-llvm::Optional<llvm::ArrayRef<mlir::Value>>
+std::optional<llvm::ArrayRef<mlir::Value>>
 fir::SelectOp::getSuccessorOperands(llvm::ArrayRef<mlir::Value> operands,
                                     unsigned oper) {
   auto a =
@@ -2517,7 +2573,7 @@ fir::SelectOp::getSuccessorOperands(llvm::ArrayRef<mlir::Value> operands,
   return {getSubOperands(oper, getSubOperands(2, operands, segments), a)};
 }
 
-llvm::Optional<mlir::ValueRange>
+std::optional<mlir::ValueRange>
 fir::SelectOp::getSuccessorOperands(mlir::ValueRange operands, unsigned oper) {
   auto a =
       (*this)->getAttrOfType<mlir::DenseI32ArrayAttr>(getTargetOffsetAttr());
@@ -2536,14 +2592,14 @@ unsigned fir::SelectOp::targetOffsetSize() {
 // SelectCaseOp
 //===----------------------------------------------------------------------===//
 
-llvm::Optional<mlir::OperandRange>
+std::optional<mlir::OperandRange>
 fir::SelectCaseOp::getCompareOperands(unsigned cond) {
   auto a =
       (*this)->getAttrOfType<mlir::DenseI32ArrayAttr>(getCompareOffsetAttr());
   return {getSubOperands(cond, getCompareArgs(), a)};
 }
 
-llvm::Optional<llvm::ArrayRef<mlir::Value>>
+std::optional<llvm::ArrayRef<mlir::Value>>
 fir::SelectCaseOp::getCompareOperands(llvm::ArrayRef<mlir::Value> operands,
                                       unsigned cond) {
   auto a =
@@ -2553,7 +2609,7 @@ fir::SelectCaseOp::getCompareOperands(llvm::ArrayRef<mlir::Value> operands,
   return {getSubOperands(cond, getSubOperands(1, operands, segments), a)};
 }
 
-llvm::Optional<mlir::ValueRange>
+std::optional<mlir::ValueRange>
 fir::SelectCaseOp::getCompareOperands(mlir::ValueRange operands,
                                       unsigned cond) {
   auto a =
@@ -2568,7 +2624,7 @@ mlir::SuccessorOperands fir::SelectCaseOp::getSuccessorOperands(unsigned oper) {
       oper, getTargetArgsMutable(), getTargetOffsetAttr()));
 }
 
-llvm::Optional<llvm::ArrayRef<mlir::Value>>
+std::optional<llvm::ArrayRef<mlir::Value>>
 fir::SelectCaseOp::getSuccessorOperands(llvm::ArrayRef<mlir::Value> operands,
                                         unsigned oper) {
   auto a =
@@ -2578,7 +2634,7 @@ fir::SelectCaseOp::getSuccessorOperands(llvm::ArrayRef<mlir::Value> operands,
   return {getSubOperands(oper, getSubOperands(2, operands, segments), a)};
 }
 
-llvm::Optional<mlir::ValueRange>
+std::optional<mlir::ValueRange>
 fir::SelectCaseOp::getSuccessorOperands(mlir::ValueRange operands,
                                         unsigned oper) {
   auto a =
@@ -2828,12 +2884,12 @@ void fir::SelectRankOp::print(mlir::OpAsmPrinter &p) {
   printIntegralSwitchTerminator(*this, p);
 }
 
-llvm::Optional<mlir::OperandRange>
+std::optional<mlir::OperandRange>
 fir::SelectRankOp::getCompareOperands(unsigned) {
   return {};
 }
 
-llvm::Optional<llvm::ArrayRef<mlir::Value>>
+std::optional<llvm::ArrayRef<mlir::Value>>
 fir::SelectRankOp::getCompareOperands(llvm::ArrayRef<mlir::Value>, unsigned) {
   return {};
 }
@@ -2843,7 +2899,7 @@ mlir::SuccessorOperands fir::SelectRankOp::getSuccessorOperands(unsigned oper) {
       oper, getTargetArgsMutable(), getTargetOffsetAttr()));
 }
 
-llvm::Optional<llvm::ArrayRef<mlir::Value>>
+std::optional<llvm::ArrayRef<mlir::Value>>
 fir::SelectRankOp::getSuccessorOperands(llvm::ArrayRef<mlir::Value> operands,
                                         unsigned oper) {
   auto a =
@@ -2853,7 +2909,7 @@ fir::SelectRankOp::getSuccessorOperands(llvm::ArrayRef<mlir::Value> operands,
   return {getSubOperands(oper, getSubOperands(2, operands, segments), a)};
 }
 
-llvm::Optional<mlir::ValueRange>
+std::optional<mlir::ValueRange>
 fir::SelectRankOp::getSuccessorOperands(mlir::ValueRange operands,
                                         unsigned oper) {
   auto a =
@@ -2873,12 +2929,12 @@ unsigned fir::SelectRankOp::targetOffsetSize() {
 // SelectTypeOp
 //===----------------------------------------------------------------------===//
 
-llvm::Optional<mlir::OperandRange>
+std::optional<mlir::OperandRange>
 fir::SelectTypeOp::getCompareOperands(unsigned) {
   return {};
 }
 
-llvm::Optional<llvm::ArrayRef<mlir::Value>>
+std::optional<llvm::ArrayRef<mlir::Value>>
 fir::SelectTypeOp::getCompareOperands(llvm::ArrayRef<mlir::Value>, unsigned) {
   return {};
 }
@@ -2888,8 +2944,18 @@ mlir::SuccessorOperands fir::SelectTypeOp::getSuccessorOperands(unsigned oper) {
       oper, getTargetArgsMutable(), getTargetOffsetAttr()));
 }
 
-llvm::Optional<llvm::ArrayRef<mlir::Value>>
+std::optional<llvm::ArrayRef<mlir::Value>>
 fir::SelectTypeOp::getSuccessorOperands(llvm::ArrayRef<mlir::Value> operands,
+                                        unsigned oper) {
+  auto a =
+      (*this)->getAttrOfType<mlir::DenseI32ArrayAttr>(getTargetOffsetAttr());
+  auto segments = (*this)->getAttrOfType<mlir::DenseI32ArrayAttr>(
+      getOperandSegmentSizeAttr());
+  return {getSubOperands(oper, getSubOperands(2, operands, segments), a)};
+}
+
+std::optional<mlir::ValueRange>
+fir::SelectTypeOp::getSuccessorOperands(mlir::ValueRange operands,
                                         unsigned oper) {
   auto a =
       (*this)->getAttrOfType<mlir::DenseI32ArrayAttr>(getTargetOffsetAttr());
@@ -2975,8 +3041,11 @@ mlir::LogicalResult fir::SelectTypeOp::verify() {
   if (auto boxType = getSelector().getType().dyn_cast<fir::BoxType>())
     if (!boxType.getEleTy().isa<mlir::NoneType>())
       return emitOpError("selector must be polymorphic");
-  auto cases =
-      getOperation()->getAttrOfType<mlir::ArrayAttr>(getCasesAttr()).getValue();
+  auto typeGuardAttr = getCases();
+  for (unsigned idx = 0; idx < typeGuardAttr.size(); ++idx)
+    if (typeGuardAttr[idx].isa<mlir::UnitAttr>() &&
+        idx != typeGuardAttr.size() - 1)
+      return emitOpError("default must be the last attribute");
   auto count = getNumDest();
   if (count == 0)
     return emitOpError("must have at least one successor");
@@ -2984,10 +3053,10 @@ mlir::LogicalResult fir::SelectTypeOp::verify() {
     return emitOpError("number of conditions and successors don't match");
   if (targetOffsetSize() != count)
     return emitOpError("incorrect number of successor operand groups");
-  for (decltype(count) i = 0; i != count; ++i) {
-    auto &attr = cases[i];
-    if (!(attr.isa<fir::ExactTypeAttr>() || attr.isa<fir::SubclassAttr>() ||
-          attr.isa<mlir::UnitAttr>()))
+  for (unsigned i = 0; i != count; ++i) {
+    if (!(typeGuardAttr[i].isa<fir::ExactTypeAttr>() ||
+          typeGuardAttr[i].isa<fir::SubclassAttr>() ||
+          typeGuardAttr[i].isa<mlir::UnitAttr>()))
       return emitOpError("invalid type-case alternative");
   }
   return mlir::success();
@@ -3036,6 +3105,12 @@ mlir::LogicalResult fir::ShapeOp::verify() {
   if (shapeTy.getRank() != size)
     return emitOpError("shape type rank mismatch");
   return mlir::success();
+}
+
+void fir::ShapeOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
+                         mlir::ValueRange extents) {
+  auto type = fir::ShapeType::get(builder.getContext(), extents.size());
+  build(builder, result, type, extents);
 }
 
 //===----------------------------------------------------------------------===//
@@ -3170,7 +3245,7 @@ mkNamedIntegerAttr(mlir::OpBuilder &builder, llvm::StringRef name, int64_t v) {
 void fir::StringLitOp::build(mlir::OpBuilder &builder,
                              mlir::OperationState &result,
                              fir::CharacterType inType, llvm::StringRef val,
-                             llvm::Optional<int64_t> len) {
+                             std::optional<int64_t> len) {
   auto valAttr = builder.getNamedAttr(value(), builder.getStringAttr(val));
   int64_t length = len ? *len : inType.getLen();
   auto lenAttr = mkNamedIntegerAttr(builder, size(), length);
@@ -3192,7 +3267,7 @@ void fir::StringLitOp::build(mlir::OpBuilder &builder,
                              mlir::OperationState &result,
                              fir::CharacterType inType,
                              llvm::ArrayRef<char> vlist,
-                             llvm::Optional<std::int64_t> len) {
+                             std::optional<std::int64_t> len) {
   auto valAttr =
       builder.getNamedAttr(xlist(), convertToArrayAttr(builder, vlist));
   std::int64_t length = len ? *len : inType.getLen();
@@ -3205,7 +3280,7 @@ void fir::StringLitOp::build(mlir::OpBuilder &builder,
                              mlir::OperationState &result,
                              fir::CharacterType inType,
                              llvm::ArrayRef<char16_t> vlist,
-                             llvm::Optional<std::int64_t> len) {
+                             std::optional<std::int64_t> len) {
   auto valAttr =
       builder.getNamedAttr(xlist(), convertToArrayAttr(builder, vlist));
   std::int64_t length = len ? *len : inType.getLen();
@@ -3218,7 +3293,7 @@ void fir::StringLitOp::build(mlir::OpBuilder &builder,
                              mlir::OperationState &result,
                              fir::CharacterType inType,
                              llvm::ArrayRef<char32_t> vlist,
-                             llvm::Optional<std::int64_t> len) {
+                             std::optional<std::int64_t> len) {
   auto valAttr =
       builder.getNamedAttr(xlist(), convertToArrayAttr(builder, vlist));
   std::int64_t length = len ? *len : inType.getLen();
@@ -3304,7 +3379,7 @@ mlir::LogicalResult fir::UnboxProcOp::verify() {
 
 void fir::IfOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
                       mlir::Value cond, bool withElseRegion) {
-  build(builder, result, llvm::None, cond, withElseRegion);
+  build(builder, result, std::nullopt, cond, withElseRegion);
 }
 
 void fir::IfOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
@@ -3465,8 +3540,48 @@ bool fir::hasHostAssociationArgument(mlir::func::FuncOp func) {
   return false;
 }
 
-bool fir::valueHasFirAttribute(mlir::Value value,
-                               llvm::StringRef attributeName) {
+// Test if value's definition has the specified set of
+// attributeNames. The value's definition is one of the operations
+// that are able to carry the Fortran variable attributes, e.g.
+// fir.alloca or fir.allocmem. Function arguments may also represent
+// value definitions and carry relevant attributes.
+//
+// If it is not possible to reach the limited set of definition
+// entities from the given value, then the function will return
+// std::nullopt. Otherwise, the definition is known and the return
+// value is computed as:
+//   * if checkAny is true, then the function will return true
+//     iff any of the attributeNames attributes is set on the definition.
+//   * if checkAny is false, then the function will return true
+//     iff all of the attributeNames attributes are set on the definition.
+static std::optional<bool>
+valueCheckFirAttributes(mlir::Value value,
+                        llvm::ArrayRef<llvm::StringRef> attributeNames,
+                        bool checkAny) {
+  auto testAttributeSets = [&](llvm::ArrayRef<mlir::NamedAttribute> setAttrs,
+                               llvm::ArrayRef<llvm::StringRef> checkAttrs) {
+    if (checkAny) {
+      // Return true iff any of checkAttrs attributes is present
+      // in setAttrs set.
+      for (llvm::StringRef checkAttrName : checkAttrs)
+        if (llvm::any_of(setAttrs, [&](mlir::NamedAttribute setAttr) {
+              return setAttr.getName() == checkAttrName;
+            }))
+          return true;
+
+      return false;
+    }
+
+    // Return true iff all attributes from checkAttrs are present
+    // in setAttrs set.
+    for (mlir::StringRef checkAttrName : checkAttrs)
+      if (llvm::none_of(setAttrs, [&](mlir::NamedAttribute setAttr) {
+            return setAttr.getName() == checkAttrName;
+          }))
+        return false;
+
+    return true;
+  };
   // If this is a fir.box that was loaded, the fir attributes will be on the
   // related fir.ref<fir.box> creation.
   if (value.getType().isa<fir::BoxType>())
@@ -3478,32 +3593,50 @@ bool fir::valueHasFirAttribute(mlir::Value value,
     if (blockArg.getOwner() && blockArg.getOwner()->isEntryBlock())
       if (auto funcOp = mlir::dyn_cast<mlir::func::FuncOp>(
               blockArg.getOwner()->getParentOp()))
-        if (funcOp.getArgAttr(blockArg.getArgNumber(), attributeName))
-          return true;
-    return false;
+        return testAttributeSets(
+            mlir::cast<mlir::FunctionOpInterface>(*funcOp).getArgAttrs(
+                blockArg.getArgNumber()),
+            attributeNames);
+
+    // If it is not a function argument, the attributes are unknown.
+    return std::nullopt;
   }
 
   if (auto definingOp = value.getDefiningOp()) {
     // If this is an allocated value, look at the allocation attributes.
     if (mlir::isa<fir::AllocMemOp>(definingOp) ||
-        mlir::isa<AllocaOp>(definingOp))
-      return definingOp->hasAttr(attributeName);
+        mlir::isa<fir::AllocaOp>(definingOp))
+      return testAttributeSets(definingOp->getAttrs(), attributeNames);
     // If this is an imported global, look at AddrOfOp and GlobalOp attributes.
     // Both operations are looked at because use/host associated variable (the
     // AddrOfOp) can have ASYNCHRONOUS/VOLATILE attributes even if the ultimate
     // entity (the globalOp) does not have them.
     if (auto addressOfOp = mlir::dyn_cast<fir::AddrOfOp>(definingOp)) {
-      if (addressOfOp->hasAttr(attributeName))
+      if (testAttributeSets(addressOfOp->getAttrs(), attributeNames))
         return true;
       if (auto module = definingOp->getParentOfType<mlir::ModuleOp>())
         if (auto globalOp =
                 module.lookupSymbol<fir::GlobalOp>(addressOfOp.getSymbol()))
-          return globalOp->hasAttr(attributeName);
+          return testAttributeSets(globalOp->getAttrs(), attributeNames);
     }
   }
   // TODO: Construct associated entities attributes. Decide where the fir
   // attributes must be placed/looked for in this case.
-  return false;
+  return std::nullopt;
+}
+
+bool fir::valueMayHaveFirAttributes(
+    mlir::Value value, llvm::ArrayRef<llvm::StringRef> attributeNames) {
+  std::optional<bool> mayHaveAttr =
+      valueCheckFirAttributes(value, attributeNames, /*checkAny=*/true);
+  return mayHaveAttr.value_or(true);
+}
+
+bool fir::valueHasFirAttribute(mlir::Value value,
+                               llvm::StringRef attributeName) {
+  std::optional<bool> mayHaveAttr =
+      valueCheckFirAttributes(value, {attributeName}, /*checkAny=*/false);
+  return mayHaveAttr.value_or(false);
 }
 
 bool fir::anyFuncArgsHaveAttr(mlir::func::FuncOp func, llvm::StringRef attr) {
@@ -3555,6 +3688,12 @@ mlir::Type fir::applyPathToType(mlir::Type eleTy, mlir::ValueRange path) {
                 .Default([&](const auto &) { return mlir::Type{}; });
   }
   return eleTy;
+}
+
+mlir::LogicalResult fir::DeclareOp::verify() {
+  auto fortranVar =
+      mlir::cast<fir::FortranVariableOpInterface>(this->getOperation());
+  return fortranVar.verifyDeclareLikeOpImpl(getMemref());
 }
 
 // Tablegen operators

@@ -754,6 +754,13 @@ RecurrenceDescriptor::isConditionalRdxPattern(RecurKind Kind, Instruction *I) {
   if (m_FMul(m_Value(Op1), m_Value(Op2)).match(I1) && (I1->isFast()))
     return InstDesc(Kind == RecurKind::FMul, SI);
 
+  if ((m_Add(m_Value(Op1), m_Value(Op2)).match(I1) ||
+       m_Sub(m_Value(Op1), m_Value(Op2)).match(I1)))
+    return InstDesc(Kind == RecurKind::Add, SI);
+
+  if (m_Mul(m_Value(Op1), m_Value(Op2)).match(I1))
+    return InstDesc(Kind == RecurKind::Mul, SI);
+
   return InstDesc(false, I);
 }
 
@@ -787,7 +794,8 @@ RecurrenceDescriptor::isRecurrenceInstr(Loop *L, PHINode *OrigPhi,
     return InstDesc(Kind == RecurKind::FAdd, I,
                     I->hasAllowReassoc() ? nullptr : I);
   case Instruction::Select:
-    if (Kind == RecurKind::FAdd || Kind == RecurKind::FMul)
+    if (Kind == RecurKind::FAdd || Kind == RecurKind::FMul ||
+        Kind == RecurKind::Add || Kind == RecurKind::Mul)
       return isConditionalRdxPattern(Kind, I);
     [[fallthrough]];
   case Instruction::FCmp:
@@ -943,7 +951,7 @@ bool RecurrenceDescriptor::isFixedOrderRecurrence(
     return false;
 
   // Get the previous value. The previous value comes from the latch edge while
-  // the initial value comes form the preheader edge.
+  // the initial value comes from the preheader edge.
   auto *Previous = dyn_cast<Instruction>(Phi->getIncomingValueForBlock(Latch));
 
   // If Previous is a phi in the header, go through incoming values from the
@@ -1585,7 +1593,7 @@ bool InductionDescriptor::isInductionPHI(
   if (TySize.isZero() || TySize.isScalable())
     return false;
 
-  int64_t Size = static_cast<int64_t>(TySize.getFixedSize());
+  int64_t Size = static_cast<int64_t>(TySize.getFixedValue());
   int64_t CVSize = CV->getSExtValue();
   if (CVSize % Size)
     return false;

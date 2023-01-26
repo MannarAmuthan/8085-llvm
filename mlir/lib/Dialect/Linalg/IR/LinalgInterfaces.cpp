@@ -36,6 +36,11 @@ bool linalg::detail::canOpOperandsBeDroppedImpl(
       continue;
     indexingMaps.push_back(linalgOp.getMatchingIndexingMap(&opOperand));
   }
+  if (indexingMaps.empty()) {
+    // If there are no indexing maps, the operand can only be dropped
+    // if the op has no loops.
+    return linalgOp.getNumLoops() == 0;
+  }
   return inversePermutation(concatAffineMaps(indexingMaps)) != AffineMap();
 }
 
@@ -321,7 +326,7 @@ static MatchConvolutionResult isConvolutionInterfaceImpl(Operation *op) {
     if (inputExprWalker.unConvolvedDims.count(outputDim) &&
         !filterDims.count(outputDim)) {
       // Batch dimension.
-      if (iteratorTypes[outputDim] != getParallelIteratorTypeName())
+      if (iteratorTypes[outputDim] != utils::IteratorType::parallel)
         return MatchConvolutionResult::OutputDimsNotParallel;
       allLoopDims.insert(outputDim);
       continue;
@@ -329,7 +334,7 @@ static MatchConvolutionResult isConvolutionInterfaceImpl(Operation *op) {
     if (inputExprWalker.convolvedDims.count(outputDim) &&
         !filterDims.count(outputDim)) {
       // Output image Loop dimension.
-      if (iteratorTypes[outputDim] != getParallelIteratorTypeName())
+      if (iteratorTypes[outputDim] != utils::IteratorType::parallel)
         return MatchConvolutionResult::OutputDimsNotParallel;
       allLoopDims.insert(outputDim);
       continue;
@@ -338,7 +343,7 @@ static MatchConvolutionResult isConvolutionInterfaceImpl(Operation *op) {
         !inputExprWalker.unConvolvedDims.count(outputDim) &&
         filterDims.count(outputDim)) {
       // Output channel dimension.
-      if (iteratorTypes[outputDim] != getParallelIteratorTypeName())
+      if (iteratorTypes[outputDim] != utils::IteratorType::parallel)
         return MatchConvolutionResult::OutputDimsNotParallel;
       allLoopDims.insert(outputDim);
       continue;
@@ -346,7 +351,7 @@ static MatchConvolutionResult isConvolutionInterfaceImpl(Operation *op) {
     if (inputExprWalker.unConvolvedDims.count(outputDim) &&
         filterDims.count(outputDim)) {
       // Depth multiplier.
-      if (iteratorTypes[outputDim] != getParallelIteratorTypeName())
+      if (iteratorTypes[outputDim] != utils::IteratorType::parallel)
         return MatchConvolutionResult::OutputDimsNotParallel;
       allLoopDims.insert(outputDim);
       continue;
@@ -364,7 +369,7 @@ static MatchConvolutionResult isConvolutionInterfaceImpl(Operation *op) {
     if (inputExprWalker.convolvedDims.count(filterDim) &&
         !outputDims.count(filterDim)) {
       // Filter loop dimension.
-      if (iteratorTypes[filterDim] != getReductionIteratorTypeName())
+      if (iteratorTypes[filterDim] != utils::IteratorType::reduction)
         return MatchConvolutionResult::NonOutputDimNotReduction;
       if (allLoopDims.count(filterDim))
         return MatchConvolutionResult::NonConvolutionLoop;
@@ -374,7 +379,7 @@ static MatchConvolutionResult isConvolutionInterfaceImpl(Operation *op) {
     if (inputExprWalker.unConvolvedDims.count(filterDim) &&
         !outputDims.count(filterDim)) {
       // Input channel dimension.
-      if (iteratorTypes[filterDim] != getReductionIteratorTypeName())
+      if (iteratorTypes[filterDim] != utils::IteratorType::reduction)
         return MatchConvolutionResult::NonOutputDimNotReduction;
       if (allLoopDims.count(filterDim))
         return MatchConvolutionResult::NonConvolutionLoop;
@@ -616,17 +621,24 @@ LinalgOp::reifyResultShapes(OpBuilder &b,
   return success();
 }
 
+/// Return the index in the indexingMaps vector that corresponds to this
+/// `opOperand`.
+int64_t LinalgOp::getIndexingMapIndex(OpOperand *opOperand) {
+  auto operandNumber = opOperand->getOperandNumber();
+  auto dpsIface = cast<DestinationStyleOpInterface>(*this->getOperation());
+  if (!dpsIface.isDpsInput(opOperand))
+    return operandNumber;
+  auto [start, end] = dpsIface.getDpsInitsPositionRange();
+  assert(!dpsIface.isDpsInit(opOperand));
+  // Account for potential inputs that are not DPS and may not appear in
+  // `indexingMaps`.
+  return cast<DestinationStyleOpInterface>(*this->getOperation())
+             .getNumDpsInputs() +
+         operandNumber - start;
+}
+
 LogicalResult mlir::linalg::detail::verifyStructuredOpInterface(Operation *op) {
   LinalgOp linalgOp = cast<LinalgOp>(op);
-
-  // Check all iterator types are known.
-  auto iteratorTypesRange = linalgOp.getIteratorTypesArray();
-  for (StringRef iteratorType : iteratorTypesRange) {
-    if (!llvm::is_contained(getAllIteratorTypeNames(), iteratorType) ||
-        !utils::symbolizeIteratorType(iteratorType).has_value())
-      return op->emitOpError("unexpected iterator_type (")
-             << iteratorType << ")";
-  }
 
   // Before checking indexing maps, we need to make sure the attributes
   // referenced by it are valid.

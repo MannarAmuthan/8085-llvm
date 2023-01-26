@@ -65,6 +65,14 @@ def int_aarch64_hint : DefaultAttrsIntrinsic<[], [llvm_i32_ty]>;
 def int_aarch64_break : Intrinsic<[], [llvm_i32_ty],
     [IntrNoMem, IntrHasSideEffects, IntrNoReturn, IntrCold, ImmArg<ArgIndex<0>>]>;
 
+
+def int_aarch64_prefetch : Intrinsic<[],
+    [llvm_ptr_ty, llvm_i32_ty, llvm_i32_ty, llvm_i32_ty, llvm_i32_ty],
+    [IntrInaccessibleMemOrArgMemOnly, IntrWillReturn, ReadOnly<ArgIndex<0>>,
+     ImmArg<ArgIndex<1>>, ImmArg<ArgIndex<2>>, ImmArg<ArgIndex<3>>, ImmArg<ArgIndex<4>>
+     ]>,
+    ClangBuiltin<"__builtin_arm_prefetch">;
+
 //===----------------------------------------------------------------------===//
 // Data Barrier Instructions
 
@@ -1347,7 +1355,8 @@ let TargetPrefix = "aarch64" in {  // All intrinsics start with "llvm.aarch64.".
   class SVE2_CONFLICT_DETECT_Intrinsic
     : DefaultAttrsIntrinsic<[llvm_anyvector_ty],
                 [LLVMAnyPointerType<llvm_any_ty>,
-                 LLVMMatchType<1>]>;
+                 LLVMMatchType<1>],
+                [IntrNoMem]>;
 
   class SVE2_3VectorArg_Indexed_Intrinsic
     : DefaultAttrsIntrinsic<[llvm_anyvector_ty],
@@ -1516,7 +1525,7 @@ class SVE_4Vec_BF16
 
 class SVE_4Vec_BF16_Indexed
     : DefaultAttrsIntrinsic<[llvm_nxv4f32_ty],
-                [llvm_nxv4f32_ty, llvm_nxv8bf16_ty, llvm_nxv8bf16_ty, llvm_i64_ty],
+                [llvm_nxv4f32_ty, llvm_nxv8bf16_ty, llvm_nxv8bf16_ty, llvm_i32_ty],
                 [IntrNoMem, ImmArg<ArgIndex<3>>]>;
 
 //
@@ -1604,27 +1613,40 @@ def int_aarch64_sve_adrd : AdvSIMD_2VectorArg_Intrinsic;
 //
 
 def int_aarch64_sve_add   : AdvSIMD_Pred2VectorArg_Intrinsic;
+def int_aarch64_sve_add_u : AdvSIMD_Pred2VectorArg_Intrinsic;
 def int_aarch64_sve_sub   : AdvSIMD_Pred2VectorArg_Intrinsic;
+def int_aarch64_sve_sub_u : AdvSIMD_Pred2VectorArg_Intrinsic;
 def int_aarch64_sve_subr  : AdvSIMD_Pred2VectorArg_Intrinsic;
 
 def int_aarch64_sve_pmul       : AdvSIMD_2VectorArg_Intrinsic;
 
 def int_aarch64_sve_mul        : AdvSIMD_Pred2VectorArg_Intrinsic;
+def int_aarch64_sve_mul_u      : AdvSIMD_Pred2VectorArg_Intrinsic;
 def int_aarch64_sve_mul_lane   : AdvSIMD_2VectorArgIndexed_Intrinsic;
 def int_aarch64_sve_smulh      : AdvSIMD_Pred2VectorArg_Intrinsic;
+def int_aarch64_sve_smulh_u    : AdvSIMD_Pred2VectorArg_Intrinsic;
 def int_aarch64_sve_umulh      : AdvSIMD_Pred2VectorArg_Intrinsic;
+def int_aarch64_sve_umulh_u    : AdvSIMD_Pred2VectorArg_Intrinsic;
 
 def int_aarch64_sve_sdiv       : AdvSIMD_Pred2VectorArg_Intrinsic;
+def int_aarch64_sve_sdiv_u     : AdvSIMD_Pred2VectorArg_Intrinsic;
 def int_aarch64_sve_udiv       : AdvSIMD_Pred2VectorArg_Intrinsic;
+def int_aarch64_sve_udiv_u     : AdvSIMD_Pred2VectorArg_Intrinsic;
 def int_aarch64_sve_sdivr      : AdvSIMD_Pred2VectorArg_Intrinsic;
 def int_aarch64_sve_udivr      : AdvSIMD_Pred2VectorArg_Intrinsic;
 
 def int_aarch64_sve_smax       : AdvSIMD_Pred2VectorArg_Intrinsic;
+def int_aarch64_sve_smax_u     : AdvSIMD_Pred2VectorArg_Intrinsic;
 def int_aarch64_sve_umax       : AdvSIMD_Pred2VectorArg_Intrinsic;
+def int_aarch64_sve_umax_u     : AdvSIMD_Pred2VectorArg_Intrinsic;
 def int_aarch64_sve_smin       : AdvSIMD_Pred2VectorArg_Intrinsic;
+def int_aarch64_sve_smin_u     : AdvSIMD_Pred2VectorArg_Intrinsic;
 def int_aarch64_sve_umin       : AdvSIMD_Pred2VectorArg_Intrinsic;
+def int_aarch64_sve_umin_u     : AdvSIMD_Pred2VectorArg_Intrinsic;
 def int_aarch64_sve_sabd       : AdvSIMD_Pred2VectorArg_Intrinsic;
+def int_aarch64_sve_sabd_u     : AdvSIMD_Pred2VectorArg_Intrinsic;
 def int_aarch64_sve_uabd       : AdvSIMD_Pred2VectorArg_Intrinsic;
+def int_aarch64_sve_uabd_u     : AdvSIMD_Pred2VectorArg_Intrinsic;
 
 def int_aarch64_sve_mad        : AdvSIMD_Pred3VectorArg_Intrinsic;
 def int_aarch64_sve_msb        : AdvSIMD_Pred3VectorArg_Intrinsic;
@@ -1662,12 +1684,15 @@ def int_aarch64_sve_uqsub_x   : AdvSIMD_2VectorArg_Intrinsic;
 // Shifts
 
 def int_aarch64_sve_asr      : AdvSIMD_Pred2VectorArg_Intrinsic;
+def int_aarch64_sve_asr_u    : AdvSIMD_Pred2VectorArg_Intrinsic;
 def int_aarch64_sve_asr_wide : AdvSIMD_SVE_ShiftWide_Intrinsic;
 def int_aarch64_sve_asrd     : AdvSIMD_SVE_ShiftByImm_Intrinsic;
 def int_aarch64_sve_insr     : AdvSIMD_SVE_INSR_Intrinsic;
 def int_aarch64_sve_lsl      : AdvSIMD_Pred2VectorArg_Intrinsic;
+def int_aarch64_sve_lsl_u    : AdvSIMD_Pred2VectorArg_Intrinsic;
 def int_aarch64_sve_lsl_wide : AdvSIMD_SVE_ShiftWide_Intrinsic;
 def int_aarch64_sve_lsr      : AdvSIMD_Pred2VectorArg_Intrinsic;
+def int_aarch64_sve_lsr_u    : AdvSIMD_Pred2VectorArg_Intrinsic;
 def int_aarch64_sve_lsr_wide : AdvSIMD_SVE_ShiftWide_Intrinsic;
 
 //
@@ -2519,9 +2544,9 @@ def int_aarch64_sve_bfmlalt : SVE_4Vec_BF16;
 
 def int_aarch64_sve_bfmmla  : SVE_4Vec_BF16;
 
-def int_aarch64_sve_bfdot_lane   : SVE_4Vec_BF16_Indexed;
-def int_aarch64_sve_bfmlalb_lane : SVE_4Vec_BF16_Indexed;
-def int_aarch64_sve_bfmlalt_lane : SVE_4Vec_BF16_Indexed;
+def int_aarch64_sve_bfdot_lane_v2   : SVE_4Vec_BF16_Indexed;
+def int_aarch64_sve_bfmlalb_lane_v2 : SVE_4Vec_BF16_Indexed;
+def int_aarch64_sve_bfmlalt_lane_v2 : SVE_4Vec_BF16_Indexed;
 }
 
 //
@@ -2660,6 +2685,8 @@ let TargetPrefix = "aarch64" in {
 
   def int_aarch64_sve_sclamp : AdvSIMD_3VectorArg_Intrinsic;
   def int_aarch64_sve_uclamp : AdvSIMD_3VectorArg_Intrinsic;
+  def int_aarch64_sve_fclamp : AdvSIMD_3VectorArg_Intrinsic;
+
 
   //
   // Reversal
@@ -2675,4 +2702,335 @@ let TargetPrefix = "aarch64" in {
       : DefaultAttrsIntrinsic<[llvm_anyvector_ty],
                               [LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
                                LLVMMatchType<0>, llvm_i32_ty]>;
+
+  //
+  // Predicate-pair intrinsics
+  //
+  foreach cmp = ["ge", "gt", "hi", "hs", "le", "lo", "ls", "lt"] in {
+    def int_aarch64_sve_while # cmp # _x2
+        : DefaultAttrsIntrinsic<[llvm_anyvector_ty, LLVMMatchType<0>],
+                                [llvm_i64_ty, llvm_i64_ty], [IntrNoMem]>;
+  }
+
+  //
+  // SME2 Intrinsics
+  //
+
+  class SME2_Matrix_ArrayVector_Single_Single_Intrinsic
+    : DefaultAttrsIntrinsic<[],
+                [llvm_i32_ty,
+                 llvm_anyvector_ty, LLVMMatchType<0>],
+                []>;
+
+  class SME2_Matrix_ArrayVector_VG2_Multi_Single_Intrinsic
+    : DefaultAttrsIntrinsic<[],
+                [llvm_i32_ty,
+                 llvm_anyvector_ty, LLVMMatchType<0>,
+                 LLVMMatchType<0>],
+                []>;
+
+  class SME2_Matrix_ArrayVector_VG4_Multi_Single_Intrinsic
+    : DefaultAttrsIntrinsic<[],
+                [llvm_i32_ty,
+                 llvm_anyvector_ty, LLVMMatchType<0>, LLVMMatchType<0>, LLVMMatchType<0>,
+                 LLVMMatchType<0>],
+                []>;
+
+  class SME2_Matrix_ArrayVector_VG2_Multi_Multi_Intrinsic
+    : DefaultAttrsIntrinsic<[],
+                [llvm_i32_ty,
+                 llvm_anyvector_ty, LLVMMatchType<0>,
+                 LLVMMatchType<0>, LLVMMatchType<0>],
+                []>;
+
+  class SME2_Matrix_ArrayVector_VG4_Multi_Multi_Intrinsic
+    : DefaultAttrsIntrinsic<[],
+                [llvm_i32_ty,
+                 llvm_anyvector_ty, LLVMMatchType<0>, LLVMMatchType<0>, LLVMMatchType<0>,
+                 LLVMMatchType<0>, LLVMMatchType<0>, LLVMMatchType<0>, LLVMMatchType<0>],
+                []>;
+
+  class SME2_Matrix_ArrayVector_Single_Index_Intrinsic
+    : DefaultAttrsIntrinsic<[],
+                [llvm_i32_ty,
+                llvm_anyvector_ty,
+                LLVMMatchType<0>, llvm_i32_ty],
+                [ImmArg<ArgIndex<3>>]>;
+
+  class SME2_Matrix_ArrayVector_VG2_Multi_Index_Intrinsic
+    : DefaultAttrsIntrinsic<[],
+                [llvm_i32_ty,
+                 llvm_anyvector_ty, LLVMMatchType<0>,
+                 LLVMMatchType<0>, llvm_i32_ty],
+                [ImmArg<ArgIndex<4>>]>;
+
+  class SME2_Matrix_ArrayVector_VG4_Multi_Index_Intrinsic
+    : DefaultAttrsIntrinsic<[],
+                [llvm_i32_ty,
+                 llvm_anyvector_ty, LLVMMatchType<0>, LLVMMatchType<0>, LLVMMatchType<0>,
+                 LLVMMatchType<0>, llvm_i32_ty],
+                [ImmArg<ArgIndex<6>>]>;
+
+  class SME2_ZA_Write_VG2_Intrinsic
+   : DefaultAttrsIntrinsic<[],
+               [llvm_i32_ty,
+                llvm_anyvector_ty, LLVMMatchType<0>],
+               []>;
+
+  class SME2_ZA_Write_VG4_Intrinsic
+   : DefaultAttrsIntrinsic<[],
+               [llvm_i32_ty,
+                llvm_anyvector_ty, LLVMMatchType<0>,
+                LLVMMatchType<0>,  LLVMMatchType<0>],
+               []>;
+
+  class SME2_CVT_VG2_SINGLE_Intrinsic
+    : DefaultAttrsIntrinsic<[LLVMSubdivide2VectorType<0>],
+                            [llvm_anyvector_ty, LLVMMatchType<0>],
+                            [IntrNoMem]>;
+
+  class SME2_CVT_VG2_SINGLE_BF16_Intrinsic
+    : DefaultAttrsIntrinsic<[llvm_nxv8bf16_ty],
+                            [llvm_nxv4f32_ty, llvm_nxv4f32_ty],
+                            [IntrNoMem]>;
+
+  class SME2_CVT_VG4_SINGLE_Intrinsic
+    : DefaultAttrsIntrinsic<[LLVMSubdivide4VectorType<0>],
+                            [llvm_anyvector_ty, LLVMMatchType<0>, LLVMMatchType<0>, LLVMMatchType<0>],
+                            [IntrNoMem]>;
+
+  class SME2_CVT_FtoI_VG2_Intrinsic
+    : DefaultAttrsIntrinsic<[llvm_anyvector_ty, LLVMMatchType<0>],
+                            [LLVMVectorOfBitcastsToInt<0>, LLVMVectorOfBitcastsToInt<0>],
+                            [IntrNoMem]>;
+
+  class SME2_CVT_ItoF_VG2_Intrinsic
+    : DefaultAttrsIntrinsic<[LLVMVectorOfBitcastsToInt<0>, LLVMVectorOfBitcastsToInt<0>],
+                            [llvm_anyvector_ty, LLVMMatchType<0>],
+                            [IntrNoMem]>;
+
+  class SME2_CVT_FtoI_VG4_Intrinsic
+    : DefaultAttrsIntrinsic<[llvm_anyvector_ty, LLVMMatchType<0>, LLVMMatchType<0>, LLVMMatchType<0>],
+                            [LLVMVectorOfBitcastsToInt<0>, LLVMVectorOfBitcastsToInt<0>,
+                             LLVMVectorOfBitcastsToInt<0>, LLVMVectorOfBitcastsToInt<0>],
+                            [IntrNoMem]>;
+
+  class SME2_CVT_ItoF_VG4_Intrinsic
+    : DefaultAttrsIntrinsic<[LLVMVectorOfBitcastsToInt<0>, LLVMVectorOfBitcastsToInt<0>,
+                             LLVMVectorOfBitcastsToInt<0>, LLVMVectorOfBitcastsToInt<0>],
+                            [llvm_anyvector_ty, LLVMMatchType<0>, LLVMMatchType<0>, LLVMMatchType<0>],
+                            [IntrNoMem]>;
+
+  class SME2_ZA_ArrayVector_Read_VG2_Intrinsic
+    : DefaultAttrsIntrinsic<[llvm_anyvector_ty, LLVMMatchType<0>],
+                [llvm_i32_ty],
+                []>;
+
+  class SME2_ZA_ArrayVector_Read_VG4_Intrinsic
+    : DefaultAttrsIntrinsic<[llvm_anyvector_ty, LLVMMatchType<0>,
+                             LLVMMatchType<0>,  LLVMMatchType<0>],
+                [llvm_i32_ty],
+                []>;
+
+  class SME2_Matrix_TileVector_Read_VG2_Intrinsic
+    : DefaultAttrsIntrinsic<[llvm_anyvector_ty, LLVMMatchType<0>],
+                [llvm_i32_ty, llvm_i32_ty],
+                []>;
+
+  class SME2_Matrix_TileVector_Read_VG4_Intrinsic
+    : DefaultAttrsIntrinsic<[llvm_anyvector_ty, LLVMMatchType<0>,
+                             LLVMMatchType<0>,  LLVMMatchType<0>],
+                [llvm_i32_ty, llvm_i32_ty],
+                []>;
+
+  class SME2_ZA_ArrayVector_Write_VG2_Intrinsic
+   : DefaultAttrsIntrinsic<[],
+               [llvm_i32_ty,
+                llvm_anyvector_ty, LLVMMatchType<0>],
+               []>;
+
+  class SME2_ZA_ArrayVector_Write_VG4_Intrinsic
+   : DefaultAttrsIntrinsic<[],
+               [llvm_i32_ty,
+                llvm_anyvector_ty, LLVMMatchType<0>,
+                LLVMMatchType<0>,  LLVMMatchType<0>],
+               []>;
+
+  class SME2_Matrix_TileVector_Write_VG2_Intrinsic
+   : DefaultAttrsIntrinsic<[],
+               [llvm_i32_ty, llvm_i32_ty,
+                llvm_anyvector_ty, LLVMMatchType<0>],
+               [ImmArg<ArgIndex<0>>]>;
+
+  class SME2_Matrix_TileVector_Write_VG4_Intrinsic
+   : DefaultAttrsIntrinsic<[],
+               [llvm_i32_ty, llvm_i32_ty,
+                llvm_anyvector_ty, LLVMMatchType<0>,
+                LLVMMatchType<0>,  LLVMMatchType<0>],
+               [ImmArg<ArgIndex<0>>]>;
+
+  class SME2_VG2_Multi_Single_Single_Intrinsic
+    : DefaultAttrsIntrinsic<[llvm_anyvector_ty, LLVMMatchType<0>],
+                [LLVMMatchType<0>, LLVMMatchType<0>,
+                 LLVMMatchType<0>, LLVMMatchType<0>],
+                [IntrNoMem]>;
+
+  class SME2_VG4_Multi_Single_Single_Intrinsic
+    : DefaultAttrsIntrinsic<[llvm_anyvector_ty, LLVMMatchType<0>,
+                             LLVMMatchType<0>, LLVMMatchType<0>],
+                [LLVMMatchType<0>, LLVMMatchType<0>,
+                 LLVMMatchType<0>, LLVMMatchType<0>,
+                 LLVMMatchType<0>, LLVMMatchType<0>],
+                [IntrNoMem]>;
+
+
+  //
+  // Multi-vector fused multiply-add/subtract
+  //
+
+  def int_aarch64_sme_fmla_single_vg1x2 : SME2_Matrix_ArrayVector_VG2_Multi_Single_Intrinsic;
+  def int_aarch64_sme_fmls_single_vg1x2 : SME2_Matrix_ArrayVector_VG2_Multi_Single_Intrinsic;
+  def int_aarch64_sme_fmla_single_vg1x4 : SME2_Matrix_ArrayVector_VG4_Multi_Single_Intrinsic;
+  def int_aarch64_sme_fmls_single_vg1x4 : SME2_Matrix_ArrayVector_VG4_Multi_Single_Intrinsic;
+
+  def int_aarch64_sme_fmla_vg1x2 : SME2_Matrix_ArrayVector_VG2_Multi_Multi_Intrinsic;
+  def int_aarch64_sme_fmls_vg1x2 : SME2_Matrix_ArrayVector_VG2_Multi_Multi_Intrinsic;
+  def int_aarch64_sme_fmla_vg1x4 : SME2_Matrix_ArrayVector_VG4_Multi_Multi_Intrinsic;
+  def int_aarch64_sme_fmls_vg1x4 : SME2_Matrix_ArrayVector_VG4_Multi_Multi_Intrinsic;
+
+  def int_aarch64_sme_fmla_lane_vg1x2 : SME2_Matrix_ArrayVector_VG2_Multi_Index_Intrinsic;
+  def int_aarch64_sme_fmls_lane_vg1x2 : SME2_Matrix_ArrayVector_VG2_Multi_Index_Intrinsic;
+  def int_aarch64_sme_fmla_lane_vg1x4 : SME2_Matrix_ArrayVector_VG4_Multi_Index_Intrinsic;
+  def int_aarch64_sme_fmls_lane_vg1x4 : SME2_Matrix_ArrayVector_VG4_Multi_Index_Intrinsic;
+
+  //
+  // Multi-vector multiply-add/subtract long
+  //
+
+  foreach ty = ["f", "s", "u"] in {
+    foreach instr = ["mlal", "mlsl"] in {
+      def int_aarch64_sme_ # ty # instr # _single_vg2x1  : SME2_Matrix_ArrayVector_Single_Single_Intrinsic;
+      def int_aarch64_sme_ # ty # instr # _single_vg2x2  : SME2_Matrix_ArrayVector_VG2_Multi_Single_Intrinsic;
+      def int_aarch64_sme_ # ty # instr # _single_vg2x4  : SME2_Matrix_ArrayVector_VG4_Multi_Single_Intrinsic;
+
+      def int_aarch64_sme_ # ty # instr # _vg2x2 : SME2_Matrix_ArrayVector_VG2_Multi_Multi_Intrinsic;
+      def int_aarch64_sme_ # ty # instr # _vg2x4 : SME2_Matrix_ArrayVector_VG4_Multi_Multi_Intrinsic;
+
+      def int_aarch64_sme_ # ty # instr # _lane_vg2x1  : SME2_Matrix_ArrayVector_Single_Index_Intrinsic;
+      def int_aarch64_sme_ # ty # instr # _lane_vg2x2  : SME2_Matrix_ArrayVector_VG2_Multi_Index_Intrinsic;
+      def int_aarch64_sme_ # ty # instr # _lane_vg2x4  : SME2_Matrix_ArrayVector_VG4_Multi_Index_Intrinsic;
+    }
+  }
+
+  //
+  // Multi-vector vertical dot-products
+  //
+
+  def int_aarch64_sme_fvdot_lane_za32_vg1x2 : SME2_Matrix_ArrayVector_VG2_Multi_Index_Intrinsic;
+
+  foreach ty = ["s", "u"] in {
+    def int_aarch64_sme_ #ty # vdot_lane_za32_vg1x2 : SME2_Matrix_ArrayVector_VG2_Multi_Index_Intrinsic;
+    def int_aarch64_sme_ #ty # vdot_lane_za32_vg1x4 : SME2_Matrix_ArrayVector_VG4_Multi_Index_Intrinsic;
+    def int_aarch64_sme_ #ty # vdot_lane_za64_vg1x4 : SME2_Matrix_ArrayVector_VG4_Multi_Index_Intrinsic;
+  }
+
+  def int_aarch64_sme_suvdot_lane_za32_vg1x4 : SME2_Matrix_ArrayVector_VG4_Multi_Index_Intrinsic;
+  def int_aarch64_sme_usvdot_lane_za32_vg1x4 : SME2_Matrix_ArrayVector_VG4_Multi_Index_Intrinsic;
+
+  //
+  // Multi-vector floating-point CVT from single-precision to interleaved half-precision/BFloat16
+  //
+  def int_aarch64_sve_fcvtn_x2  : SME2_CVT_VG2_SINGLE_Intrinsic;
+  def int_aarch64_sve_bfcvtn_x2 : SME2_CVT_VG2_SINGLE_BF16_Intrinsic;
+
+  //
+  // Multi-vector convert to/from floating-point.
+  //
+  def int_aarch64_sve_fcvt_x2  : SME2_CVT_VG2_SINGLE_Intrinsic;
+  def int_aarch64_sve_bfcvt_x2 : SME2_CVT_VG2_SINGLE_BF16_Intrinsic;
+  def int_aarch64_sve_fcvts_x2 : SME2_CVT_FtoI_VG2_Intrinsic;
+  def int_aarch64_sve_fcvtu_x2 : SME2_CVT_FtoI_VG2_Intrinsic;
+  def int_aarch64_sve_scvtf_x2 : SME2_CVT_ItoF_VG2_Intrinsic;
+  def int_aarch64_sve_ucvtf_x2 : SME2_CVT_ItoF_VG2_Intrinsic;
+  def int_aarch64_sve_fcvts_x4 : SME2_CVT_FtoI_VG4_Intrinsic;
+  def int_aarch64_sve_fcvtu_x4 : SME2_CVT_FtoI_VG4_Intrinsic;
+  def int_aarch64_sve_scvtf_x4 : SME2_CVT_ItoF_VG4_Intrinsic;
+  def int_aarch64_sve_ucvtf_x4 : SME2_CVT_ItoF_VG4_Intrinsic;
+
+  //
+  // Multi-vector saturating extract narrow
+  //
+  def int_aarch64_sve_sqcvt_x2  : SME2_CVT_VG2_SINGLE_Intrinsic;
+  def int_aarch64_sve_uqcvt_x2  : SME2_CVT_VG2_SINGLE_Intrinsic;
+  def int_aarch64_sve_sqcvtu_x2 : SME2_CVT_VG2_SINGLE_Intrinsic;
+  def int_aarch64_sve_sqcvt_x4  : SME2_CVT_VG4_SINGLE_Intrinsic;
+  def int_aarch64_sve_uqcvt_x4  : SME2_CVT_VG4_SINGLE_Intrinsic;
+  def int_aarch64_sve_sqcvtu_x4 : SME2_CVT_VG4_SINGLE_Intrinsic;
+
+  //
+  // Multi-vector saturating extract narrow and interleave
+  //
+  def int_aarch64_sve_sqcvtn_x2  : SME2_CVT_VG2_SINGLE_Intrinsic;
+  def int_aarch64_sve_uqcvtn_x2  : SME2_CVT_VG2_SINGLE_Intrinsic;
+  def int_aarch64_sve_sqcvtun_x2 : SME2_CVT_VG2_SINGLE_Intrinsic;
+  def int_aarch64_sve_sqcvtn_x4  : SME2_CVT_VG4_SINGLE_Intrinsic;
+  def int_aarch64_sve_uqcvtn_x4  : SME2_CVT_VG4_SINGLE_Intrinsic;
+  def int_aarch64_sve_sqcvtun_x4 : SME2_CVT_VG4_SINGLE_Intrinsic;
+
+  //
+  // Multi-Single add/sub
+  //
+  def int_aarch64_sme_add_write_single_za_vg1x2 : SME2_Matrix_ArrayVector_VG2_Multi_Single_Intrinsic;
+  def int_aarch64_sme_sub_write_single_za_vg1x2 : SME2_Matrix_ArrayVector_VG2_Multi_Single_Intrinsic;
+  def int_aarch64_sme_add_write_single_za_vg1x4 : SME2_Matrix_ArrayVector_VG4_Multi_Single_Intrinsic;
+  def int_aarch64_sme_sub_write_single_za_vg1x4 : SME2_Matrix_ArrayVector_VG4_Multi_Single_Intrinsic;
+
+  //
+  // Multi-Multi add/sub
+  //
+  def int_aarch64_sme_add_write_za_vg1x2 : SME2_Matrix_ArrayVector_VG2_Multi_Multi_Intrinsic;
+  def int_aarch64_sme_sub_write_za_vg1x2 : SME2_Matrix_ArrayVector_VG2_Multi_Multi_Intrinsic;
+  def int_aarch64_sme_add_write_za_vg1x4 : SME2_Matrix_ArrayVector_VG4_Multi_Multi_Intrinsic;
+  def int_aarch64_sme_sub_write_za_vg1x4 : SME2_Matrix_ArrayVector_VG4_Multi_Multi_Intrinsic;
+
+  // Multi-vector clamps
+  def int_aarch64_sve_sclamp_single_x2 : SME2_VG2_Multi_Single_Single_Intrinsic;
+  def int_aarch64_sve_uclamp_single_x2 : SME2_VG2_Multi_Single_Single_Intrinsic;
+  def int_aarch64_sve_fclamp_single_x2 : SME2_VG2_Multi_Single_Single_Intrinsic;
+
+  def int_aarch64_sve_sclamp_single_x4 : SME2_VG4_Multi_Single_Single_Intrinsic;
+  def int_aarch64_sve_uclamp_single_x4 : SME2_VG4_Multi_Single_Single_Intrinsic;
+  def int_aarch64_sve_fclamp_single_x4 : SME2_VG4_Multi_Single_Single_Intrinsic;
+
+  //
+  // Multi-vector add/sub and accumulate into ZA
+  //
+  foreach intr = ["add", "sub"] in {
+    foreach za = ["za32", "za64"] in {
+      def int_aarch64_sme_ # intr # _ # za # _vg1x2 : SME2_ZA_Write_VG2_Intrinsic;
+      def int_aarch64_sme_ # intr # _ # za # _vg1x4 : SME2_ZA_Write_VG4_Intrinsic;
+    }
+  }
+
+  //
+  // Move multi-vectors to/from ZA
+  //
+
+  def int_aarch64_sme_read_hor_vg2   : SME2_Matrix_TileVector_Read_VG2_Intrinsic;
+  def int_aarch64_sme_read_hor_vg4   : SME2_Matrix_TileVector_Read_VG4_Intrinsic;
+
+  def int_aarch64_sme_read_ver_vg2   : SME2_Matrix_TileVector_Read_VG2_Intrinsic;
+  def int_aarch64_sme_read_ver_vg4   : SME2_Matrix_TileVector_Read_VG4_Intrinsic;
+
+  def int_aarch64_sme_read_vg1x2 : SME2_ZA_ArrayVector_Read_VG2_Intrinsic;
+  def int_aarch64_sme_read_vg1x4 : SME2_ZA_ArrayVector_Read_VG4_Intrinsic;
+
+  def int_aarch64_sme_write_hor_vg2 : SME2_Matrix_TileVector_Write_VG2_Intrinsic;
+  def int_aarch64_sme_write_hor_vg4 : SME2_Matrix_TileVector_Write_VG4_Intrinsic;
+
+  def int_aarch64_sme_write_ver_vg2 : SME2_Matrix_TileVector_Write_VG2_Intrinsic;
+  def int_aarch64_sme_write_ver_vg4 : SME2_Matrix_TileVector_Write_VG4_Intrinsic;
+
+  def int_aarch64_sme_write_vg1x2 : SME2_ZA_ArrayVector_Write_VG2_Intrinsic;
+  def int_aarch64_sme_write_vg1x4 : SME2_ZA_ArrayVector_Write_VG4_Intrinsic;
 }

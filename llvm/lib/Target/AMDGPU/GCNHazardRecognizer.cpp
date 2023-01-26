@@ -817,7 +817,7 @@ int GCNHazardRecognizer::createsVALUHazard(const MachineInstr &MI) {
   int VDataIdx = AMDGPU::getNamedOperandIdx(Opcode, AMDGPU::OpName::vdata);
   int VDataRCID = -1;
   if (VDataIdx != -1)
-    VDataRCID = Desc.OpInfo[VDataIdx].RegClass;
+    VDataRCID = Desc.operands()[VDataIdx].RegClass;
 
   if (TII->isMUBUF(MI) || TII->isMTBUF(MI)) {
     // There is no hazard if the instruction does not use vector regs
@@ -842,13 +842,13 @@ int GCNHazardRecognizer::createsVALUHazard(const MachineInstr &MI) {
   if (TII->isMIMG(MI)) {
     int SRsrcIdx = AMDGPU::getNamedOperandIdx(Opcode, AMDGPU::OpName::srsrc);
     assert(SRsrcIdx != -1 &&
-           AMDGPU::getRegBitWidth(Desc.OpInfo[SRsrcIdx].RegClass) == 256);
+           AMDGPU::getRegBitWidth(Desc.operands()[SRsrcIdx].RegClass) == 256);
     (void)SRsrcIdx;
   }
 
   if (TII->isFLAT(MI)) {
     int DataIdx = AMDGPU::getNamedOperandIdx(Opcode, AMDGPU::OpName::vdata);
-    if (AMDGPU::getRegBitWidth(Desc.OpInfo[DataIdx].RegClass) > 64)
+    if (AMDGPU::getRegBitWidth(Desc.operands()[DataIdx].RegClass) > 64)
       return DataIdx;
   }
 
@@ -919,8 +919,7 @@ int GCNHazardRecognizer::checkVALUHazards(MachineInstr *VALU) {
           if (DstSel->getImm() == AMDGPU::SDWA::DWORD)
             return false;
       } else {
-        if ((AMDGPU::getNamedOperandIdx(MI.getOpcode(),
-                                        AMDGPU::OpName::op_sel) == -1) ||
+        if (!AMDGPU::hasNamedOperand(MI.getOpcode(), AMDGPU::OpName::op_sel) ||
             !(TII->getNamedOperand(MI, AMDGPU::OpName::src0_modifiers)
                   ->getImm() &
               SISrcMods::DST_OP_SEL))
@@ -1211,7 +1210,7 @@ bool GCNHazardRecognizer::fixSMEMtoVectorWriteHazards(MachineInstr *MI) {
   const MachineOperand *SDST = TII->getNamedOperand(*MI, SDSTName);
   if (!SDST) {
     for (const auto &MO : MI->implicit_operands()) {
-      if (MO.isDef() && TRI->isSGPRClass(TRI->getPhysRegClass(MO.getReg()))) {
+      if (MO.isDef() && TRI->isSGPRClass(TRI->getPhysRegBaseClass(MO.getReg()))) {
         SDST = &MO;
         break;
       }
@@ -1292,7 +1291,7 @@ bool GCNHazardRecognizer::fixVcmpxExecWARHazard(MachineInstr *MI) {
       if (TII->getNamedOperand(MI, AMDGPU::OpName::sdst))
         return true;
       for (auto MO : MI.implicit_operands())
-        if (MO.isDef() && TRI->isSGPRClass(TRI->getPhysRegClass(MO.getReg())))
+        if (MO.isDef() && TRI->isSGPRClass(TRI->getPhysRegBaseClass(MO.getReg())))
           return true;
     }
     if (MI.getOpcode() == AMDGPU::S_WAITCNT_DEPCTR &&
@@ -2814,8 +2813,8 @@ bool GCNHazardRecognizer::fixVALUMaskWriteHazard(MachineInstr *MI) {
           return true;
       } else {
         const MCInstrDesc &InstDesc = I.getDesc();
-        const MCOperandInfo &OpInfo = InstDesc.OpInfo[OpNo];
-        if (TII.isLiteralConstant(Op, OpInfo))
+        const MCOperandInfo &OpInfo = InstDesc.operands()[OpNo];
+        if (!TII.isInlineConstant(Op, OpInfo))
           return true;
       }
     }

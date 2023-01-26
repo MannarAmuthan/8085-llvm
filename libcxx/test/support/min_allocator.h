@@ -9,14 +9,14 @@
 #ifndef MIN_ALLOCATOR_H
 #define MIN_ALLOCATOR_H
 
-#include <cstddef>
-#include <cstdlib>
-#include <cstddef>
 #include <cassert>
 #include <climits>
+#include <cstddef>
+#include <cstdlib>
 #include <iterator>
 #include <memory>
 #include <new>
+#include <type_traits>
 
 #include "test_macros.h"
 
@@ -430,6 +430,25 @@ public:
 
     TEST_CONSTEXPR_CXX20 friend bool operator==(explicit_allocator, explicit_allocator) {return true;}
     TEST_CONSTEXPR_CXX20 friend bool operator!=(explicit_allocator x, explicit_allocator y) {return !(x == y);}
+};
+
+template <class T>
+class unaligned_allocator {
+public:
+  static_assert(TEST_ALIGNOF(T) == 1, "Type T cannot be created on unaligned address (UB)");
+  typedef T value_type;
+
+  TEST_CONSTEXPR_CXX20 unaligned_allocator() TEST_NOEXCEPT {}
+
+  template <class U>
+  TEST_CONSTEXPR_CXX20 explicit unaligned_allocator(unaligned_allocator<U>) TEST_NOEXCEPT {}
+
+  TEST_CONSTEXPR_CXX20 T* allocate(std::size_t n) { return static_cast<T*>(std::allocator<T>().allocate(n + 1)) + 1; }
+
+  TEST_CONSTEXPR_CXX20 void deallocate(T* p, std::size_t n) { std::allocator<T>().deallocate(p - 1, n + 1); }
+
+  TEST_CONSTEXPR_CXX20 friend bool operator==(unaligned_allocator, unaligned_allocator) { return true; }
+  TEST_CONSTEXPR_CXX20 friend bool operator!=(unaligned_allocator x, unaligned_allocator y) { return !(x == y); }
 };
 
 #endif // MIN_ALLOCATOR_H

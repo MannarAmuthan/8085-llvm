@@ -6,6 +6,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
+
 #ifndef _LIBCPP___RANGES_REF_VIEW_H
 #define _LIBCPP___RANGES_REF_VIEW_H
 
@@ -46,7 +47,7 @@ namespace ranges {
 public:
     template<class _Tp>
       requires __different_from<_Tp, ref_view> &&
-        convertible_to<_Tp, _Range&> && requires { __fun(declval<_Tp>()); }
+        convertible_to<_Tp, _Range&> && requires { __fun(std::declval<_Tp>()); }
     _LIBCPP_HIDE_FROM_ABI
     constexpr ref_view(_Tp&& __t)
       : __range_(std::addressof(static_cast<_Range&>(std::forward<_Tp>(__t))))

@@ -14,7 +14,6 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/MapVector.h"
-#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -1274,7 +1273,7 @@ bool JumpThreadingPass::processImpliedCondition(BasicBlock *BB) {
       return false;
 
     bool CondIsTrue = PBI->getSuccessor(0) == CurrentBB;
-    Optional<bool> Implication =
+    std::optional<bool> Implication =
         isImpliedCondition(PBI->getCondition(), Cond, DL, CondIsTrue);
 
     // If the branch condition of BB (which is Cond) and CurrentPred are
@@ -1932,7 +1931,7 @@ bool JumpThreadingPass::processBranchOnXOR(BinaryOperator *BO) {
       // If all preds provide undef, just nuke the xor, because it is undef too.
       BO->replaceAllUsesWith(UndefValue::get(BO->getType()));
       BO->eraseFromParent();
-    } else if (SplitVal->isZero()) {
+    } else if (SplitVal->isZero() && BO != BO->getOperand(isLHS)) {
       // If all preds provide 0, replace the xor with the other input.
       BO->replaceAllUsesWith(BO->getOperand(isLHS));
       BO->eraseFromParent();
@@ -2084,6 +2083,30 @@ JumpThreadingPass::cloneInstructions(BasicBlock::iterator BI,
   // block, evaluate them to account for entry from PredBB.
   DenseMap<Instruction *, Value *> ValueMapping;
 
+  // Retargets llvm.dbg.value to any renamed variables.
+  auto RetargetDbgValueIfPossible = [&](Instruction *NewInst) -> bool {
+    auto DbgInstruction = dyn_cast<DbgValueInst>(NewInst);
+    if (!DbgInstruction)
+      return false;
+
+    SmallSet<std::pair<Value *, Value *>, 16> OperandsToRemap;
+    for (auto DbgOperand : DbgInstruction->location_ops()) {
+      auto DbgOperandInstruction = dyn_cast<Instruction>(DbgOperand);
+      if (!DbgOperandInstruction)
+        continue;
+
+      auto I = ValueMapping.find(DbgOperandInstruction);
+      if (I != ValueMapping.end()) {
+        OperandsToRemap.insert(
+            std::pair<Value *, Value *>(DbgOperand, I->second));
+      }
+    }
+
+    for (auto &[OldOp, MappedOp] : OperandsToRemap)
+      DbgInstruction->replaceVariableLocationOp(OldOp, MappedOp);
+    return true;
+  };
+
   // Clone the phi nodes of the source basic block into NewBB.  The resulting
   // phi nodes are trivial since NewBB only has one predecessor, but SSAUpdater
   // might need to rewrite the operand of the cloned phi.
@@ -2108,9 +2131,12 @@ JumpThreadingPass::cloneInstructions(BasicBlock::iterator BI,
   for (; BI != BE; ++BI) {
     Instruction *New = BI->clone();
     New->setName(BI->getName());
-    NewBB->getInstList().push_back(New);
+    New->insertInto(NewBB, NewBB->end());
     ValueMapping[&*BI] = New;
     adaptNoAliasScopes(New, ClonedScopes, Context);
+
+    if (RetargetDbgValueIfPossible(New))
+      continue;
 
     // Remap operands to patch up intra-block references.
     for (unsigned i = 0, e = New->getNumOperands(); i != e; ++i)
@@ -2496,18 +2522,7 @@ BasicBlock *JumpThreadingPass::splitBlockPreds(BasicBlock *BB,
 bool JumpThreadingPass::doesBlockHaveProfileData(BasicBlock *BB) {
   const Instruction *TI = BB->getTerminator();
   assert(TI->getNumSuccessors() > 1 && "not a split");
-
-  MDNode *WeightsNode = TI->getMetadata(LLVMContext::MD_prof);
-  if (!WeightsNode)
-    return false;
-
-  MDString *MDName = cast<MDString>(WeightsNode->getOperand(0));
-  if (MDName->getString() != "branch_weights")
-    return false;
-
-  // Ensure there are weights for all of the successors. Note that the first
-  // operand to the metadata node is a name, not a weight.
-  return WeightsNode->getNumOperands() == TI->getNumSuccessors() + 1;
+  return hasValidBranchWeightMD(*TI);
 }
 
 /// Update the block frequency of BB and branch weight and the metadata on the
@@ -2701,7 +2716,7 @@ bool JumpThreadingPass::duplicateCondBranchOnPHIIntoPred(
     if (New) {
       // Otherwise, insert the new instruction into the block.
       New->setName(BI->getName());
-      PredBB->getInstList().insert(OldPredBranch->getIterator(), New);
+      New->insertInto(PredBB, OldPredBranch->getIterator());
       // Update Dominance from simplified New instruction operands.
       for (unsigned i = 0, e = New->getNumOperands(); i != e; ++i)
         if (BasicBlock *SuccBB = dyn_cast<BasicBlock>(New->getOperand(i)))
@@ -2755,12 +2770,30 @@ void JumpThreadingPass::unfoldSelectInstr(BasicBlock *Pred, BasicBlock *BB,
                                          BB->getParent(), BB);
   // Move the unconditional branch to NewBB.
   PredTerm->removeFromParent();
-  NewBB->getInstList().insert(NewBB->end(), PredTerm);
+  PredTerm->insertInto(NewBB, NewBB->end());
   // Create a conditional branch and update PHI nodes.
   auto *BI = BranchInst::Create(NewBB, BB, SI->getCondition(), Pred);
   BI->applyMergedLocation(PredTerm->getDebugLoc(), SI->getDebugLoc());
+  BI->copyMetadata(*SI, {LLVMContext::MD_prof});
   SIUse->setIncomingValue(Idx, SI->getFalseValue());
   SIUse->addIncoming(SI->getTrueValue(), NewBB);
+  // Set the block frequency of NewBB.
+  if (HasProfileData) {
+    uint64_t TrueWeight, FalseWeight;
+    if (extractBranchWeights(*SI, TrueWeight, FalseWeight) &&
+        (TrueWeight + FalseWeight) != 0) {
+      SmallVector<BranchProbability, 2> BP;
+      BP.emplace_back(BranchProbability::getBranchProbability(
+          TrueWeight, TrueWeight + FalseWeight));
+      BP.emplace_back(BranchProbability::getBranchProbability(
+          FalseWeight, TrueWeight + FalseWeight));
+      BPI->setEdgeProbability(Pred, BP);
+    }
+
+    auto NewBBFreq =
+        BFI->getBlockFreq(Pred) * BPI->getEdgeProbability(Pred, NewBB);
+    BFI->setBlockFreq(NewBB, NewBBFreq.getFrequency());
+  }
 
   // The select is now dead.
   SI->eraseFromParent();

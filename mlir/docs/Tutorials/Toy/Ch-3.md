@@ -108,7 +108,7 @@ The implementation of this rewriter is in `ToyCombine.cpp`. The
 [canonicalization pass](../../Canonicalization.md) applies transformations
 defined by operations in a greedy, iterative manner. To ensure that the
 canonicalization pass applies our new transform, we set
-[hasCanonicalizer = 1](../../OpDefinitions.md/#hascanonicalizer) and register the
+[hasCanonicalizer = 1](../../DefiningDialects/Operations.md/#hascanonicalizer) and register the
 pattern with the canonicalization framework.
 
 ```c++
@@ -124,7 +124,7 @@ pipeline. In MLIR, the optimizations are run through a `PassManager` in a
 similar way to LLVM:
 
 ```c++
-  mlir::PassManager pm(module.getContext());
+  mlir::PassManager pm(module->getName());
   pm.addNestedPass<mlir::toy::FuncOp>(mlir::createCanonicalizerPass());
 ```
 

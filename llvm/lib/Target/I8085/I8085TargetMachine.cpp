@@ -19,6 +19,7 @@
 #include "llvm/MC/TargetRegistry.h"
 
 #include "I8085.h"
+#include "I8085MachineFunctionInfo.h"
 #include "I8085TargetObjectFile.h"
 #include "MCTargetDesc/I8085MCTargetDesc.h"
 #include "TargetInfo/I8085TargetInfo.h"
@@ -37,15 +38,15 @@ static StringRef getCPU(StringRef CPU) {
   return CPU;
 }
 
-static Reloc::Model getEffectiveRelocModel(Optional<Reloc::Model> RM) {
-  return RM.getValueOr(Reloc::Static);
+static Reloc::Model getEffectiveRelocModel(std::optional<Reloc::Model> RM) {
+  return RM.value_or(Reloc::Static);
 }
 
 I8085TargetMachine::I8085TargetMachine(const Target &T, const Triple &TT,
                                    StringRef CPU, StringRef FS,
                                    const TargetOptions &Options,
-                                   Optional<Reloc::Model> RM,
-                                   Optional<CodeModel::Model> CM,
+                                   std::optional<Reloc::Model> RM,
+                                   std::optional<CodeModel::Model> CM,
                                    CodeGenOpt::Level OL, bool JIT)
     : LLVMTargetMachine(T, I8085DataLayout, TT, getCPU(CPU), FS, Options,
                         getEffectiveRelocModel(RM),
@@ -123,6 +124,13 @@ void I8085PassConfig::addPreSched2() {
 void I8085PassConfig::addPreEmitPass() {
   // Must run branch selection immediately preceding the asm printer.
   addPass(&BranchRelaxationPassID);
+}
+
+MachineFunctionInfo *I8085TargetMachine::createMachineFunctionInfo(
+    BumpPtrAllocator &Allocator, const Function &F,
+    const TargetSubtargetInfo *STI) const {
+  return I8085MachineFunctionInfo::create<I8085MachineFunctionInfo>(Allocator, F,
+                                                                STI);
 }
 
 

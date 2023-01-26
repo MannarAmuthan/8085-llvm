@@ -48,6 +48,7 @@
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Passes/PassBuilder.h"
+#include "llvm/Passes/PassPlugin.h"
 #include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/SourceMgr.h"
@@ -55,6 +56,11 @@
 #include <memory>
 
 using namespace Fortran::frontend;
+
+// Declare plugin extension function declarations.
+#define HANDLE_EXTENSION(Ext)                                                  \
+  llvm::PassPluginLibraryInfo get##Ext##PluginInfo();
+#include "llvm/Support/Extension.def"
 
 //===----------------------------------------------------------------------===//
 // Custom BeginSourceFileAction
@@ -178,7 +184,8 @@ bool CodeGenAction::beginSourceFileAction() {
   lb.lower(parseTree, ci.getInvocation().getSemanticsContext());
 
   // run the default passes.
-  mlir::PassManager pm(mlirCtx.get(), mlir::OpPassManager::Nesting::Implicit);
+  mlir::PassManager pm((*mlirModule)->getName(),
+                       mlir::OpPassManager::Nesting::Implicit);
   pm.enableVerifier(/*verifyPasses=*/true);
   pm.addPass(std::make_unique<Fortran::lower::VerifierPass>());
 
@@ -529,7 +536,8 @@ void CodeGenAction::generateLLVMIR() {
   fir::support::registerLLVMTranslation(*mlirCtx);
 
   // Set-up the MLIR pass manager
-  mlir::PassManager pm(mlirCtx.get(), mlir::OpPassManager::Nesting::Implicit);
+  mlir::PassManager pm((*mlirModule)->getName(),
+                       mlir::OpPassManager::Nesting::Implicit);
 
   pm.addPass(std::make_unique<Fortran::lower::VerifierPass>());
   pm.enableVerifier(/*verifyPasses=*/true);
@@ -546,7 +554,7 @@ void CodeGenAction::generateLLVMIR() {
   }
 
   // Translate to LLVM IR
-  llvm::Optional<llvm::StringRef> moduleName = mlirModule->getName();
+  std::optional<llvm::StringRef> moduleName = mlirModule->getName();
   llvmModule = mlir::translateModuleToLLVMIR(
       *mlirModule, *llvmCtx, moduleName ? *moduleName : "FIRModule");
 
@@ -566,26 +574,11 @@ void CodeGenAction::generateLLVMIR() {
   }
 }
 
-static llvm::CodeGenOpt::Level
-getCGOptLevel(const Fortran::frontend::CodeGenOptions &opts) {
-  switch (opts.OptimizationLevel) {
-  default:
-    llvm_unreachable("Invalid optimization level!");
-  case 0:
-    return llvm::CodeGenOpt::None;
-  case 1:
-    return llvm::CodeGenOpt::Less;
-  case 2:
-    return llvm::CodeGenOpt::Default;
-  case 3:
-    return llvm::CodeGenOpt::Aggressive;
-  }
-}
-
 void CodeGenAction::setUpTargetMachine() {
   CompilerInstance &ci = this->getInstance();
 
-  const std::string &theTriple = ci.getInvocation().getTargetOpts().triple;
+  const TargetOptions &targetOpts = ci.getInvocation().getTargetOpts();
+  const std::string &theTriple = targetOpts.triple;
 
   // Create `Target`
   std::string error;
@@ -595,12 +588,17 @@ void CodeGenAction::setUpTargetMachine() {
 
   // Create `TargetMachine`
   const auto &CGOpts = ci.getInvocation().getCodeGenOpts();
-  llvm::CodeGenOpt::Level OptLevel = getCGOptLevel(CGOpts);
+  std::optional<llvm::CodeGenOpt::Level> OptLevelOrNone =
+      llvm::CodeGenOpt::getLevel(CGOpts.OptimizationLevel);
+  assert(OptLevelOrNone && "Invalid optimization level!");
+  llvm::CodeGenOpt::Level OptLevel = *OptLevelOrNone;
+  std::string featuresStr = llvm::join(targetOpts.featuresAsWritten.begin(),
+                                       targetOpts.featuresAsWritten.end(), ",");
   tm.reset(theTarget->createTargetMachine(
-      theTriple, /*CPU=*/"",
-      /*Features=*/"", llvm::TargetOptions(),
+      theTriple, /*CPU=*/targetOpts.cpu,
+      /*Features=*/featuresStr, llvm::TargetOptions(),
       /*Reloc::Model=*/CGOpts.getRelocationModel(),
-      /*CodeModel::Model=*/llvm::None, OptLevel));
+      /*CodeModel::Model=*/std::nullopt, OptLevel));
   assert(tm && "Failed to create TargetMachine");
 }
 
@@ -675,6 +673,7 @@ static void generateMachineCodeOrAssemblyImpl(clang::DiagnosticsEngine &diags,
 
 void CodeGenAction::runOptimizationPipeline(llvm::raw_pwrite_stream &os) {
   auto opts = getInstance().getInvocation().getCodeGenOpts();
+  auto &diags = getInstance().getDiagnostics();
   llvm::OptimizationLevel level = mapToLevel(opts);
 
   // Create the analysis managers.
@@ -686,10 +685,26 @@ void CodeGenAction::runOptimizationPipeline(llvm::raw_pwrite_stream &os) {
   // Create the pass manager builder.
   llvm::PassInstrumentationCallbacks pic;
   llvm::PipelineTuningOptions pto;
-  llvm::Optional<llvm::PGOOptions> pgoOpt;
-  llvm::StandardInstrumentations si(opts.DebugPassManager);
+  std::optional<llvm::PGOOptions> pgoOpt;
+  llvm::StandardInstrumentations si(llvmModule->getContext(),
+                                    opts.DebugPassManager);
   si.registerCallbacks(pic, &fam);
   llvm::PassBuilder pb(tm.get(), pto, pgoOpt, &pic);
+
+  // Attempt to load pass plugins and register their callbacks with PB.
+  for (auto &pluginFile : opts.LLVMPassPlugins) {
+    auto passPlugin = llvm::PassPlugin::Load(pluginFile);
+    if (passPlugin) {
+      passPlugin->registerPassBuilderCallbacks(pb);
+    } else {
+      diags.Report(clang::diag::err_fe_unable_to_load_plugin)
+          << pluginFile << passPlugin.takeError();
+    }
+  }
+  // Register static plugin extensions.
+#define HANDLE_EXTENSION(Ext)                                                  \
+  get##Ext##PluginInfo().RegisterPassBuilderCallbacks(pb);
+#include "llvm/Support/Extension.def"
 
   // Register all the basic analyses with the managers.
   pb.registerModuleAnalyses(mam);

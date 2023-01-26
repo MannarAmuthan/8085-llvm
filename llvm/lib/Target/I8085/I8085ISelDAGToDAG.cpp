@@ -28,8 +28,10 @@ namespace llvm {
 /// Lowers LLVM IR (in DAG form) to I8085 MC instructions (in DAG form).
 class I8085DAGToDAGISel : public SelectionDAGISel {
 public:
+  static char ID;
+
   I8085DAGToDAGISel(I8085TargetMachine &TM, CodeGenOpt::Level OptLevel)
-      : SelectionDAGISel(TM, OptLevel), Subtarget(nullptr) {}
+      : SelectionDAGISel(ID, TM, OptLevel), Subtarget(nullptr) {}
 
   StringRef getPassName() const override {
     return "I8085 DAG->DAG Instruction Selection";
@@ -51,6 +53,8 @@ private:
 
   const I8085Subtarget *Subtarget;
 };
+
+char I8085DAGToDAGISel::ID = 0;
 
 bool I8085DAGToDAGISel::runOnMachineFunction(MachineFunction &MF) {
   Subtarget = &MF.getSubtarget<I8085Subtarget>();

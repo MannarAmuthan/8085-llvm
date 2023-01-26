@@ -18,6 +18,7 @@
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/Interfaces/TilingInterface.h"
+#include <optional>
 
 using namespace mlir;
 using namespace mlir::linalg;
@@ -47,7 +48,7 @@ static SmallVector<Value> getIndicesForAccess(OpBuilder &b, Location loc,
 static LogicalResult inlinePayload(OpBuilder &b, LinalgOp linalgOp,
                                    ValueRange ivs, ValueRange argValues) {
   Block *body = linalgOp.getBlock();
-  BlockAndValueMapping map;
+  IRMapping map;
   map.map(body->getArguments(), argValues);
   for (auto &op : body->without_terminator()) {
     if (auto indexOp = dyn_cast<IndexOp>(&op)) {
@@ -88,10 +89,7 @@ struct LinalgOpTilingInterface
   /// Return the loop iterator type.
   SmallVector<utils::IteratorType> getLoopIteratorTypes(Operation *op) const {
     LinalgOpTy concreteOp = cast<LinalgOpTy>(op);
-    return llvm::to_vector(llvm::map_range(
-        concreteOp.getIteratorTypesArray(), [](StringRef iteratorType) {
-          return utils::symbolizeIteratorType(iteratorType).value();
-        }));
+    return concreteOp.getIteratorTypesArray();
   }
 
   /// Return the iteration domain range.
@@ -128,8 +126,7 @@ struct LinalgOpTilingInterface
     SmallVector<Type> resultTensorTypes =
         getTensorOutputTypes(linalgOp, tiledOperands);
 
-    Operation *tiledOp =
-        linalgOp.clone(b, loc, resultTensorTypes, tiledOperands);
+    Operation *tiledOp = clone(b, linalgOp, resultTensorTypes, tiledOperands);
     offsetIndices(b, cast<LinalgOp>(tiledOp), offsets);
 
     return {tiledOp};
@@ -262,6 +259,8 @@ struct LinalgOpPartialReductionInterface
     // Insert the new parallel dimension based on the index of the reduction
     // loop. This could be controlled by user for more flexibility.
     int64_t insertSplitDimension = reductionDims[0];
+    assert(sizes.size() >= static_cast<size_t>(insertSplitDimension) &&
+           "reduction dimension must be tiled");
 
     SmallVector<Operation *, 4> combinerOps;
     if (!matchReduction(linalgOp.getRegionOutputArgs(), 0, combinerOps) ||
@@ -269,7 +268,7 @@ struct LinalgOpPartialReductionInterface
       return op->emitOpError("Failed to anaysis the reduction operation.");
 
     Operation *reductionOp = combinerOps[0];
-    Optional<Attribute> identity = getNeutralElement(reductionOp);
+    std::optional<Attribute> identity = getNeutralElement(reductionOp);
     if (!identity.has_value())
       return op->emitOpError(
           "Failed to get an identity value for the reduction operation.");
@@ -282,8 +281,7 @@ struct LinalgOpPartialReductionInterface
     SmallVector<Value> dynamicDims;
     for (int64_t idx : llvm::seq<int64_t>(0, oldShape.size() + 1)) {
       if (idx == insertSplitDimension) {
-        dispatchIndexOpFoldResults(sizes[idx], dynamicDims, newOutputShape,
-                                   ShapedType::kDynamicStrideOrOffset);
+        dispatchIndexOpFoldResults(sizes[idx], dynamicDims, newOutputShape);
         continue;
       }
       int64_t oldIdx = idx < insertSplitDimension ? idx : idx - 1;
@@ -339,15 +337,16 @@ struct LinalgOpPartialReductionInterface
 
     // Step3. create a generic op where the reduction dimension is replaced by a
     // parallel dimension of the size of reduction.
-    SmallVector<StringRef> newIteratorTypes = linalgOp.getIteratorTypesArray();
-    newIteratorTypes[reductionDims[0]] = getParallelIteratorTypeName();
+    SmallVector<utils::IteratorType> newIteratorTypes =
+        linalgOp.getIteratorTypesArray();
+    newIteratorTypes[reductionDims[0]] = utils::IteratorType::parallel;
     SmallVector<AffineMap> newMaps = linalgOp.getIndexingMapsArray();
     newMaps.back() = AffineMap::get(newMaps.back().getNumDims(), 0, outputExpr,
                                     linalgOp.getContext());
     auto genericOp =
         b.create<GenericOp>(loc, TypeRange({out.getType()}), tiledOperands,
                             ValueRange({out}), newMaps, newIteratorTypes);
-    BlockAndValueMapping mapping;
+    IRMapping mapping;
     op->getRegion(0).cloneInto(&genericOp.getRegion(),
                                genericOp.getRegion().begin(), mapping);
     return genericOp.getOperation();
@@ -366,14 +365,14 @@ struct LinalgOpPartialReductionInterface
     int64_t intermRank =
         partialReduce[0].getType().cast<ShapedType>().getRank();
     AffineMap inputMap = b.getMultiDimIdentityMap(intermRank);
-    SmallVector<StringRef> reductionIteratorTypes;
+    SmallVector<utils::IteratorType> reductionIteratorTypes;
     SmallVector<AffineExpr> exprs;
     for (int64_t i : llvm::seq<int64_t>(0, intermRank)) {
       if (dimToMerge == i) {
-        reductionIteratorTypes.push_back(getReductionIteratorTypeName());
+        reductionIteratorTypes.push_back(utils::IteratorType::reduction);
       } else {
         exprs.push_back(b.getAffineDimExpr(i));
-        reductionIteratorTypes.push_back(getParallelIteratorTypeName());
+        reductionIteratorTypes.push_back(utils::IteratorType::parallel);
       }
     }
     AffineMap outputMap =

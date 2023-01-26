@@ -29,7 +29,7 @@ class I8085TargetMachine : public LLVMTargetMachine {
 public:
   I8085TargetMachine(const Target &T, const Triple &TT, StringRef CPU,
                    StringRef FS, const TargetOptions &Options,
-                   Optional<Reloc::Model> RM, Optional<CodeModel::Model> CM,
+                   std::optional<Reloc::Model> RM, std::optional<CodeModel::Model> CM,
                    CodeGenOpt::Level OL, bool JIT);
 
   const I8085Subtarget *getSubtargetImpl() const;
@@ -40,6 +40,10 @@ public:
   }
 
   TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
+
+  MachineFunctionInfo *
+  createMachineFunctionInfo(BumpPtrAllocator &Allocator, const Function &F,
+                            const TargetSubtargetInfo *STI) const override;
 
 private:
   std::unique_ptr<TargetLoweringObjectFile> TLOF;

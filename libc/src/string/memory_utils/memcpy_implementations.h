@@ -21,16 +21,16 @@
 
 namespace __llvm_libc {
 
-[[maybe_unused]] static inline void
+[[maybe_unused]] LIBC_INLINE void
 inline_memcpy_embedded_tiny(Ptr __restrict dst, CPtr __restrict src,
                             size_t count) {
-#pragma nounroll
+  LLVM_LIBC_LOOP_NOUNROLL
   for (size_t offset = 0; offset < count; ++offset)
     builtin::Memcpy<1>::block(dst + offset, src + offset);
 }
 
 #if defined(LLVM_LIBC_ARCH_X86)
-[[maybe_unused]] static inline void
+[[maybe_unused]] LIBC_INLINE void
 inline_memcpy_x86(Ptr __restrict dst, CPtr __restrict src, size_t count) {
   if (count == 0)
     return;
@@ -60,35 +60,36 @@ inline_memcpy_x86(Ptr __restrict dst, CPtr __restrict src, size_t count) {
   return builtin::Memcpy<kBlockSize>::loop_and_tail(dst, src, count);
 }
 
-[[maybe_unused]] static inline void
+[[maybe_unused]] LIBC_INLINE void
 inline_memcpy_x86_maybe_interpose_repmovsb(Ptr __restrict dst,
                                            CPtr __restrict src, size_t count) {
   // Whether to use rep;movsb exclusively, not at all, or only above a certain
   // threshold.
-  // TODO: Use only a single preprocessor definition to simplify the code.
 #ifndef LLVM_LIBC_MEMCPY_X86_USE_REPMOVSB_FROM_SIZE
 #define LLVM_LIBC_MEMCPY_X86_USE_REPMOVSB_FROM_SIZE -1
 #endif
 
-  static constexpr bool kUseOnlyRepMovsb =
-      LLVM_LIBC_IS_DEFINED(LLVM_LIBC_MEMCPY_X86_USE_ONLY_REPMOVSB);
+#ifdef LLVM_LIBC_MEMCPY_X86_USE_ONLY_REPMOVSB
+#error LLVM_LIBC_MEMCPY_X86_USE_ONLY_REPMOVSB is deprecated use LLVM_LIBC_MEMCPY_X86_USE_REPMOVSB_FROM_SIZE=0 instead.
+#endif // LLVM_LIBC_MEMCPY_X86_USE_ONLY_REPMOVSB
+
   static constexpr size_t kRepMovsbThreshold =
       LLVM_LIBC_MEMCPY_X86_USE_REPMOVSB_FROM_SIZE;
-  if constexpr (kUseOnlyRepMovsb)
+  if constexpr (kRepMovsbThreshold == 0) {
     return x86::Memcpy::repmovsb(dst, src, count);
-  else if constexpr (kRepMovsbThreshold >= 0) {
+  } else if constexpr (kRepMovsbThreshold == size_t(-1)) {
+    return inline_memcpy_x86(dst, src, count);
+  } else {
     if (unlikely(count >= kRepMovsbThreshold))
       return x86::Memcpy::repmovsb(dst, src, count);
     else
       return inline_memcpy_x86(dst, src, count);
-  } else {
-    return inline_memcpy_x86(dst, src, count);
   }
 }
 #endif // defined(LLVM_LIBC_ARCH_X86)
 
 #if defined(LLVM_LIBC_ARCH_AARCH64)
-[[maybe_unused]] static inline void
+[[maybe_unused]] LIBC_INLINE void
 inline_memcpy_aarch64(Ptr __restrict dst, CPtr __restrict src, size_t count) {
   if (count == 0)
     return;
@@ -116,8 +117,8 @@ inline_memcpy_aarch64(Ptr __restrict dst, CPtr __restrict src, size_t count) {
 }
 #endif // defined(LLVM_LIBC_ARCH_AARCH64)
 
-static inline void inline_memcpy(Ptr __restrict dst, CPtr __restrict src,
-                                 size_t count) {
+LIBC_INLINE void inline_memcpy(Ptr __restrict dst, CPtr __restrict src,
+                               size_t count) {
   using namespace __llvm_libc::builtin;
 #if defined(LLVM_LIBC_ARCH_X86)
   return inline_memcpy_x86_maybe_interpose_repmovsb(dst, src, count);
@@ -125,13 +126,15 @@ static inline void inline_memcpy(Ptr __restrict dst, CPtr __restrict src,
   return inline_memcpy_aarch64(dst, src, count);
 #elif defined(LLVM_LIBC_ARCH_ARM)
   return inline_memcpy_embedded_tiny(dst, src, count);
+#elif defined(LLVM_LIBC_ARCH_GPU)
+  return inline_memcpy_embedded_tiny(dst, src, count);
 #else
 #error "Unsupported platform"
 #endif
 }
 
-static inline void inline_memcpy(void *__restrict dst,
-                                 const void *__restrict src, size_t count) {
+LIBC_INLINE void inline_memcpy(void *__restrict dst, const void *__restrict src,
+                               size_t count) {
   inline_memcpy(reinterpret_cast<Ptr>(dst), reinterpret_cast<CPtr>(src), count);
 }
 

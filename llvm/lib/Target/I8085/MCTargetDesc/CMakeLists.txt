@@ -14,6 +14,7 @@ add_llvm_component_library(LLVMI8085Desc
   MC
   I8085Info
   Support
+  TargetParser
 
   ADD_TO_COMPONENT
   I8085

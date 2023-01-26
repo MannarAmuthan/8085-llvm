@@ -110,6 +110,8 @@ static BoolValue &unpackValue(BoolValue &V, Environment &Env) {
 // Unpacks the value (if any) associated with `E` and updates `E` to the new
 // value, if any unpacking occured.
 static Value *maybeUnpackLValueExpr(const Expr &E, Environment &Env) {
+  // FIXME: this is too flexible: it _allows_ a reference, while it should
+  // _require_ one, since lvalues should always be wrapped in `ReferenceValue`.
   auto *Loc = Env.getStorageLocation(E, SkipPast::Reference);
   if (Loc == nullptr)
     return nullptr;
@@ -128,9 +130,8 @@ static Value *maybeUnpackLValueExpr(const Expr &E, Environment &Env) {
 
 class TransferVisitor : public ConstStmtVisitor<TransferVisitor> {
 public:
-  TransferVisitor(const StmtToEnvMap &StmtToEnv, Environment &Env,
-                  TransferOptions Options)
-      : StmtToEnv(StmtToEnv), Env(Env), Options(Options) {}
+  TransferVisitor(const StmtToEnvMap &StmtToEnv, Environment &Env)
+      : StmtToEnv(StmtToEnv), Env(Env) {}
 
   void VisitBinaryOperator(const BinaryOperator *S) {
     const Expr *LHS = S->getLHS();
@@ -189,12 +190,15 @@ public:
   }
 
   void VisitDeclRefExpr(const DeclRefExpr *S) {
-    assert(S->getDecl() != nullptr);
-    auto *DeclLoc = Env.getStorageLocation(*S->getDecl(), SkipPast::None);
+    const ValueDecl *VD = S->getDecl();
+    assert(VD != nullptr);
+    auto *DeclLoc = Env.getStorageLocation(*VD, SkipPast::None);
     if (DeclLoc == nullptr)
       return;
 
-    if (S->getDecl()->getType()->isReferenceType()) {
+    if (VD->getType()->isReferenceType()) {
+      assert(isa_and_nonnull<ReferenceValue>(Env.getValue((*DeclLoc))) &&
+             "reference-typed declarations map to `ReferenceValue`s");
       Env.setStorageLocation(*S, *DeclLoc);
     } else {
       auto &Loc = Env.createStorageLocation(*S);
@@ -213,8 +217,15 @@ public:
     if (D.hasGlobalStorage())
       return;
 
-    auto &Loc = Env.createStorageLocation(D);
-    Env.setStorageLocation(D, Loc);
+    // The storage location for `D` could have been created earlier, before the
+    // variable's declaration statement (for example, in the case of
+    // BindingDecls).
+    auto *MaybeLoc = Env.getStorageLocation(D, SkipPast::None);
+    if (MaybeLoc == nullptr) {
+      MaybeLoc = &Env.createStorageLocation(D);
+      Env.setStorageLocation(D, *MaybeLoc);
+    }
+    auto &Loc = *MaybeLoc;
 
     const Expr *InitExpr = D.getInit();
     if (InitExpr == nullptr) {
@@ -258,24 +269,30 @@ public:
       // needs to be evaluated after initializing the values in the storage for
       // VarDecl, as the bindings refer to them.
       // FIXME: Add support for ArraySubscriptExpr.
-      // FIXME: Consider adding AST nodes that are used for structured bindings
-      // to the CFG.
+      // FIXME: Consider adding AST nodes used in BindingDecls to the CFG.
       for (const auto *B : Decomp->bindings()) {
-        auto *ME = dyn_cast_or_null<MemberExpr>(B->getBinding());
-        if (ME == nullptr)
-          continue;
+        if (auto *ME = dyn_cast_or_null<MemberExpr>(B->getBinding())) {
+          auto *DE = dyn_cast_or_null<DeclRefExpr>(ME->getBase());
+          if (DE == nullptr)
+            continue;
 
-        auto *DE = dyn_cast_or_null<DeclRefExpr>(ME->getBase());
-        if (DE == nullptr)
-          continue;
+          // ME and its base haven't been visited because they aren't included
+          // in the statements of the CFG basic block.
+          VisitDeclRefExpr(DE);
+          VisitMemberExpr(ME);
 
-        // ME and its base haven't been visited because they aren't included in
-        // the statements of the CFG basic block.
-        VisitDeclRefExpr(DE);
-        VisitMemberExpr(ME);
-
-        if (auto *Loc = Env.getStorageLocation(*ME, SkipPast::Reference))
-          Env.setStorageLocation(*B, *Loc);
+          if (auto *Loc = Env.getStorageLocation(*ME, SkipPast::Reference))
+            Env.setStorageLocation(*B, *Loc);
+        } else if (auto *VD = B->getHoldingVar()) {
+          // Holding vars are used to back the BindingDecls of tuple-like
+          // types. The holding var declarations appear *after* this statement,
+          // so we have to create a location for them here to share with `B`. We
+          // don't visit the binding, because we know it will be a DeclRefExpr
+          // to `VD`.
+          auto &VDLoc = Env.createStorageLocation(*VD);
+          Env.setStorageLocation(*VD, VDLoc);
+          Env.setStorageLocation(*B, VDLoc);
+        }
       }
     }
   }
@@ -415,6 +432,9 @@ public:
   }
 
   void VisitReturnStmt(const ReturnStmt *S) {
+    if (!Env.getAnalysisOptions().ContextSensitiveOpts)
+      return;
+
     auto *Ret = S->getRetValue();
     if (Ret == nullptr)
       return;
@@ -429,6 +449,10 @@ public:
 
     auto *Loc = Env.getReturnStorageLocation();
     assert(Loc != nullptr);
+    // FIXME: Support reference-type returns.
+    if (Loc->getType()->isReferenceType())
+      return;
+
     // FIXME: Model NRVO.
     Env.setValue(*Loc, *Val);
   }
@@ -441,6 +465,10 @@ public:
     if (Member->isFunctionOrFunctionTemplate())
       return;
 
+    // FIXME: if/when we add support for modeling enums, use that support here.
+    if (isa<EnumConstantDecl>(Member))
+      return;
+
     if (auto *D = dyn_cast<VarDecl>(Member)) {
       if (D->hasGlobalStorage()) {
         auto *VarDeclLoc = Env.getStorageLocation(*D, SkipPast::None);
@@ -448,6 +476,8 @@ public:
           return;
 
         if (VarDeclLoc->getType()->isReferenceType()) {
+          assert(isa_and_nonnull<ReferenceValue>(Env.getValue((*VarDeclLoc))) &&
+                 "reference-typed declarations map to `ReferenceValue`s");
           Env.setStorageLocation(*S, *VarDeclLoc);
         } else {
           auto &Loc = Env.createStorageLocation(*S);
@@ -466,13 +496,24 @@ public:
     if (BaseLoc == nullptr)
       return;
 
-    // FIXME: Add support for union types.
-    if (BaseLoc->getType()->isUnionType())
-      return;
-
     auto &MemberLoc = BaseLoc->getChild(*Member);
     if (MemberLoc.getType()->isReferenceType()) {
-      Env.setStorageLocation(*S, MemberLoc);
+      // Based on its type, `MemberLoc` must be mapped either to nothing or to a
+      // `ReferenceValue`. For the former, we won't set a storage location for
+      // this expression, so as to maintain an invariant lvalue expressions;
+      // namely, that their location maps to a `ReferenceValue`.  In this,
+      // lvalues are unlike other expressions, where it is valid for their
+      // location to map to nothing (because they are not modeled).
+      //
+      // Note: we need this invariant for lvalues so that, when accessing a
+      // value, we can distinguish an rvalue from an lvalue. An alternative
+      // design, which takes the expression's value category into account, would
+      // avoid the need for this invariant.
+      if (auto *V = Env.getValue(MemberLoc)) {
+        assert(isa<ReferenceValue>(V) &&
+               "reference-typed declarations map to `ReferenceValue`s");
+        Env.setStorageLocation(*S, MemberLoc);
+      }
     } else {
       auto &Loc = Env.createStorageLocation(*S);
       Env.setStorageLocation(*S, Loc);
@@ -743,6 +784,7 @@ private:
   // `F` of `S`. The type `E` must be either `CallExpr` or `CXXConstructExpr`.
   template <typename E>
   void transferInlineCall(const E *S, const FunctionDecl *F) {
+    const auto &Options = Env.getAnalysisOptions();
     if (!(Options.ContextSensitiveOpts &&
           Env.canDescend(Options.ContextSensitiveOpts->Depth, F)))
       return;
@@ -787,12 +829,10 @@ private:
 
   const StmtToEnvMap &StmtToEnv;
   Environment &Env;
-  TransferOptions Options;
 };
 
-void transfer(const StmtToEnvMap &StmtToEnv, const Stmt &S, Environment &Env,
-              TransferOptions Options) {
-  TransferVisitor(StmtToEnv, Env, Options).Visit(&S);
+void transfer(const StmtToEnvMap &StmtToEnv, const Stmt &S, Environment &Env) {
+  TransferVisitor(StmtToEnv, Env).Visit(&S);
 }
 
 } // namespace dataflow

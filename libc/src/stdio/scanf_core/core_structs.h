@@ -78,12 +78,13 @@ struct FormatSection {
 
 enum ErrorCodes : int {
   // This is the value to be returned by conversions when no error has occurred.
-  WRITE_OK = 0,
+  READ_OK = 0,
   // These are the scanf return values for when an error has occurred. They are
   // all negative, and should be distinct.
   FILE_READ_ERROR = -1,
   FILE_STATUS_ERROR = -2,
   MATCHING_FAILURE = -3,
+  ALLOCATION_FAILURE = -4,
 };
 } // namespace scanf_core
 } // namespace __llvm_libc

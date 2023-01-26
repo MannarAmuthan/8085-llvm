@@ -14,7 +14,6 @@
 #include "llvm/Transforms/IPO/PartialInlining.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
@@ -717,8 +716,7 @@ static bool hasProfileData(const Function &F, const FunctionOutliningInfo &OI) {
     BranchInst *BR = dyn_cast<BranchInst>(E->getTerminator());
     if (!BR || BR->isUnconditional())
       continue;
-    uint64_t T, F;
-    if (extractBranchWeights(*BR, T, F))
+    if (hasBranchWeightMD(*BR))
       return true;
   }
   return false;
@@ -1488,16 +1486,6 @@ bool PartialInlinerImpl::run(Module &M) {
     Worklist.pop_back();
 
     if (CurrFunc->use_empty())
-      continue;
-
-    bool Recursive = false;
-    for (User *U : CurrFunc->users())
-      if (Instruction *I = dyn_cast<Instruction>(U))
-        if (I->getParent()->getParent() == CurrFunc) {
-          Recursive = true;
-          break;
-        }
-    if (Recursive)
       continue;
 
     std::pair<bool, Function *> Result = unswitchFunction(*CurrFunc);

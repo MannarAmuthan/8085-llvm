@@ -387,9 +387,6 @@ protected:
     } else {
         Builder.defineMacro("__gnu_linux__");
     }
-    // Work around Issue #47994 until glibc PR build/27558 is fixed.
-    if (Triple.isSPARC())
-      Builder.defineMacro("__NO_INLINE__");
     if (Opts.POSIXThreads)
       Builder.defineMacro("_REENTRANT");
     if (Opts.CPlusPlus)
@@ -776,6 +773,10 @@ public:
   }
 
   bool defaultsToAIXPowerAlignment() const override { return true; }
+
+  bool areDefaultedSMFStillPOD(const LangOptions &) const override {
+    return false;
+  }
 };
 
 // z/OS target
@@ -833,6 +834,10 @@ public:
     this->UseZeroLengthBitfieldAlignment = true;
     this->UseLeadingZeroLengthBitfield = false;
     this->ZeroLengthBitfieldBoundary = 32;
+  }
+
+  bool areDefaultedSMFStillPOD(const LangOptions &) const override {
+    return false;
   }
 };
 

@@ -68,6 +68,11 @@ def GnuExtensions : StandardSpec<"GNUExtensions"> {
             RetValSpec<CharPtr>,
             [ArgSpec<IntType>, ArgSpec<CharPtr>, ArgSpec<SizeTType>]
         >,
+        FunctionSpec<
+            "strcasestr",
+            RetValSpec<CharPtr>,
+            [ArgSpec<ConstCharPtr>, ArgSpec<ConstCharPtr>]
+        >,
       ]
   >;
 
@@ -136,6 +141,11 @@ def GnuExtensions : StandardSpec<"GNUExtensions"> {
                ArgSpec<SizeTType>,
                ArgSpec<SizeTType>,
                ArgSpec<FILERestrictedPtr>]
+          >,
+          FunctionSpec<
+              "fgetc_unlocked",
+              RetValSpec<IntType>,
+              [ArgSpec<FILEPtr>]
           >,
       ]
   >;
