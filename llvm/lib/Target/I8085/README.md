@@ -31,7 +31,7 @@ Currently basic constructs such as , loading and storing variables, function cal
 
 ## <a id="correctness">**Correctness:**
 
-The output assembly is tested in open source 8085 simulators and assemblers.  Codegen Tests are located [here](llvm/test/CodeGen/I8085).
+The output assembly is tested in open source 8085 simulators and assemblers.  Codegen Tests are located [here](https://github.com/MannarAmuthan/8085-llvm/tree/main/llvm/test/CodeGen/I8085).
 
 ## <a id="disclaimer">**Disclaimer:**
 

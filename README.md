@@ -4,11 +4,21 @@ For more details, current status of this backend, Please refer this [target's re
 
 ## Build
 
-```
+```shell
 cd llvm 
 mkdir build
+cd build
 cmake -G "Ninja" -DLLVM_TARGETS_TO_BUILD="I8085" -DCMAKE_BUILD_TYPE="Debug" -DLLVM_ENABLE_ASSERTIONS=On ../
 ninja
+```
+
+## Compile LLVM IR file
+Make sure that there are no attributes, metadata related to other architecture in the .ll file.
+
+```shell
+llvm/build/bin/llc fibonacci.ll -mtriple=i8085 -march=i8085
+# For compiling with verify machine instructions, and print results in each pass
+llvm/build/bin/llc fibonacci.ll -mtriple=i8085 -march=i8085 -verify-machineinstrs -print-after-all
 ```
 
 For using other build systems and methods, please refer official LLVM Build Docs.
