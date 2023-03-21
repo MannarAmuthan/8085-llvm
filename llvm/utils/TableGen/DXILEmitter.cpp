@@ -12,12 +12,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "SequenceToOffsetTable.h"
+#include "TableGenBackends.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/DXILOperationCommon.h"
-#include "llvm/TableGen/Error.h"
 #include "llvm/TableGen/Record.h"
 
 using namespace llvm;
@@ -322,7 +322,7 @@ static void emitDXILOperationTable(std::vector<DXILOperationData> &DXILOps,
   for (auto &DXILOp : DXILOps) {
     OpStrings.add(DXILOp.DXILOp.str());
 
-    if (ClassSet.find(DXILOp.DXILClass) != ClassSet.end())
+    if (ClassSet.contains(DXILOp.DXILClass))
       continue;
     ClassSet.insert(DXILOp.DXILClass);
     OpClassStrings.add(getDXILOpClassName(DXILOp.DXILClass));

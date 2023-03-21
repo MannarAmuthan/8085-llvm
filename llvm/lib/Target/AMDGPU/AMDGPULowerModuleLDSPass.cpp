@@ -134,6 +134,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicsAMDGPU.h"
 #include "llvm/IR/MDBuilder.h"
+#include "llvm/IR/ReplaceConstant.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
@@ -162,7 +163,7 @@ enum class LoweringKind { module, table, kernel, hybrid };
 cl::opt<LoweringKind> LoweringKindLoc(
     "amdgpu-lower-module-lds-strategy",
     cl::desc("Specify lowering strategy for function LDS access:"), cl::Hidden,
-    cl::init(LoweringKind::module),
+    cl::init(LoweringKind::hybrid),
     cl::values(
         clEnumValN(LoweringKind::table, "table", "Lower via table lookup"),
         clEnumValN(LoweringKind::module, "module", "Lower via module struct"),
@@ -248,63 +249,12 @@ class AMDGPULowerModuleLDS : public ModulePass {
     //         if (constantExprUsesLDS(Op))
     //           replaceConstantExprInFunction(I, Op);
 
-    bool Changed = false;
-
-    // Find all ConstantExpr that are direct users of an LDS global
-    SmallVector<ConstantExpr *> Stack;
+    SmallVector<Constant *> LDSGlobals;
     for (auto &GV : M.globals())
       if (AMDGPU::isLDSVariableToLower(GV))
-        for (User *U : GV.users())
-          if (ConstantExpr *C = dyn_cast<ConstantExpr>(U))
-            Stack.push_back(C);
+        LDSGlobals.push_back(&GV);
 
-    // Expand to include constexpr users of direct users
-    SetVector<ConstantExpr *> ConstExprUsersOfLDS;
-    while (!Stack.empty()) {
-      ConstantExpr *V = Stack.pop_back_val();
-      if (ConstExprUsersOfLDS.contains(V))
-        continue;
-
-      ConstExprUsersOfLDS.insert(V);
-
-      for (auto *Nested : V->users())
-        if (ConstantExpr *CE = dyn_cast<ConstantExpr>(Nested))
-          Stack.push_back(CE);
-    }
-
-    // Find all instructions that use any of the ConstExpr users of LDS
-    SetVector<Instruction *> InstructionWorklist;
-    for (ConstantExpr *CE : ConstExprUsersOfLDS)
-      for (User *U : CE->users())
-        if (auto *I = dyn_cast<Instruction>(U))
-          InstructionWorklist.insert(I);
-
-    // Replace those ConstExpr operands with instructions
-    while (!InstructionWorklist.empty()) {
-      Instruction *I = InstructionWorklist.pop_back_val();
-      for (Use &U : I->operands()) {
-
-        auto *BI = I;
-        if (auto *Phi = dyn_cast<PHINode>(I)) {
-          BasicBlock *BB = Phi->getIncomingBlock(U);
-          BasicBlock::iterator It = BB->getFirstInsertionPt();
-          assert(It != BB->end() && "Unexpected empty basic block");
-          BI = &(*(It));
-        }
-
-        if (ConstantExpr *C = dyn_cast<ConstantExpr>(U.get())) {
-          if (ConstExprUsersOfLDS.contains(C)) {
-            Changed = true;
-            Instruction *NI = C->getAsInstruction(BI);
-            InstructionWorklist.insert(NI);
-            U.set(NI);
-            C->removeDeadConstantUsers();
-          }
-        }
-      }
-    }
-
-    return Changed;
+    return convertUsersOfConstantsToInstructions(LDSGlobals);
   }
 
 public:
@@ -658,6 +608,19 @@ public:
     return MostUsed.GV;
   }
 
+  static void recordLDSAbsoluteAddress(Module *M, GlobalVariable *GV,
+                                       uint32_t Address) {
+    // Write the specified address into metadata where it can be retrieved by
+    // the assembler. Format is a half open range, [Address Address+1)
+    LLVMContext &Ctx = M->getContext();
+    auto *IntTy =
+        M->getDataLayout().getIntPtrType(Ctx, AMDGPUAS::LOCAL_ADDRESS);
+    auto *MinC = ConstantAsMetadata::get(ConstantInt::get(IntTy, Address));
+    auto *MaxC = ConstantAsMetadata::get(ConstantInt::get(IntTy, Address + 1));
+    GV->setMetadata(LLVMContext::MD_absolute_symbol,
+                    MDNode::get(Ctx, {MinC, MaxC}));
+  }
+
   bool runOnModule(Module &M) override {
     LLVMContext &Ctx = M.getContext();
     CallGraph CG = CallGraph(M);
@@ -758,16 +721,20 @@ public:
         kernelsThatIndirectlyAccessAnyOfPassedVariables(M, LDSUsesInfo,
                                                         TableLookupVariables);
 
+    GlobalVariable *MaybeModuleScopeStruct = nullptr;
     if (!ModuleScopeVariables.empty()) {
       LDSVariableReplacement ModuleScopeReplacement =
           createLDSVariableReplacement(M, "llvm.amdgcn.module.lds",
                                        ModuleScopeVariables);
-
+      MaybeModuleScopeStruct = ModuleScopeReplacement.SGV;
       appendToCompilerUsed(M,
                            {static_cast<GlobalValue *>(
                                ConstantExpr::getPointerBitCastOrAddrSpaceCast(
                                    cast<Constant>(ModuleScopeReplacement.SGV),
                                    Type::getInt8PtrTy(Ctx)))});
+
+      // module.lds will be allocated at zero in any kernel that allocates it
+      recordLDSAbsoluteAddress(&M, ModuleScopeReplacement.SGV, 0);
 
       // historic
       removeLocalVarsFromUsedLists(M, ModuleScopeVariables);
@@ -855,6 +822,33 @@ public:
 
       auto Replacement =
           createLDSVariableReplacement(M, VarName, KernelUsedVariables);
+
+      // This struct is allocated at a predictable address that can be
+      // calculated now, recorded in metadata then used to lower references to
+      // it during codegen.
+      {
+        // frame layout, starting from 0
+        //{
+        //  module.lds
+        //  alignment padding
+        //  kernel instance
+        //}
+
+        if (!MaybeModuleScopeStruct ||
+            Func.hasFnAttribute("amdgpu-elide-module-lds")) {
+          // There's no module.lds for this kernel so this replacement struct
+          // goes first
+          recordLDSAbsoluteAddress(&M, Replacement.SGV, 0);
+        } else {
+          const DataLayout &DL = M.getDataLayout();
+          TypeSize ModuleSize =
+              DL.getTypeAllocSize(MaybeModuleScopeStruct->getValueType());
+          GlobalVariable *KernelStruct = Replacement.SGV;
+          Align KernelAlign = AMDGPU::getAlign(DL, KernelStruct);
+          recordLDSAbsoluteAddress(&M, Replacement.SGV,
+                                   alignTo(ModuleSize, KernelAlign));
+        }
+      }
 
       // remove preserves existing codegen
       removeLocalVarsFromUsedLists(M, KernelUsedVariables);

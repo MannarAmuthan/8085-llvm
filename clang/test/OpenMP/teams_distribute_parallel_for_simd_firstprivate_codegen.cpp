@@ -302,6 +302,7 @@ int main() {
 // CHECK1-NEXT:    [[DOTOFFLOAD_PTRS:%.*]] = alloca [5 x ptr], align 8
 // CHECK1-NEXT:    [[DOTOFFLOAD_MAPPERS:%.*]] = alloca [5 x ptr], align 8
 // CHECK1-NEXT:    [[TMP:%.*]] = alloca i32, align 4
+// CHECK1-NEXT:    [[KERNEL_ARGS:%.*]] = alloca [[STRUCT___TGT_KERNEL_ARGUMENTS:%.*]], align 8
 // CHECK1-NEXT:    store i32 0, ptr [[RETVAL]], align 4
 // CHECK1-NEXT:    [[TMP0:%.*]] = load i32, ptr @t_var, align 4
 // CHECK1-NEXT:    store i32 [[TMP0]], ptr [[T_VAR_CASTED]], align 4
@@ -341,7 +342,6 @@ int main() {
 // CHECK1-NEXT:    store ptr null, ptr [[TMP18]], align 8
 // CHECK1-NEXT:    [[TMP19:%.*]] = getelementptr inbounds [5 x ptr], ptr [[DOTOFFLOAD_BASEPTRS]], i32 0, i32 0
 // CHECK1-NEXT:    [[TMP20:%.*]] = getelementptr inbounds [5 x ptr], ptr [[DOTOFFLOAD_PTRS]], i32 0, i32 0
-// CHECK1-NEXT:    [[KERNEL_ARGS:%.*]] = alloca [[STRUCT___TGT_KERNEL_ARGUMENTS:%.*]], align 8
 // CHECK1-NEXT:    [[TMP21:%.*]] = getelementptr inbounds [[STRUCT___TGT_KERNEL_ARGUMENTS]], ptr [[KERNEL_ARGS]], i32 0, i32 0
 // CHECK1-NEXT:    store i32 2, ptr [[TMP21]], align 4
 // CHECK1-NEXT:    [[TMP22:%.*]] = getelementptr inbounds [[STRUCT___TGT_KERNEL_ARGUMENTS]], ptr [[KERNEL_ARGS]], i32 0, i32 1
@@ -549,8 +549,10 @@ int main() {
 // CHECK1-NEXT:  entry:
 // CHECK1-NEXT:    [[THIS_ADDR:%.*]] = alloca ptr, align 8
 // CHECK1-NEXT:    [[S_ADDR:%.*]] = alloca ptr, align 8
+// CHECK1-NEXT:    [[T_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
 // CHECK1-NEXT:    store ptr [[THIS]], ptr [[THIS_ADDR]], align 8
 // CHECK1-NEXT:    store ptr [[S]], ptr [[S_ADDR]], align 8
+// CHECK1-NEXT:    store ptr [[T]], ptr [[T_INDIRECT_ADDR]], align 8
 // CHECK1-NEXT:    [[THIS1:%.*]] = load ptr, ptr [[THIS_ADDR]], align 8
 // CHECK1-NEXT:    [[TMP0:%.*]] = load ptr, ptr [[S_ADDR]], align 8
 // CHECK1-NEXT:    call void @_ZN1SIfEC2ERKS0_2St(ptr noundef nonnull align 4 dereferenceable(4) [[THIS1]], ptr noundef nonnull align 4 dereferenceable(4) [[TMP0]], ptr noundef [[T]])
@@ -724,6 +726,7 @@ int main() {
 // CHECK1-NEXT:    [[DOTOFFLOAD_PTRS:%.*]] = alloca [4 x ptr], align 8
 // CHECK1-NEXT:    [[DOTOFFLOAD_MAPPERS:%.*]] = alloca [4 x ptr], align 8
 // CHECK1-NEXT:    [[_TMP1:%.*]] = alloca i32, align 4
+// CHECK1-NEXT:    [[KERNEL_ARGS:%.*]] = alloca [[STRUCT___TGT_KERNEL_ARGUMENTS:%.*]], align 8
 // CHECK1-NEXT:    call void @_ZN1SIiEC1Ev(ptr noundef nonnull align 4 dereferenceable(4) [[TEST]])
 // CHECK1-NEXT:    store i32 0, ptr [[T_VAR]], align 4
 // CHECK1-NEXT:    call void @llvm.memcpy.p0.p0.i64(ptr align 4 [[VEC]], ptr align 4 @__const._Z5tmainIiET_v.vec, i64 8, i1 false)
@@ -766,7 +769,6 @@ int main() {
 // CHECK1-NEXT:    store ptr null, ptr [[TMP17]], align 8
 // CHECK1-NEXT:    [[TMP18:%.*]] = getelementptr inbounds [4 x ptr], ptr [[DOTOFFLOAD_BASEPTRS]], i32 0, i32 0
 // CHECK1-NEXT:    [[TMP19:%.*]] = getelementptr inbounds [4 x ptr], ptr [[DOTOFFLOAD_PTRS]], i32 0, i32 0
-// CHECK1-NEXT:    [[KERNEL_ARGS:%.*]] = alloca [[STRUCT___TGT_KERNEL_ARGUMENTS:%.*]], align 8
 // CHECK1-NEXT:    [[TMP20:%.*]] = getelementptr inbounds [[STRUCT___TGT_KERNEL_ARGUMENTS]], ptr [[KERNEL_ARGS]], i32 0, i32 0
 // CHECK1-NEXT:    store i32 2, ptr [[TMP20]], align 4
 // CHECK1-NEXT:    [[TMP21:%.*]] = getelementptr inbounds [[STRUCT___TGT_KERNEL_ARGUMENTS]], ptr [[KERNEL_ARGS]], i32 0, i32 1
@@ -834,8 +836,10 @@ int main() {
 // CHECK1-NEXT:  entry:
 // CHECK1-NEXT:    [[THIS_ADDR:%.*]] = alloca ptr, align 8
 // CHECK1-NEXT:    [[S_ADDR:%.*]] = alloca ptr, align 8
+// CHECK1-NEXT:    [[T_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
 // CHECK1-NEXT:    store ptr [[THIS]], ptr [[THIS_ADDR]], align 8
 // CHECK1-NEXT:    store ptr [[S]], ptr [[S_ADDR]], align 8
+// CHECK1-NEXT:    store ptr [[T]], ptr [[T_INDIRECT_ADDR]], align 8
 // CHECK1-NEXT:    [[THIS1:%.*]] = load ptr, ptr [[THIS_ADDR]], align 8
 // CHECK1-NEXT:    [[F:%.*]] = getelementptr inbounds [[STRUCT_S:%.*]], ptr [[THIS1]], i32 0, i32 0
 // CHECK1-NEXT:    [[TMP0:%.*]] = load ptr, ptr [[S_ADDR]], align 8
@@ -1038,8 +1042,10 @@ int main() {
 // CHECK1-NEXT:  entry:
 // CHECK1-NEXT:    [[THIS_ADDR:%.*]] = alloca ptr, align 8
 // CHECK1-NEXT:    [[S_ADDR:%.*]] = alloca ptr, align 8
+// CHECK1-NEXT:    [[T_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
 // CHECK1-NEXT:    store ptr [[THIS]], ptr [[THIS_ADDR]], align 8
 // CHECK1-NEXT:    store ptr [[S]], ptr [[S_ADDR]], align 8
+// CHECK1-NEXT:    store ptr [[T]], ptr [[T_INDIRECT_ADDR]], align 8
 // CHECK1-NEXT:    [[THIS1:%.*]] = load ptr, ptr [[THIS_ADDR]], align 8
 // CHECK1-NEXT:    [[TMP0:%.*]] = load ptr, ptr [[S_ADDR]], align 8
 // CHECK1-NEXT:    call void @_ZN1SIiEC2ERKS0_2St(ptr noundef nonnull align 4 dereferenceable(4) [[THIS1]], ptr noundef nonnull align 4 dereferenceable(4) [[TMP0]], ptr noundef [[T]])
@@ -1231,8 +1237,10 @@ int main() {
 // CHECK1-NEXT:  entry:
 // CHECK1-NEXT:    [[THIS_ADDR:%.*]] = alloca ptr, align 8
 // CHECK1-NEXT:    [[S_ADDR:%.*]] = alloca ptr, align 8
+// CHECK1-NEXT:    [[T_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
 // CHECK1-NEXT:    store ptr [[THIS]], ptr [[THIS_ADDR]], align 8
 // CHECK1-NEXT:    store ptr [[S]], ptr [[S_ADDR]], align 8
+// CHECK1-NEXT:    store ptr [[T]], ptr [[T_INDIRECT_ADDR]], align 8
 // CHECK1-NEXT:    [[THIS1:%.*]] = load ptr, ptr [[THIS_ADDR]], align 8
 // CHECK1-NEXT:    [[F:%.*]] = getelementptr inbounds [[STRUCT_S_0:%.*]], ptr [[THIS1]], i32 0, i32 0
 // CHECK1-NEXT:    [[TMP0:%.*]] = load ptr, ptr [[S_ADDR]], align 8
@@ -1393,6 +1401,7 @@ int main() {
 // CHECK3-NEXT:    [[DOTOFFLOAD_PTRS:%.*]] = alloca [5 x ptr], align 4
 // CHECK3-NEXT:    [[DOTOFFLOAD_MAPPERS:%.*]] = alloca [5 x ptr], align 4
 // CHECK3-NEXT:    [[TMP:%.*]] = alloca i32, align 4
+// CHECK3-NEXT:    [[KERNEL_ARGS:%.*]] = alloca [[STRUCT___TGT_KERNEL_ARGUMENTS:%.*]], align 8
 // CHECK3-NEXT:    store i32 0, ptr [[RETVAL]], align 4
 // CHECK3-NEXT:    [[TMP0:%.*]] = load i32, ptr @t_var, align 4
 // CHECK3-NEXT:    store i32 [[TMP0]], ptr [[T_VAR_CASTED]], align 4
@@ -1432,7 +1441,6 @@ int main() {
 // CHECK3-NEXT:    store ptr null, ptr [[TMP18]], align 4
 // CHECK3-NEXT:    [[TMP19:%.*]] = getelementptr inbounds [5 x ptr], ptr [[DOTOFFLOAD_BASEPTRS]], i32 0, i32 0
 // CHECK3-NEXT:    [[TMP20:%.*]] = getelementptr inbounds [5 x ptr], ptr [[DOTOFFLOAD_PTRS]], i32 0, i32 0
-// CHECK3-NEXT:    [[KERNEL_ARGS:%.*]] = alloca [[STRUCT___TGT_KERNEL_ARGUMENTS:%.*]], align 8
 // CHECK3-NEXT:    [[TMP21:%.*]] = getelementptr inbounds [[STRUCT___TGT_KERNEL_ARGUMENTS]], ptr [[KERNEL_ARGS]], i32 0, i32 0
 // CHECK3-NEXT:    store i32 2, ptr [[TMP21]], align 4
 // CHECK3-NEXT:    [[TMP22:%.*]] = getelementptr inbounds [[STRUCT___TGT_KERNEL_ARGUMENTS]], ptr [[KERNEL_ARGS]], i32 0, i32 1
@@ -1638,8 +1646,10 @@ int main() {
 // CHECK3-NEXT:  entry:
 // CHECK3-NEXT:    [[THIS_ADDR:%.*]] = alloca ptr, align 4
 // CHECK3-NEXT:    [[S_ADDR:%.*]] = alloca ptr, align 4
+// CHECK3-NEXT:    [[T_INDIRECT_ADDR:%.*]] = alloca ptr, align 4
 // CHECK3-NEXT:    store ptr [[THIS]], ptr [[THIS_ADDR]], align 4
 // CHECK3-NEXT:    store ptr [[S]], ptr [[S_ADDR]], align 4
+// CHECK3-NEXT:    store ptr [[T]], ptr [[T_INDIRECT_ADDR]], align 4
 // CHECK3-NEXT:    [[THIS1:%.*]] = load ptr, ptr [[THIS_ADDR]], align 4
 // CHECK3-NEXT:    [[TMP0:%.*]] = load ptr, ptr [[S_ADDR]], align 4
 // CHECK3-NEXT:    call void @_ZN1SIfEC2ERKS0_2St(ptr noundef nonnull align 4 dereferenceable(4) [[THIS1]], ptr noundef nonnull align 4 dereferenceable(4) [[TMP0]], ptr noundef [[T]])
@@ -1809,6 +1819,7 @@ int main() {
 // CHECK3-NEXT:    [[DOTOFFLOAD_PTRS:%.*]] = alloca [4 x ptr], align 4
 // CHECK3-NEXT:    [[DOTOFFLOAD_MAPPERS:%.*]] = alloca [4 x ptr], align 4
 // CHECK3-NEXT:    [[_TMP1:%.*]] = alloca i32, align 4
+// CHECK3-NEXT:    [[KERNEL_ARGS:%.*]] = alloca [[STRUCT___TGT_KERNEL_ARGUMENTS:%.*]], align 8
 // CHECK3-NEXT:    call void @_ZN1SIiEC1Ev(ptr noundef nonnull align 4 dereferenceable(4) [[TEST]])
 // CHECK3-NEXT:    store i32 0, ptr [[T_VAR]], align 4
 // CHECK3-NEXT:    call void @llvm.memcpy.p0.p0.i32(ptr align 4 [[VEC]], ptr align 4 @__const._Z5tmainIiET_v.vec, i32 8, i1 false)
@@ -1851,7 +1862,6 @@ int main() {
 // CHECK3-NEXT:    store ptr null, ptr [[TMP17]], align 4
 // CHECK3-NEXT:    [[TMP18:%.*]] = getelementptr inbounds [4 x ptr], ptr [[DOTOFFLOAD_BASEPTRS]], i32 0, i32 0
 // CHECK3-NEXT:    [[TMP19:%.*]] = getelementptr inbounds [4 x ptr], ptr [[DOTOFFLOAD_PTRS]], i32 0, i32 0
-// CHECK3-NEXT:    [[KERNEL_ARGS:%.*]] = alloca [[STRUCT___TGT_KERNEL_ARGUMENTS:%.*]], align 8
 // CHECK3-NEXT:    [[TMP20:%.*]] = getelementptr inbounds [[STRUCT___TGT_KERNEL_ARGUMENTS]], ptr [[KERNEL_ARGS]], i32 0, i32 0
 // CHECK3-NEXT:    store i32 2, ptr [[TMP20]], align 4
 // CHECK3-NEXT:    [[TMP21:%.*]] = getelementptr inbounds [[STRUCT___TGT_KERNEL_ARGUMENTS]], ptr [[KERNEL_ARGS]], i32 0, i32 1
@@ -1919,8 +1929,10 @@ int main() {
 // CHECK3-NEXT:  entry:
 // CHECK3-NEXT:    [[THIS_ADDR:%.*]] = alloca ptr, align 4
 // CHECK3-NEXT:    [[S_ADDR:%.*]] = alloca ptr, align 4
+// CHECK3-NEXT:    [[T_INDIRECT_ADDR:%.*]] = alloca ptr, align 4
 // CHECK3-NEXT:    store ptr [[THIS]], ptr [[THIS_ADDR]], align 4
 // CHECK3-NEXT:    store ptr [[S]], ptr [[S_ADDR]], align 4
+// CHECK3-NEXT:    store ptr [[T]], ptr [[T_INDIRECT_ADDR]], align 4
 // CHECK3-NEXT:    [[THIS1:%.*]] = load ptr, ptr [[THIS_ADDR]], align 4
 // CHECK3-NEXT:    [[F:%.*]] = getelementptr inbounds [[STRUCT_S:%.*]], ptr [[THIS1]], i32 0, i32 0
 // CHECK3-NEXT:    [[TMP0:%.*]] = load ptr, ptr [[S_ADDR]], align 4
@@ -2121,8 +2133,10 @@ int main() {
 // CHECK3-NEXT:  entry:
 // CHECK3-NEXT:    [[THIS_ADDR:%.*]] = alloca ptr, align 4
 // CHECK3-NEXT:    [[S_ADDR:%.*]] = alloca ptr, align 4
+// CHECK3-NEXT:    [[T_INDIRECT_ADDR:%.*]] = alloca ptr, align 4
 // CHECK3-NEXT:    store ptr [[THIS]], ptr [[THIS_ADDR]], align 4
 // CHECK3-NEXT:    store ptr [[S]], ptr [[S_ADDR]], align 4
+// CHECK3-NEXT:    store ptr [[T]], ptr [[T_INDIRECT_ADDR]], align 4
 // CHECK3-NEXT:    [[THIS1:%.*]] = load ptr, ptr [[THIS_ADDR]], align 4
 // CHECK3-NEXT:    [[TMP0:%.*]] = load ptr, ptr [[S_ADDR]], align 4
 // CHECK3-NEXT:    call void @_ZN1SIiEC2ERKS0_2St(ptr noundef nonnull align 4 dereferenceable(4) [[THIS1]], ptr noundef nonnull align 4 dereferenceable(4) [[TMP0]], ptr noundef [[T]])
@@ -2310,8 +2324,10 @@ int main() {
 // CHECK3-NEXT:  entry:
 // CHECK3-NEXT:    [[THIS_ADDR:%.*]] = alloca ptr, align 4
 // CHECK3-NEXT:    [[S_ADDR:%.*]] = alloca ptr, align 4
+// CHECK3-NEXT:    [[T_INDIRECT_ADDR:%.*]] = alloca ptr, align 4
 // CHECK3-NEXT:    store ptr [[THIS]], ptr [[THIS_ADDR]], align 4
 // CHECK3-NEXT:    store ptr [[S]], ptr [[S_ADDR]], align 4
+// CHECK3-NEXT:    store ptr [[T]], ptr [[T_INDIRECT_ADDR]], align 4
 // CHECK3-NEXT:    [[THIS1:%.*]] = load ptr, ptr [[THIS_ADDR]], align 4
 // CHECK3-NEXT:    [[F:%.*]] = getelementptr inbounds [[STRUCT_S_0:%.*]], ptr [[THIS1]], i32 0, i32 0
 // CHECK3-NEXT:    [[TMP0:%.*]] = load ptr, ptr [[S_ADDR]], align 4

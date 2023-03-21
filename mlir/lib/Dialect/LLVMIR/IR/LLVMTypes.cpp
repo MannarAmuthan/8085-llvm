@@ -643,23 +643,6 @@ LogicalResult LLVMStructType::verifyEntries(DataLayoutEntryListRef entries,
   return mlir::success();
 }
 
-void LLVMStructType::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrsFn,
-    function_ref<void(Type)> walkTypesFn) const {
-  for (Type type : getBody())
-    walkTypesFn(type);
-}
-
-Type LLVMStructType::replaceImmediateSubElements(
-    ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
-  if (isIdentified()) {
-    // TODO: It's not clear how we support replacing sub-elements of mutable
-    // types.
-    return nullptr;
-  }
-  return getLiteral(getContext(), replTypes, isPacked());
-}
-
 //===----------------------------------------------------------------------===//
 // Vector types.
 //===----------------------------------------------------------------------===//
@@ -748,6 +731,8 @@ bool mlir::LLVM::isCompatibleOuterType(Type type) {
       Float64Type,
       Float80Type,
       Float128Type,
+      Float8E4M3FNType,
+      Float8E5M2Type,
       LLVMArrayType,
       LLVMFunctionType,
       LLVMLabelType,
@@ -818,6 +803,8 @@ static bool isCompatibleImpl(Type type, DenseSet<Type> &compatibleTypes) {
             Float64Type,
             Float80Type,
             Float128Type,
+            Float8E4M3FNType,
+            Float8E5M2Type,
             LLVMLabelType,
             LLVMMetadataType,
             LLVMPPCFP128Type,

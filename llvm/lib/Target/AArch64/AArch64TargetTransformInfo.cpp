@@ -1619,9 +1619,17 @@ AArch64TTIImpl::instCombineIntrinsic(InstCombiner &IC,
   case Intrinsic::aarch64_sve_fadd:
   case Intrinsic::aarch64_sve_add:
     return instCombineSVEVectorAdd(IC, II);
+  case Intrinsic::aarch64_sve_fadd_u:
+    return instCombineSVEVectorFuseMulAddSub<Intrinsic::aarch64_sve_fmul_u,
+                                             Intrinsic::aarch64_sve_fmla_u>(
+        IC, II, true);
   case Intrinsic::aarch64_sve_fsub:
   case Intrinsic::aarch64_sve_sub:
     return instCombineSVEVectorSub(IC, II);
+  case Intrinsic::aarch64_sve_fsub_u:
+    return instCombineSVEVectorFuseMulAddSub<Intrinsic::aarch64_sve_fmul_u,
+                                             Intrinsic::aarch64_sve_fmls_u>(
+        IC, II, true);
   case Intrinsic::aarch64_sve_tbl:
     return instCombineSVETBL(IC, II);
   case Intrinsic::aarch64_sve_uunpkhi:
@@ -2184,7 +2192,8 @@ InstructionCost AArch64TTIImpl::getCFInstrCost(unsigned Opcode,
   return 0;
 }
 
-InstructionCost AArch64TTIImpl::getVectorInstrCostHelper(Type *Val,
+InstructionCost AArch64TTIImpl::getVectorInstrCostHelper(const Instruction *I,
+                                                         Type *Val,
                                                          unsigned Index,
                                                          bool HasRealUse) {
   assert(Val->isVectorTy() && "This must be a vector type");
@@ -2210,14 +2219,21 @@ InstructionCost AArch64TTIImpl::getVectorInstrCostHelper(Type *Val,
     // needed. So it has non-zero cost.
     // - For the rest of cases (virtual instruction or element type is float),
     // consider the instruction free.
-    //
+    if (Index == 0 && (!HasRealUse || !Val->getScalarType()->isIntegerTy()))
+      return 0;
+
+    // This is recognising a LD1 single-element structure to one lane of one
+    // register instruction. I.e., if this is an `insertelement` instruction,
+    // and its second operand is a load, then we will generate a LD1, which
+    // are expensive instructions.
+    if (I && dyn_cast<LoadInst>(I->getOperand(1)))
+      return ST->getVectorInsertExtractBaseCost() + 1;
+
     // FIXME:
     // If the extract-element and insert-element instructions could be
     // simplified away (e.g., could be combined into users by looking at use-def
     // context), they have no cost. This is not done in the first place for
     // compile-time considerations.
-    if (Index == 0 && (!HasRealUse || !Val->getScalarType()->isIntegerTy()))
-      return 0;
   }
 
   // All other insert/extracts cost this much.
@@ -2228,14 +2244,14 @@ InstructionCost AArch64TTIImpl::getVectorInstrCost(unsigned Opcode, Type *Val,
                                                    TTI::TargetCostKind CostKind,
                                                    unsigned Index, Value *Op0,
                                                    Value *Op1) {
-  return getVectorInstrCostHelper(Val, Index, false /* HasRealUse */);
+  return getVectorInstrCostHelper(nullptr, Val, Index, false /* HasRealUse */);
 }
 
 InstructionCost AArch64TTIImpl::getVectorInstrCost(const Instruction &I,
                                                    Type *Val,
                                                    TTI::TargetCostKind CostKind,
                                                    unsigned Index) {
-  return getVectorInstrCostHelper(Val, Index, true /* HasRealUse */);
+  return getVectorInstrCostHelper(&I, Val, Index, true /* HasRealUse */);
 }
 
 InstructionCost AArch64TTIImpl::getArithmeticInstrCost(
@@ -2665,7 +2681,7 @@ AArch64TTIImpl::getCostOfKeepingLiveOverCall(ArrayRef<Type *> Tys) {
   return Cost;
 }
 
-unsigned AArch64TTIImpl::getMaxInterleaveFactor(unsigned VF) {
+unsigned AArch64TTIImpl::getMaxInterleaveFactor(ElementCount VF) {
   return ST->getMaxInterleaveFactor();
 }
 
@@ -3203,13 +3219,19 @@ InstructionCost AArch64TTIImpl::getShuffleCost(TTI::ShuffleKind Kind,
 
   Kind = improveShuffleKindFromMask(Kind, Mask);
 
-  // Check for broadcast loads.
-  if (Kind == TTI::SK_Broadcast) {
+  // Check for broadcast loads, which are supported by the LD1R instruction.
+  // In terms of code-size, the shuffle vector is free when a load + dup get
+  // folded into a LD1R. That's what we check and return here. For performance
+  // and reciprocal throughput, a LD1R is not completely free. In this case, we
+  // return the cost for the broadcast below (i.e. 1 for most/all types), so
+  // that we model the load + dup sequence slightly higher because LD1R is a
+  // high latency instruction.
+  if (CostKind == TTI::TCK_CodeSize && Kind == TTI::SK_Broadcast) {
     bool IsLoad = !Args.empty() && isa<LoadInst>(Args[0]);
     if (IsLoad && LT.second.isVector() &&
         isLegalBroadcastLoad(Tp->getElementType(),
                              LT.second.getVectorElementCount()))
-      return 0; // broadcast is handled by ld1r
+      return 0;
   }
 
   // If we have 4 elements for the shuffle and a Mask, get the cost straight
@@ -3231,6 +3253,8 @@ InstructionCost AArch64TTIImpl::getShuffleCost(TTI::ShuffleKind Kind,
         {TTI::SK_Broadcast, MVT::v2i32, 1},
         {TTI::SK_Broadcast, MVT::v4i32, 1},
         {TTI::SK_Broadcast, MVT::v2i64, 1},
+        {TTI::SK_Broadcast, MVT::v4f16, 1},
+        {TTI::SK_Broadcast, MVT::v8f16, 1},
         {TTI::SK_Broadcast, MVT::v2f32, 1},
         {TTI::SK_Broadcast, MVT::v4f32, 1},
         {TTI::SK_Broadcast, MVT::v2f64, 1},
@@ -3243,6 +3267,8 @@ InstructionCost AArch64TTIImpl::getShuffleCost(TTI::ShuffleKind Kind,
         {TTI::SK_Transpose, MVT::v2i32, 1},
         {TTI::SK_Transpose, MVT::v4i32, 1},
         {TTI::SK_Transpose, MVT::v2i64, 1},
+        {TTI::SK_Transpose, MVT::v4f16, 1},
+        {TTI::SK_Transpose, MVT::v8f16, 1},
         {TTI::SK_Transpose, MVT::v2f32, 1},
         {TTI::SK_Transpose, MVT::v4f32, 1},
         {TTI::SK_Transpose, MVT::v2f64, 1},

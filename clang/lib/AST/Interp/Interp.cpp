@@ -26,51 +26,6 @@
 using namespace clang;
 using namespace clang::interp;
 
-//===----------------------------------------------------------------------===//
-// Ret
-//===----------------------------------------------------------------------===//
-
-template <PrimType Name, class T = typename PrimConv<Name>::T>
-static bool Ret(InterpState &S, CodePtr &PC, APValue &Result) {
-  S.CallStackDepth--;
-  const T &Ret = S.Stk.pop<T>();
-
-  assert(S.Current->getFrameOffset() == S.Stk.size() && "Invalid frame");
-  if (!S.checkingPotentialConstantExpression())
-    S.Current->popArgs();
-
-  if (InterpFrame *Caller = S.Current->Caller) {
-    PC = S.Current->getRetPC();
-    delete S.Current;
-    S.Current = Caller;
-    S.Stk.push<T>(Ret);
-  } else {
-    delete S.Current;
-    S.Current = nullptr;
-    if (!ReturnValue<T>(Ret, Result))
-      return false;
-  }
-  return true;
-}
-
-static bool RetVoid(InterpState &S, CodePtr &PC, APValue &Result) {
-  S.CallStackDepth--;
-
-  assert(S.Current->getFrameOffset() == S.Stk.size() && "Invalid frame");
-  if (!S.checkingPotentialConstantExpression())
-    S.Current->popArgs();
-
-  if (InterpFrame *Caller = S.Current->Caller) {
-    PC = S.Current->getRetPC();
-    delete S.Current;
-    S.Current = Caller;
-  } else {
-    delete S.Current;
-    S.Current = nullptr;
-  }
-  return true;
-}
-
 static bool RetValue(InterpState &S, CodePtr &Pt, APValue &Result) {
   llvm::report_fatal_error("Interpreter cannot return values");
 }
@@ -258,7 +213,14 @@ bool CheckRange(InterpState &S, CodePtr OpPC, const Pointer &Ptr,
 
 bool CheckConst(InterpState &S, CodePtr OpPC, const Pointer &Ptr) {
   assert(Ptr.isLive() && "Pointer is not live");
-  if (!Ptr.isConst()) {
+  if (!Ptr.isConst())
+    return true;
+
+  // The This pointer is writable in constructors and destructors,
+  // even if isConst() returns true.
+  if (const Function *Func = S.Current->getFunction();
+      Func && (Func->isConstructor() || Func->isDestructor()) &&
+      Ptr.block() == S.Current->getThis().block()) {
     return true;
   }
 
@@ -469,6 +431,15 @@ static bool CheckFieldsInitialized(InterpState &S, CodePtr OpPC,
       Result = false;
     }
   }
+
+  // Check Fields in all bases
+  for (const Record::Base &B : R->bases()) {
+    Pointer P = Pointer(BasePtr.block(), B.Offset);
+    Result &= CheckFieldsInitialized(S, OpPC, P, B.R);
+  }
+
+  // TODO: Virtual bases
+
   return Result;
 }
 

@@ -38,9 +38,8 @@ The output assembly is tested in open source 8085 simulators and assemblers.  Co
 This 8085 backend is purely experimental and never tested with original hardware and never used in productional use cases. 
 
 ## <a id="priority">**Next on priority:**
-1. Implement shift operations for 16 bit integers.
-2. Linker/Loader implementation.
-3. Adding more arithmetic operations and floating point types.
+1. Linker/Loader implementation.
+2. Adding more arithmetic operations and floating point types.
 
 
 ## <a id="credits"> **Thanks and Credits:**

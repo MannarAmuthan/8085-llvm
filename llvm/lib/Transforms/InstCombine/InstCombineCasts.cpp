@@ -252,6 +252,20 @@ Value *InstCombinerImpl::EvaluateInDifferentType(Value *V, Type *Ty,
     Res = CastInst::Create(
       static_cast<Instruction::CastOps>(Opc), I->getOperand(0), Ty);
     break;
+  case Instruction::Call:
+    if (const IntrinsicInst *II = dyn_cast<IntrinsicInst>(I)) {
+      switch (II->getIntrinsicID()) {
+      default:
+        llvm_unreachable("Unsupported call!");
+      case Intrinsic::vscale: {
+        Function *Fn =
+            Intrinsic::getDeclaration(I->getModule(), Intrinsic::vscale, {Ty});
+        Res = CallInst::Create(Fn->getFunctionType(), Fn);
+        break;
+      }
+      }
+    }
+    break;
   default:
     // TODO: Can handle more cases here.
     llvm_unreachable("Unreachable!");
@@ -293,6 +307,10 @@ InstCombinerImpl::isEliminableCastPair(const CastInst *CI1,
 Instruction *InstCombinerImpl::commonCastTransforms(CastInst &CI) {
   Value *Src = CI.getOperand(0);
   Type *Ty = CI.getType();
+
+  if (auto *SrcC = dyn_cast<Constant>(Src))
+    if (Constant *Res = ConstantFoldCastOperand(CI.getOpcode(), SrcC, Ty, DL))
+      return replaceInstUsesWith(CI, Res);
 
   // Try to eliminate a cast of a cast.
   if (auto *CSrc = dyn_cast<CastInst>(Src)) {   // A->B->C cast
@@ -501,16 +519,12 @@ static bool canEvaluateTruncated(Value *V, Type *Ty, InstCombinerImpl &IC,
     // If the integer type can hold the max FP value, it is safe to cast
     // directly to that type. Otherwise, we may create poison via overflow
     // that did not exist in the original code.
-    //
-    // The max FP value is pow(2, MaxExponent) * (1 + MaxFraction), so we need
-    // at least one more bit than the MaxExponent to hold the max FP value.
     Type *InputTy = I->getOperand(0)->getType()->getScalarType();
     const fltSemantics &Semantics = InputTy->getFltSemantics();
-    uint32_t MinBitWidth = APFloatBase::semanticsMaxExponent(Semantics);
-    // Extra sign bit needed.
-    if (I->getOpcode() == Instruction::FPToSI)
-      ++MinBitWidth;
-    return Ty->getScalarSizeInBits() > MinBitWidth;
+    uint32_t MinBitWidth =
+      APFloatBase::semanticsIntSizeInBits(Semantics,
+          I->getOpcode() == Instruction::FPToSI);
+    return Ty->getScalarSizeInBits() >= MinBitWidth;
   }
   default:
     // TODO: Can handle more cases here.
@@ -904,11 +918,18 @@ Instruction *InstCombinerImpl::visitTrunc(TruncInst &Trunc) {
     // removed by the trunc.
     if (match(C, m_SpecificInt_ICMP(ICmpInst::ICMP_ULE,
                                     APInt(SrcWidth, MaxShiftAmt)))) {
+      auto GetNewShAmt = [&](unsigned Width) {
+        Constant *MaxAmt = ConstantInt::get(SrcTy, Width - 1, false);
+        Constant *Cmp =
+            ConstantFoldCompareInstOperands(ICmpInst::ICMP_ULT, C, MaxAmt, DL);
+        Constant *ShAmt = ConstantFoldSelectInstruction(Cmp, C, MaxAmt);
+        return ConstantFoldCastOperand(Instruction::Trunc, ShAmt, A->getType(),
+                                       DL);
+      };
+
       // trunc (lshr (sext A), C) --> ashr A, C
       if (A->getType() == DestTy) {
-        Constant *MaxAmt = ConstantInt::get(SrcTy, DestWidth - 1, false);
-        Constant *ShAmt = ConstantExpr::getUMin(C, MaxAmt);
-        ShAmt = ConstantExpr::getTrunc(ShAmt, A->getType());
+        Constant *ShAmt = GetNewShAmt(DestWidth);
         ShAmt = Constant::mergeUndefsWith(ShAmt, C);
         return IsExact ? BinaryOperator::CreateExactAShr(A, ShAmt)
                        : BinaryOperator::CreateAShr(A, ShAmt);
@@ -916,9 +937,7 @@ Instruction *InstCombinerImpl::visitTrunc(TruncInst &Trunc) {
       // The types are mismatched, so create a cast after shifting:
       // trunc (lshr (sext A), C) --> sext/trunc (ashr A, C)
       if (Src->hasOneUse()) {
-        Constant *MaxAmt = ConstantInt::get(SrcTy, AWidth - 1, false);
-        Constant *ShAmt = ConstantExpr::getUMin(C, MaxAmt);
-        ShAmt = ConstantExpr::getTrunc(ShAmt, A->getType());
+        Constant *ShAmt = GetNewShAmt(AWidth);
         Value *Shift = Builder.CreateAShr(A, ShAmt, "", IsExact);
         return CastInst::CreateIntegerCast(Shift, DestTy, true);
       }
@@ -998,7 +1017,7 @@ Instruction *InstCombinerImpl::visitTrunc(TruncInst &Trunc) {
     }
   }
 
-  if (match(Src, m_VScale(DL))) {
+  if (match(Src, m_VScale())) {
     if (Trunc.getFunction() &&
         Trunc.getFunction()->hasFnAttribute(Attribute::VScaleRange)) {
       Attribute Attr =
@@ -1217,6 +1236,13 @@ static bool canEvaluateZExtd(Value *V, Type *Ty, unsigned &BitsToClear,
         return false;
     return true;
   }
+  case Instruction::Call:
+    // llvm.vscale() can always be executed in larger type, because the
+    // value is automatically zero-extended.
+    if (const IntrinsicInst *II = dyn_cast<IntrinsicInst>(I))
+      if (II->getIntrinsicID() == Intrinsic::vscale)
+        return true;
+    return false;
   default:
     // TODO: Can handle more cases here.
     return false;
@@ -1226,7 +1252,8 @@ static bool canEvaluateZExtd(Value *V, Type *Ty, unsigned &BitsToClear,
 Instruction *InstCombinerImpl::visitZExt(ZExtInst &Zext) {
   // If this zero extend is only used by a truncate, let the truncate be
   // eliminated before we try to optimize this zext.
-  if (Zext.hasOneUse() && isa<TruncInst>(Zext.user_back()))
+  if (Zext.hasOneUse() && isa<TruncInst>(Zext.user_back()) &&
+      !isa<Constant>(Zext.getOperand(0)))
     return nullptr;
 
   // If one of the common conversion will work, do it.
@@ -1340,7 +1367,7 @@ Instruction *InstCombinerImpl::visitZExt(ZExtInst &Zext) {
     return BinaryOperator::CreateAnd(X, ZextC);
   }
 
-  if (match(Src, m_VScale(DL))) {
+  if (match(Src, m_VScale())) {
     if (Zext.getFunction() &&
         Zext.getFunction()->hasFnAttribute(Attribute::VScaleRange)) {
       Attribute Attr =
@@ -1402,7 +1429,7 @@ Instruction *InstCombinerImpl::transformSExtICmp(ICmpInst *Cmp,
         if (!Op1C->isZero() == (Pred == ICmpInst::ICMP_NE)) {
           // sext ((x & 2^n) == 0)   -> (x >> n) - 1
           // sext ((x & 2^n) != 2^n) -> (x >> n) - 1
-          unsigned ShiftAmt = KnownZeroMask.countTrailingZeros();
+          unsigned ShiftAmt = KnownZeroMask.countr_zero();
           // Perform a right shift to place the desired bit in the LSB.
           if (ShiftAmt)
             In = Builder.CreateLShr(In,
@@ -1416,7 +1443,7 @@ Instruction *InstCombinerImpl::transformSExtICmp(ICmpInst *Cmp,
         } else {
           // sext ((x & 2^n) != 0)   -> (x << bitwidth-n) a>> bitwidth-1
           // sext ((x & 2^n) == 2^n) -> (x << bitwidth-n) a>> bitwidth-1
-          unsigned ShiftAmt = KnownZeroMask.countLeadingZeros();
+          unsigned ShiftAmt = KnownZeroMask.countl_zero();
           // Perform a left shift to place the desired bit in the MSB.
           if (ShiftAmt)
             In = Builder.CreateShl(In,
@@ -1611,7 +1638,7 @@ Instruction *InstCombinerImpl::visitSExt(SExtInst &Sext) {
     }
   }
 
-  if (match(Src, m_VScale(DL))) {
+  if (match(Src, m_VScale())) {
     if (Sext.getFunction() &&
         Sext.getFunction()->hasFnAttribute(Attribute::VScaleRange)) {
       Attribute Attr =

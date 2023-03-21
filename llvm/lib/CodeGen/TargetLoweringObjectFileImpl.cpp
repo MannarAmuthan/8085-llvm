@@ -16,7 +16,6 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/ADT/Triple.h"
 #include "llvm/BinaryFormat/COFF.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/BinaryFormat/ELF.h"
@@ -65,11 +64,16 @@
 #include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/TargetParser/Triple.h"
 #include <cassert>
 #include <string>
 
 using namespace llvm;
 using namespace dwarf;
+
+static cl::opt<bool> JumpTableInFunctionSection(
+    "jumptable-in-function-section", cl::Hidden, cl::init(false),
+    cl::desc("Putting Jump Table in function section"));
 
 static void GetObjCImageInfo(Module &M, unsigned &Version, unsigned &Flags,
                              StringRef &Section) {
@@ -182,26 +186,14 @@ void TargetLoweringObjectFileELF::Initialize(MCContext &Ctx,
     // The small model guarantees static code/data size < 4GB, but not where it
     // will be in memory. Most of these could end up >2GB away so even a signed
     // pc-relative 32-bit address is insufficient, theoretically.
-    if (isPositionIndependent()) {
-      // ILP32 uses sdata4 instead of sdata8
-      if (TgtM.getTargetTriple().getEnvironment() == Triple::GNUILP32) {
-        PersonalityEncoding = dwarf::DW_EH_PE_indirect | dwarf::DW_EH_PE_pcrel |
-                              dwarf::DW_EH_PE_sdata4;
-        LSDAEncoding = dwarf::DW_EH_PE_pcrel | dwarf::DW_EH_PE_sdata4;
-        TTypeEncoding = dwarf::DW_EH_PE_indirect | dwarf::DW_EH_PE_pcrel |
-                        dwarf::DW_EH_PE_sdata4;
-      } else {
-        PersonalityEncoding = dwarf::DW_EH_PE_indirect | dwarf::DW_EH_PE_pcrel |
-                              dwarf::DW_EH_PE_sdata8;
-        LSDAEncoding = dwarf::DW_EH_PE_pcrel | dwarf::DW_EH_PE_sdata8;
-        TTypeEncoding = dwarf::DW_EH_PE_indirect | dwarf::DW_EH_PE_pcrel |
-                        dwarf::DW_EH_PE_sdata8;
-      }
-    } else {
-      PersonalityEncoding = dwarf::DW_EH_PE_absptr;
-      LSDAEncoding = dwarf::DW_EH_PE_absptr;
-      TTypeEncoding = dwarf::DW_EH_PE_absptr;
-    }
+    //
+    // Use DW_EH_PE_indirect even for -fno-pic to avoid copy relocations.
+    LSDAEncoding = dwarf::DW_EH_PE_pcrel |
+                   (TgtM.getTargetTriple().getEnvironment() == Triple::GNUILP32
+                        ? dwarf::DW_EH_PE_sdata4
+                        : dwarf::DW_EH_PE_sdata8);
+    PersonalityEncoding = LSDAEncoding | dwarf::DW_EH_PE_indirect;
+    TTypeEncoding = LSDAEncoding | dwarf::DW_EH_PE_indirect;
     break;
   case Triple::lanai:
     LSDAEncoding = dwarf::DW_EH_PE_absptr;
@@ -1210,11 +1202,7 @@ void TargetLoweringObjectFileMachO::Initialize(MCContext &Ctx,
 
 MCSection *TargetLoweringObjectFileMachO::getStaticDtorSection(
     unsigned Priority, const MCSymbol *KeySym) const {
-  // TODO(yln): Remove -lower-global-dtors-via-cxa-atexit fallback flag
-  // (LowerGlobalDtorsViaCxaAtExit) and always issue a fatal error here.
-  if (TM->Options.LowerGlobalDtorsViaCxaAtExit)
-    report_fatal_error("@llvm.global_dtors should have been lowered already");
-  return StaticDtorSection;
+  report_fatal_error("@llvm.global_dtors should have been lowered already");
 }
 
 void TargetLoweringObjectFileMachO::emitModuleMetadata(MCStreamer &Streamer,
@@ -1274,6 +1262,20 @@ MCSection *TargetLoweringObjectFileMachO::getExplicitSectionGlobal(
     const GlobalObject *GO, SectionKind Kind, const TargetMachine &TM) const {
 
   StringRef SectionName = GO->getSection();
+
+  const GlobalVariable *GV = dyn_cast<GlobalVariable>(GO);
+  if (GV && GV->hasImplicitSection()) {
+    auto Attrs = GV->getAttributes();
+    if (Attrs.hasAttribute("bss-section") && Kind.isBSS()) {
+      SectionName = Attrs.getAttribute("bss-section").getValueAsString();
+    } else if (Attrs.hasAttribute("rodata-section") && Kind.isReadOnly()) {
+      SectionName = Attrs.getAttribute("rodata-section").getValueAsString();
+    } else if (Attrs.hasAttribute("relro-section") && Kind.isReadOnlyWithRel()) {
+      SectionName = Attrs.getAttribute("relro-section").getValueAsString();
+    } else if (Attrs.hasAttribute("data-section") && Kind.isData()) {
+      SectionName = Attrs.getAttribute("data-section").getValueAsString();
+    }
+  }
 
   const Function *F = dyn_cast<Function>(GO);
   if (F && F->hasFnAttribute("implicit-section-name")) {
@@ -1787,6 +1789,19 @@ MCSection *TargetLoweringObjectFileCOFF::getSectionForJumpTable(
   return getContext().getCOFFSection(
       SecName, Characteristics, Kind, COMDATSymName,
       COFF::IMAGE_COMDAT_SELECT_ASSOCIATIVE, UniqueID);
+}
+
+bool TargetLoweringObjectFileCOFF::shouldPutJumpTableInFunctionSection(
+    bool UsesLabelDifference, const Function &F) const {
+  if (TM->getTargetTriple().getArch() == Triple::x86_64) {
+    if (!JumpTableInFunctionSection) {
+      // We can always create relative relocations, so use another section
+      // that can be marked non-executable.
+      return false;
+    }
+  }
+  return TargetLoweringObjectFile::shouldPutJumpTableInFunctionSection(
+    UsesLabelDifference, F);
 }
 
 void TargetLoweringObjectFileCOFF::emitModuleMetadata(MCStreamer &Streamer,

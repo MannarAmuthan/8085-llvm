@@ -145,9 +145,57 @@ bool CheckFloatResult(InterpState &S, CodePtr OpPC, APFloat::opStatus Status);
 /// Interpreter entry point.
 bool Interpret(InterpState &S, APValue &Result);
 
-bool InterpretBuiltin(InterpState &S, CodePtr PC, unsigned BuiltinID);
+/// Interpret a builtin function.
+bool InterpretBuiltin(InterpState &S, CodePtr &PC, unsigned BuiltinID);
 
 enum class ArithOp { Add, Sub };
+
+//===----------------------------------------------------------------------===//
+// Returning values
+//===----------------------------------------------------------------------===//
+
+template <PrimType Name, bool Builtin = false,
+          class T = typename PrimConv<Name>::T>
+bool Ret(InterpState &S, CodePtr &PC, APValue &Result) {
+  S.CallStackDepth--;
+  const T &Ret = S.Stk.pop<T>();
+
+  assert(S.Current->getFrameOffset() == S.Stk.size() && "Invalid frame");
+  if (Builtin || !S.checkingPotentialConstantExpression())
+    S.Current->popArgs();
+
+  if (InterpFrame *Caller = S.Current->Caller) {
+    PC = S.Current->getRetPC();
+    delete S.Current;
+    S.Current = Caller;
+    S.Stk.push<T>(Ret);
+  } else {
+    delete S.Current;
+    S.Current = nullptr;
+    if (!ReturnValue<T>(Ret, Result))
+      return false;
+  }
+  return true;
+}
+
+template <bool Builtin = false>
+inline bool RetVoid(InterpState &S, CodePtr &PC, APValue &Result) {
+  S.CallStackDepth--;
+
+  assert(S.Current->getFrameOffset() == S.Stk.size() && "Invalid frame");
+  if (Builtin || !S.checkingPotentialConstantExpression())
+    S.Current->popArgs();
+
+  if (InterpFrame *Caller = S.Current->Caller) {
+    PC = S.Current->getRetPC();
+    delete S.Current;
+    S.Current = Caller;
+  } else {
+    delete S.Current;
+    S.Current = nullptr;
+  }
+  return true;
+}
 
 //===----------------------------------------------------------------------===//
 // Add, Sub, Mul
@@ -770,6 +818,22 @@ bool InitGlobal(InterpState &S, CodePtr OpPC, uint32_t I) {
   return true;
 }
 
+/// 1) Converts the value on top of the stack to an APValue
+/// 2) Sets that APValue on \Temp
+/// 3) Initialized global with index \I with that
+template <PrimType Name, class T = typename PrimConv<Name>::T>
+bool InitGlobalTemp(InterpState &S, CodePtr OpPC, uint32_t I,
+                    const LifetimeExtendedTemporaryDecl *Temp) {
+  assert(Temp);
+  const T Value = S.Stk.peek<T>();
+  APValue APV = Value.toAPValue();
+  APValue *Cached = Temp->getOrCreateValue(true);
+  *Cached = APV;
+
+  S.P.getGlobal(I)->deref<T>() = S.Stk.pop<T>();
+  return true;
+}
+
 template <PrimType Name, class T = typename PrimConv<Name>::T>
 bool InitThisField(InterpState &S, CodePtr OpPC, uint32_t I) {
   if (S.checkingPotentialConstantExpression())
@@ -918,6 +982,14 @@ inline bool GetPtrActiveThisField(InterpState &S, CodePtr OpPC, uint32_t Off) {
 }
 
 inline bool GetPtrBase(InterpState &S, CodePtr OpPC, uint32_t Off) {
+  const Pointer &Ptr = S.Stk.peek<Pointer>();
+  if (!CheckNull(S, OpPC, Ptr, CSK_Base))
+    return false;
+  S.Stk.push<Pointer>(Ptr.atField(Off));
+  return true;
+}
+
+inline bool GetPtrBasePop(InterpState &S, CodePtr OpPC, uint32_t Off) {
   const Pointer &Ptr = S.Stk.pop<Pointer>();
   if (!CheckNull(S, OpPC, Ptr, CSK_Base))
     return false;
@@ -1383,6 +1455,41 @@ inline bool ExpandPtr(InterpState &S, CodePtr OpPC) {
   return true;
 }
 
+// 1) Pops an integral value from the stack
+// 2) Peeks a pointer
+// 3) Pushes a new pointer that's a narrowed array
+//   element of the peeked pointer with the value
+//   from 1) added as offset.
+//
+// This leaves the original pointer on the stack and pushes a new one
+// with the offset applied and narrowed.
+template <PrimType Name, class T = typename PrimConv<Name>::T>
+inline bool ArrayElemPtr(InterpState &S, CodePtr OpPC) {
+  const T &Offset = S.Stk.pop<T>();
+  const Pointer &Ptr = S.Stk.peek<Pointer>();
+
+  if (!OffsetHelper<T, ArithOp::Add>(S, OpPC, Offset, Ptr))
+    return false;
+
+  return NarrowPtr(S, OpPC);
+}
+
+template <PrimType Name, class T = typename PrimConv<Name>::T>
+inline bool ArrayElemPtrPop(InterpState &S, CodePtr OpPC) {
+  const T &Offset = S.Stk.pop<T>();
+  const Pointer &Ptr = S.Stk.pop<Pointer>();
+
+  if (!OffsetHelper<T, ArithOp::Add>(S, OpPC, Offset, Ptr))
+    return false;
+
+  return NarrowPtr(S, OpPC);
+}
+
+inline bool CheckGlobalCtor(InterpState &S, CodePtr &PC) {
+  const Pointer &Obj = S.Stk.peek<Pointer>();
+  return CheckCtorCall(S, PC, Obj);
+}
+
 inline bool Call(InterpState &S, CodePtr &PC, const Function *Func) {
   auto NewFrame = std::make_unique<InterpFrame>(S, Func, PC);
   Pointer ThisPtr;
@@ -1408,11 +1515,6 @@ inline bool Call(InterpState &S, CodePtr &PC, const Function *Func) {
   if (Interpret(S, CallResult)) {
     NewFrame.release(); // Frame was delete'd already.
     assert(S.Current == FrameBefore);
-
-    // For constructors, check that all fields have been initialized.
-    if (Func->isConstructor() && !CheckCtorCall(S, PC, ThisPtr))
-      return false;
-
     return true;
   }
 

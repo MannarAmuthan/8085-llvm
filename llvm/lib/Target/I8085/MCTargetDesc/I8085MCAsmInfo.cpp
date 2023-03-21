@@ -12,7 +12,7 @@
 
 #include "I8085MCAsmInfo.h"
 
-#include "llvm/ADT/Triple.h"
+#include "llvm/TargetParser/Triple.h"
 
 namespace llvm {
 

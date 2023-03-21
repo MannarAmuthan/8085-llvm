@@ -16,7 +16,7 @@
 
 #include "MCTargetDesc/I8085FixupKinds.h"
 
-#include "llvm/ADT/Triple.h"
+#include "llvm/TargetParser/Triple.h"
 #include "llvm/MC/MCAsmBackend.h"
 
 namespace llvm {

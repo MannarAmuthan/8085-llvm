@@ -113,6 +113,23 @@ static void eliminateGuard(Instruction *GuardInst, MemorySSAUpdater *MSSAU) {
   ++GuardsEliminated;
 }
 
+/// Find a point at which the widened condition of \p Guard should be inserted.
+/// When it is represented as intrinsic call, we can do it right before the call
+/// instruction. However, when we are dealing with widenable branch, we must
+/// account for the following situation: widening should not turn a
+/// loop-invariant condition into a loop-variant. It means that if
+/// widenable.condition() call is invariant (w.r.t. any loop), the new wide
+/// condition should stay invariant. Otherwise there can be a miscompile, like
+/// the one described at https://github.com/llvm/llvm-project/issues/60234. The
+/// safest way to do it is to expand the new condition at WC's block.
+static Instruction *findInsertionPointForWideCondition(Instruction *Guard) {
+  Value *Condition, *WC;
+  BasicBlock *IfTrue, *IfFalse;
+  if (parseWidenableBranch(Guard, Condition, WC, IfTrue, IfFalse))
+    return cast<Instruction>(WC);
+  return Guard;
+}
+
 class GuardWideningImpl {
   DominatorTree &DT;
   PostDominatorTree *PDT;
@@ -170,16 +187,16 @@ class GuardWideningImpl {
                                      bool InvertCond);
 
   /// Helper to check if \p V can be hoisted to \p InsertPos.
-  bool isAvailableAt(const Value *V, const Instruction *InsertPos) const {
+  bool canBeHoistedTo(const Value *V, const Instruction *InsertPos) const {
     SmallPtrSet<const Instruction *, 8> Visited;
-    return isAvailableAt(V, InsertPos, Visited);
+    return canBeHoistedTo(V, InsertPos, Visited);
   }
 
-  bool isAvailableAt(const Value *V, const Instruction *InsertPos,
-                     SmallPtrSetImpl<const Instruction *> &Visited) const;
+  bool canBeHoistedTo(const Value *V, const Instruction *InsertPos,
+                      SmallPtrSetImpl<const Instruction *> &Visited) const;
 
   /// Helper to hoist \p V to \p InsertPos.  Guaranteed to succeed if \c
-  /// isAvailableAt returned true.
+  /// canBeHoistedTo returned true.
   void makeAvailableAt(Value *V, Instruction *InsertPos) const;
 
   /// Common helper used by \c widenGuard and \c isWideningCondProfitable.  Try
@@ -263,8 +280,8 @@ class GuardWideningImpl {
   void widenGuard(Instruction *ToWiden, Value *NewCondition,
                   bool InvertCondition) {
     Value *Result;
-
-    widenCondCommon(getCondition(ToWiden), NewCondition, ToWiden, Result,
+    Instruction *InsertPt = findInsertionPointForWideCondition(ToWiden);
+    widenCondCommon(getCondition(ToWiden), NewCondition, InsertPt, Result,
                     InvertCondition);
     if (isGuardAsWidenableBranch(ToWiden)) {
       setWidenableBranchCond(cast<BranchInst>(ToWiden), Result);
@@ -422,7 +439,10 @@ GuardWideningImpl::computeWideningScore(Instruction *DominatedInstr,
     HoistingOutOfLoop = true;
   }
 
-  if (!isAvailableAt(getCondition(DominatedInstr), DominatingGuard))
+  auto *WideningPoint = findInsertionPointForWideCondition(DominatingGuard);
+  if (!canBeHoistedTo(getCondition(DominatedInstr), WideningPoint))
+    return WS_IllegalOrNegative;
+  if (!canBeHoistedTo(getCondition(DominatingGuard), WideningPoint))
     return WS_IllegalOrNegative;
 
   // If the guard was conditional executed, it may never be reached
@@ -463,7 +483,7 @@ GuardWideningImpl::computeWideningScore(Instruction *DominatedInstr,
   return MaybeHoistingOutOfIf() ? WS_IllegalOrNegative : WS_Neutral;
 }
 
-bool GuardWideningImpl::isAvailableAt(
+bool GuardWideningImpl::canBeHoistedTo(
     const Value *V, const Instruction *Loc,
     SmallPtrSetImpl<const Instruction *> &Visited) const {
   auto *Inst = dyn_cast<Instruction>(V);
@@ -482,7 +502,7 @@ bool GuardWideningImpl::isAvailableAt(
   assert(DT.isReachableFromEntry(Inst->getParent()) &&
          "We did a DFS from the block entry!");
   return all_of(Inst->operands(),
-                [&](Value *Op) { return isAvailableAt(Op, Loc, Visited); });
+                [&](Value *Op) { return canBeHoistedTo(Op, Loc, Visited); });
 }
 
 void GuardWideningImpl::makeAvailableAt(Value *V, Instruction *Loc) const {
@@ -491,7 +511,8 @@ void GuardWideningImpl::makeAvailableAt(Value *V, Instruction *Loc) const {
     return;
 
   assert(isSafeToSpeculativelyExecute(Inst, Loc, &AC, &DT) &&
-         !Inst->mayReadFromMemory() && "Should've checked with isAvailableAt!");
+         !Inst->mayReadFromMemory() &&
+         "Should've checked with canBeHoistedTo!");
 
   for (Value *Op : Inst->operands())
     makeAvailableAt(Op, Loc);
@@ -532,6 +553,8 @@ bool GuardWideningImpl::widenCondCommon(Value *Cond0, Value *Cond1,
           if (InsertPt) {
             ConstantInt *NewRHS =
                 ConstantInt::get(Cond0->getContext(), NewRHSAP);
+            assert(canBeHoistedTo(LHS, InsertPt) && "must be");
+            makeAvailableAt(LHS, InsertPt);
             Result = new ICmpInst(InsertPt, Pred, LHS, NewRHS, "wide.chk");
           }
           return true;

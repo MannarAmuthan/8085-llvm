@@ -836,7 +836,8 @@ ASTNodeImporter::import(const TemplateArgument &From) {
     ExpectedType ToTypeOrErr = import(From.getAsType());
     if (!ToTypeOrErr)
       return ToTypeOrErr.takeError();
-    return TemplateArgument(*ToTypeOrErr);
+    return TemplateArgument(*ToTypeOrErr, /*isNullPtr*/ false,
+                            From.getIsDefaulted());
   }
 
   case TemplateArgument::Integral: {
@@ -853,14 +854,15 @@ ASTNodeImporter::import(const TemplateArgument &From) {
     ExpectedType ToTypeOrErr = import(From.getParamTypeForDecl());
     if (!ToTypeOrErr)
       return ToTypeOrErr.takeError();
-    return TemplateArgument(*ToOrErr, *ToTypeOrErr);
+    return TemplateArgument(*ToOrErr, *ToTypeOrErr, From.getIsDefaulted());
   }
 
   case TemplateArgument::NullPtr: {
     ExpectedType ToTypeOrErr = import(From.getNullPtrType());
     if (!ToTypeOrErr)
       return ToTypeOrErr.takeError();
-    return TemplateArgument(*ToTypeOrErr, /*isNullPtr*/true);
+    return TemplateArgument(*ToTypeOrErr, /*isNullPtr*/ true,
+                            From.getIsDefaulted());
   }
 
   case TemplateArgument::Template: {
@@ -868,7 +870,7 @@ ASTNodeImporter::import(const TemplateArgument &From) {
     if (!ToTemplateOrErr)
       return ToTemplateOrErr.takeError();
 
-    return TemplateArgument(*ToTemplateOrErr);
+    return TemplateArgument(*ToTemplateOrErr, From.getIsDefaulted());
   }
 
   case TemplateArgument::TemplateExpansion: {
@@ -877,13 +879,13 @@ ASTNodeImporter::import(const TemplateArgument &From) {
     if (!ToTemplateOrErr)
       return ToTemplateOrErr.takeError();
 
-    return TemplateArgument(
-        *ToTemplateOrErr, From.getNumTemplateExpansions());
+    return TemplateArgument(*ToTemplateOrErr, From.getNumTemplateExpansions(),
+                            From.getIsDefaulted());
   }
 
   case TemplateArgument::Expression:
     if (ExpectedExpr ToExpr = import(From.getAsExpr()))
-      return TemplateArgument(*ToExpr);
+      return TemplateArgument(*ToExpr, From.getIsDefaulted());
     else
       return ToExpr.takeError();
 
@@ -1094,6 +1096,10 @@ ExpectedType ASTNodeImporter::VisitBuiltinType(const BuiltinType *T) {
   case BuiltinType::Id:                                                        \
     return Importer.getToContext().SingletonId;
 #include "clang/Basic/RISCVVTypes.def"
+#define WASM_TYPE(Name, Id, SingletonId)                                       \
+  case BuiltinType::Id:                                                        \
+    return Importer.getToContext().SingletonId;
+#include "clang/Basic/WebAssemblyReferenceTypes.def"
 #define SHARED_SINGLETON_TYPE(Expansion)
 #define BUILTIN_TYPE(Id, SingletonId) \
   case BuiltinType::Id: return Importer.getToContext().SingletonId;
@@ -1460,20 +1466,11 @@ ExpectedType ASTNodeImporter::VisitInjectedClassNameType(
   if (!ToDeclOrErr)
     return ToDeclOrErr.takeError();
 
-  ExpectedType ToInjTypeOrErr = import(T->getInjectedSpecializationType());
-  if (!ToInjTypeOrErr)
-    return ToInjTypeOrErr.takeError();
-
-  // FIXME: ASTContext::getInjectedClassNameType is not suitable for AST reading
-  // See comments in InjectedClassNameType definition for details
-  // return Importer.getToContext().getInjectedClassNameType(D, InjType);
-  enum {
-    TypeAlignmentInBits = 4,
-    TypeAlignment = 1 << TypeAlignmentInBits
-  };
-
-  return QualType(new (Importer.getToContext(), TypeAlignment)
-                  InjectedClassNameType(*ToDeclOrErr, *ToInjTypeOrErr), 0);
+  // The InjectedClassNameType is created in VisitRecordDecl when the
+  // T->getDecl() is imported. Here we can return the existing type.
+  const Type *Ty = (*ToDeclOrErr)->getTypeForDecl();
+  assert(Ty && isa<InjectedClassNameType>(Ty));
+  return QualType(Ty, 0);
 }
 
 ExpectedType ASTNodeImporter::VisitRecordType(const RecordType *T) {
@@ -2948,8 +2945,6 @@ ExpectedDecl ASTNodeImporter::VisitRecordDecl(RecordDecl *D) {
         // InjectedClassNameType (see Sema::CheckClassTemplate). Update the
         // previously set type to the correct value here (ToDescribed is not
         // available at record create).
-        // FIXME: The previous type is cleared but not removed from
-        // ASTContext's internal storage.
         CXXRecordDecl *Injected = nullptr;
         for (NamedDecl *Found : D2CXX->noload_lookup(Name)) {
           auto *Record = dyn_cast<CXXRecordDecl>(Found);
@@ -2959,20 +2954,34 @@ ExpectedDecl ASTNodeImporter::VisitRecordDecl(RecordDecl *D) {
           }
         }
         // Create an injected type for the whole redecl chain.
+        // The chain may contain an already existing injected type at the start,
+        // if yes this should be reused. We must ensure that only one type
+        // object exists for the injected type (including the injected record
+        // declaration), ASTContext does not check it.
         SmallVector<Decl *, 2> Redecls =
             getCanonicalForwardRedeclChain(D2CXX);
+        const Type *FrontTy =
+            cast<CXXRecordDecl>(Redecls.front())->getTypeForDecl();
+        QualType InjSpec;
+        if (auto *InjTy = FrontTy->getAs<InjectedClassNameType>())
+          InjSpec = InjTy->getInjectedSpecializationType();
+        else
+          InjSpec = ToDescribed->getInjectedClassNameSpecialization();
         for (auto *R : Redecls) {
           auto *RI = cast<CXXRecordDecl>(R);
-          RI->setTypeForDecl(nullptr);
-          // Below we create a new injected type and assign that to the
-          // canonical decl, subsequent declarations in the chain will reuse
-          // that type.
-          Importer.getToContext().getInjectedClassNameType(
-              RI, ToDescribed->getInjectedClassNameSpecialization());
+          if (R != Redecls.front() ||
+              !isa<InjectedClassNameType>(RI->getTypeForDecl()))
+            RI->setTypeForDecl(nullptr);
+          // This function tries to get the injected type from getTypeForDecl,
+          // then from the previous declaration if possible. If not, it creates
+          // a new type.
+          Importer.getToContext().getInjectedClassNameType(RI, InjSpec);
         }
-        // Set the new type for the previous injected decl too.
+        // Set the new type for the injected decl too.
         if (Injected) {
           Injected->setTypeForDecl(nullptr);
+          // This function will copy the injected type from D2CXX into Injected.
+          // The injected decl does not have a previous decl to copy from.
           Importer.getToContext().getTypeDeclType(Injected, D2CXX);
         }
       }
@@ -9376,7 +9385,7 @@ Expected<TemplateName> ASTImporter::Import(TemplateName From) {
   switch (From.getKind()) {
   case TemplateName::Template:
     if (ExpectedDecl ToTemplateOrErr = Import(From.getAsTemplateDecl()))
-      return TemplateName(cast<TemplateDecl>(*ToTemplateOrErr));
+      return TemplateName(cast<TemplateDecl>((*ToTemplateOrErr)->getCanonicalDecl()));
     else
       return ToTemplateOrErr.takeError();
 

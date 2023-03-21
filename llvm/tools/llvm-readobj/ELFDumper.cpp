@@ -220,6 +220,7 @@ public:
   void printVersionInfo() override;
   void printArchSpecificInfo() override;
   void printStackMap() const override;
+  void printMemtag() override;
 
   const object::ELFObjectFile<ELFT> &getElfObject() const { return ObjF; };
 
@@ -233,6 +234,9 @@ public:
       return 8;
     return 4;
   }
+
+  std::vector<EnumEntry<unsigned>>
+  getOtherFlagsFromSymbol(const Elf_Ehdr &Header, const Elf_Sym &Symbol) const;
 
   Elf_Dyn_Range dynamic_table() const {
     // A valid .dynamic section contains an array of entries terminated
@@ -296,6 +300,10 @@ protected:
   virtual void printMipsGOT(const MipsGOTParser<ELFT> &Parser) = 0;
   virtual void printMipsPLT(const MipsGOTParser<ELFT> &Parser) = 0;
 
+  virtual void printMemtag(
+      const ArrayRef<std::pair<std::string, std::string>> DynamicEntries,
+      const ArrayRef<uint8_t> AndroidNoteDesc) = 0;
+
   Expected<ArrayRef<Elf_Versym>>
   getVersionTable(const Elf_Shdr &Sec, ArrayRef<Elf_Sym> *SymTab,
                   StringRef *StrTab, const Elf_Shdr **SymTabSec) const;
@@ -322,12 +330,6 @@ protected:
 
   void printRelocatableStackSizes(std::function<void()> PrintHeader);
   void printNonRelocatableStackSizes(std::function<void()> PrintHeader);
-
-  /// Retrieves sections with corresponding relocation sections based on
-  /// IsMatch.
-  void getSectionAndRelocations(
-      std::function<bool(const Elf_Shdr &)> IsMatch,
-      llvm::MapVector<const Elf_Shdr *, const Elf_Shdr *> &SecToRelocMap);
 
   const object::ELFObjectFile<ELFT> &ObjF;
   const ELFFile<ELFT> &Obj;
@@ -577,6 +579,9 @@ public:
   void printNotes() override;
   void printELFLinkerOptions() override;
   void printStackSizes() override;
+  void printMemtag(
+      const ArrayRef<std::pair<std::string, std::string>> DynamicEntries,
+      const ArrayRef<uint8_t> AndroidNoteDesc) override;
 
 private:
   void printHashHistogram(const Elf_Hash &HashTable);
@@ -681,14 +686,17 @@ public:
   void printNotes() override;
   void printELFLinkerOptions() override;
   void printStackSizes() override;
+  void printMemtag(
+      const ArrayRef<std::pair<std::string, std::string>> DynamicEntries,
+      const ArrayRef<uint8_t> AndroidNoteDesc) override;
+  void printSymbolSection(const Elf_Sym &Symbol, unsigned SymIndex,
+                          DataRegion<Elf_Word> ShndxTable) const;
 
 private:
   void printRelrReloc(const Elf_Relr &R) override;
   void printRelRelaReloc(const Relocation<ELFT> &R,
                          const RelSymbol<ELFT> &RelSym) override;
 
-  void printSymbolSection(const Elf_Sym &Symbol, unsigned SymIndex,
-                          DataRegion<Elf_Word> ShndxTable) const;
   void printSymbol(const Elf_Sym &Symbol, unsigned SymIndex,
                    DataRegion<Elf_Word> ShndxTable,
                    std::optional<StringRef> StrTable, bool IsDynamic,
@@ -701,8 +709,22 @@ private:
   void printMipsGOT(const MipsGOTParser<ELFT> &Parser) override;
   void printMipsPLT(const MipsGOTParser<ELFT> &Parser) override;
   void printMipsABIFlags() override;
+  virtual void printZeroSymbolOtherField(const Elf_Sym &Symbol) const;
 
 protected:
+  virtual std::string getGroupSectionHeaderName() const;
+  void printSymbolOtherField(const Elf_Sym &Symbol) const;
+  virtual void printExpandedRelRelaReloc(const Relocation<ELFT> &R,
+                                         StringRef SymbolName,
+                                         StringRef RelocName);
+  virtual void printDefaultRelRelaReloc(const Relocation<ELFT> &R,
+                                        StringRef SymbolName,
+                                        StringRef RelocName);
+  virtual void printRelocationSectionInfo(const Elf_Shdr &Sec, StringRef Name,
+                                          const unsigned SecNdx);
+  virtual void printSectionGroupMembers(StringRef Name, uint64_t Idx) const;
+  virtual void printEmptyGroupMessage() const;
+
   ScopedPrinter &W;
 };
 
@@ -715,9 +737,23 @@ public:
   JSONELFDumper(const object::ELFObjectFile<ELFT> &ObjF, ScopedPrinter &Writer)
       : LLVMELFDumper<ELFT>(ObjF, Writer) {}
 
+  std::string getGroupSectionHeaderName() const override;
+
   void printFileSummary(StringRef FileStr, ObjectFile &Obj,
                         ArrayRef<std::string> InputFilenames,
                         const Archive *A) override;
+  virtual void printZeroSymbolOtherField(const Elf_Sym &Symbol) const override;
+
+  void printDefaultRelRelaReloc(const Relocation<ELFT> &R,
+                                StringRef SymbolName,
+                                StringRef RelocName) override;
+
+  void printRelocationSectionInfo(const Elf_Shdr &Sec, StringRef Name,
+                                  const unsigned SecNdx) override;
+
+  void printSectionGroupMembers(StringRef Name, uint64_t Idx) const override;
+
+  void printEmptyGroupMessage() const override;
 
 private:
   std::unique_ptr<DictScope> FileScope;
@@ -2251,7 +2287,29 @@ std::string ELFDumper<ELFT>::getDynamicEntry(uint64_t Type,
     case DT_AARCH64_BTI_PLT:
     case DT_AARCH64_PAC_PLT:
     case DT_AARCH64_VARIANT_PCS:
+    case DT_AARCH64_MEMTAG_GLOBALSSZ:
       return std::to_string(Value);
+    case DT_AARCH64_MEMTAG_MODE:
+      switch (Value) {
+        case 0:
+          return "Synchronous (0)";
+        case 1:
+          return "Asynchronous (1)";
+        default:
+          return (Twine("Unknown (") + Twine(Value) + ")").str();
+      }
+    case DT_AARCH64_MEMTAG_HEAP:
+    case DT_AARCH64_MEMTAG_STACK:
+      switch (Value) {
+        case 0:
+          return "Disabled (0)";
+        case 1:
+          return "Enabled (1)";
+        default:
+          return (Twine("Unknown (") + Twine(Value) + ")").str();
+      }
+    case DT_AARCH64_MEMTAG_GLOBALS:
+      return (Twine("0x") + utohexstr(Value, /*LowerCase=*/true)).str();
     default:
       break;
     }
@@ -3241,6 +3299,35 @@ void ELFDumper<ELFT>::printReloc(const Relocation<ELFT> &R, unsigned RelIndex,
                         toString(Target.takeError()));
   else
     printRelRelaReloc(R, *Target);
+}
+
+template <class ELFT>
+std::vector<EnumEntry<unsigned>>
+ELFDumper<ELFT>::getOtherFlagsFromSymbol(const Elf_Ehdr &Header,
+                                         const Elf_Sym &Symbol) const {
+  std::vector<EnumEntry<unsigned>> SymOtherFlags(std::begin(ElfSymOtherFlags),
+                                                 std::end(ElfSymOtherFlags));
+  if (Header.e_machine == EM_MIPS) {
+    // Someone in their infinite wisdom decided to make STO_MIPS_MIPS16
+    // flag overlap with other ST_MIPS_xxx flags. So consider both
+    // cases separately.
+    if ((Symbol.st_other & STO_MIPS_MIPS16) == STO_MIPS_MIPS16)
+      SymOtherFlags.insert(SymOtherFlags.end(),
+                           std::begin(ElfMips16SymOtherFlags),
+                           std::end(ElfMips16SymOtherFlags));
+    else
+      SymOtherFlags.insert(SymOtherFlags.end(),
+                           std::begin(ElfMipsSymOtherFlags),
+                           std::end(ElfMipsSymOtherFlags));
+  } else if (Header.e_machine == EM_AARCH64) {
+    SymOtherFlags.insert(SymOtherFlags.end(),
+                         std::begin(ElfAArch64SymOtherFlags),
+                         std::end(ElfAArch64SymOtherFlags));
+  } else if (Header.e_machine == EM_RISCV) {
+    SymOtherFlags.insert(SymOtherFlags.end(), std::begin(ElfRISCVSymOtherFlags),
+                         std::end(ElfRISCVSymOtherFlags));
+  }
+  return SymOtherFlags;
 }
 
 static inline void printFields(formatted_raw_ostream &OS, StringRef Str1,
@@ -5198,6 +5285,23 @@ static bool printAndroidNote(raw_ostream &OS, uint32_t NoteType,
   return true;
 }
 
+template <class ELFT>
+void GNUELFDumper<ELFT>::printMemtag(
+    const ArrayRef<std::pair<std::string, std::string>> DynamicEntries,
+    const ArrayRef<uint8_t> AndroidNoteDesc) {
+  OS << "Memtag Dynamic Entries:\n";
+  if (DynamicEntries.empty())
+    OS << "    < none found >\n";
+  for (const auto &DynamicEntryKV : DynamicEntries)
+    OS << "    " << DynamicEntryKV.first << ": " << DynamicEntryKV.second
+       << "\n";
+
+  if (!AndroidNoteDesc.empty()) {
+    OS << "Memtag Android Note:\n";
+    printAndroidNote(OS, ELF::NT_ANDROID_TYPE_MEMTAG, AndroidNoteDesc);
+  }
+}
+
 template <typename ELFT>
 static bool printLLVMOMPOFFLOADNote(raw_ostream &OS, uint32_t NoteType,
                                     ArrayRef<uint8_t> Desc) {
@@ -5681,7 +5785,7 @@ StringRef getNoteTypeName(const typename ELFT::Note &Note, unsigned ELFType) {
 }
 
 template <class ELFT>
-static void printNotesHelper(
+static void processNotesHelper(
     const ELFDumper<ELFT> &Dumper,
     llvm::function_ref<void(std::optional<StringRef>, typename ELFT::Off,
                             typename ELFT::Addr)>
@@ -5837,7 +5941,42 @@ template <class ELFT> void GNUELFDumper<ELFT>::printNotes() {
     return Error::success();
   };
 
-  printNotesHelper(*this, PrintHeader, ProcessNote, []() {});
+  processNotesHelper(*this, /*StartNotesFn=*/PrintHeader,
+                     /*ProcessNoteFn=*/ProcessNote, /*FinishNotesFn=*/[]() {});
+}
+
+template <typename ELFT> void ELFDumper<ELFT>::printMemtag() {
+  if (Obj.getHeader().e_machine != EM_AARCH64) return;
+  std::vector<std::pair<std::string, std::string>> DynamicEntries;
+  for (const typename ELFT::Dyn &Entry : dynamic_table()) {
+    uintX_t Tag = Entry.getTag();
+    switch (Tag) {
+    case DT_AARCH64_MEMTAG_MODE:
+    case DT_AARCH64_MEMTAG_HEAP:
+    case DT_AARCH64_MEMTAG_STACK:
+    case DT_AARCH64_MEMTAG_GLOBALSSZ:
+    case DT_AARCH64_MEMTAG_GLOBALS:
+      DynamicEntries.emplace_back(Obj.getDynamicTagAsString(Tag),
+                                  getDynamicEntry(Tag, Entry.getVal()));
+    }
+  }
+
+  ArrayRef<uint8_t> AndroidNoteDesc;
+  auto FindAndroidNote = [&](const Elf_Note &Note, bool IsCore) -> Error {
+    if (Note.getName() == "Android" &&
+        Note.getType() == ELF::NT_ANDROID_TYPE_MEMTAG)
+      AndroidNoteDesc = Note.getDesc();
+    return Error::success();
+  };
+
+  processNotesHelper(
+      *this,
+      /*StartNotesFn=*/
+      [](std::optional<StringRef>, const typename ELFT::Off,
+         const typename ELFT::Addr) {},
+      /*ProcessNoteFn=*/FindAndroidNote, /*FinishNotesFn=*/[]() {});
+
+  printMemtag(DynamicEntries, AndroidNoteDesc);
 }
 
 template <class ELFT> void GNUELFDumper<ELFT>::printELFLinkerOptions() {
@@ -6197,37 +6336,10 @@ void ELFDumper<ELFT>::printNonRelocatableStackSizes(
 }
 
 template <class ELFT>
-void ELFDumper<ELFT>::getSectionAndRelocations(
-    std::function<bool(const Elf_Shdr &)> IsMatch,
-    llvm::MapVector<const Elf_Shdr *, const Elf_Shdr *> &SecToRelocMap) {
-  for (const Elf_Shdr &Sec : cantFail(Obj.sections())) {
-    if (IsMatch(Sec))
-      if (SecToRelocMap.insert(std::make_pair(&Sec, (const Elf_Shdr *)nullptr))
-              .second)
-        continue;
-
-    if (Sec.sh_type != ELF::SHT_RELA && Sec.sh_type != ELF::SHT_REL)
-      continue;
-
-    Expected<const Elf_Shdr *> RelSecOrErr = Obj.getSection(Sec.sh_info);
-    if (!RelSecOrErr) {
-      reportUniqueWarning(describe(Sec) +
-                          ": failed to get a relocated section: " +
-                          toString(RelSecOrErr.takeError()));
-      continue;
-    }
-    const Elf_Shdr *ContentsSec = *RelSecOrErr;
-    if (IsMatch(*ContentsSec))
-      SecToRelocMap[ContentsSec] = &Sec;
-  }
-}
-
-template <class ELFT>
 void ELFDumper<ELFT>::printRelocatableStackSizes(
     std::function<void()> PrintHeader) {
   // Build a map between stack size sections and their corresponding relocation
   // sections.
-  llvm::MapVector<const Elf_Shdr *, const Elf_Shdr *> StackSizeRelocMap;
   auto IsMatch = [&](const Elf_Shdr &Sec) -> bool {
     StringRef SectionName;
     if (Expected<StringRef> NameOrErr = Obj.getSectionName(Sec))
@@ -6237,9 +6349,16 @@ void ELFDumper<ELFT>::printRelocatableStackSizes(
 
     return SectionName == ".stack_sizes";
   };
-  getSectionAndRelocations(IsMatch, StackSizeRelocMap);
 
-  for (const auto &StackSizeMapEntry : StackSizeRelocMap) {
+  Expected<MapVector<const Elf_Shdr *, const Elf_Shdr *>>
+      StackSizeRelocMapOrErr = Obj.getSectionAndRelocations(IsMatch);
+  if (!StackSizeRelocMapOrErr) {
+    reportUniqueWarning("unable to get stack size map section(s): " +
+                        toString(StackSizeRelocMapOrErr.takeError()));
+    return;
+  }
+
+  for (const auto &StackSizeMapEntry : *StackSizeRelocMapOrErr) {
     PrintHeader();
     const Elf_Shdr *StackSizesELFSec = StackSizeMapEntry.first;
     const Elf_Shdr *RelocSec = StackSizeMapEntry.second;
@@ -6607,9 +6726,9 @@ template <class ELFT> void LLVMELFDumper<ELFT>::printGroupSections() {
     W.printNumber("Link", G.Link);
     W.printNumber("Info", G.Info);
     W.printHex("Type", getGroupType(G.Type), G.Type);
-    W.startLine() << "Signature: " << G.Signature << "\n";
+    W.printString("Signature", G.Signature);
 
-    ListScope L(W, "Section(s) in group");
+    ListScope L(W, getGroupSectionHeaderName());
     for (const GroupMember &GM : G.Members) {
       const GroupSection *MainGroup = Map[GM.Index];
       if (MainGroup != &G)
@@ -6619,12 +6738,23 @@ template <class ELFT> void LLVMELFDumper<ELFT>::printGroupSections() {
             Twine(MainGroup->Index) +
             ", was also found in the group section with index " +
             Twine(G.Index));
-      W.startLine() << GM.Name << " (" << GM.Index << ")\n";
+      printSectionGroupMembers(GM.Name, GM.Index);
     }
   }
 
   if (V.empty())
-    W.startLine() << "There are no group sections in the file.\n";
+    printEmptyGroupMessage();
+}
+
+template <class ELFT>
+std::string LLVMELFDumper<ELFT>::getGroupSectionHeaderName() const {
+  return "Section(s) in group";
+}
+
+template <class ELFT>
+void LLVMELFDumper<ELFT>::printSectionGroupMembers(StringRef Name,
+                                                   uint64_t Idx) const {
+  W.startLine() << Name << " (" << Idx << ")\n";
 }
 
 template <class ELFT> void LLVMELFDumper<ELFT>::printRelocations() {
@@ -6636,17 +6766,49 @@ template <class ELFT> void LLVMELFDumper<ELFT>::printRelocations() {
 
     StringRef Name = this->getPrintableSectionName(Sec);
     unsigned SecNdx = &Sec - &cantFail(this->Obj.sections()).front();
-    W.startLine() << "Section (" << SecNdx << ") " << Name << " {\n";
-    W.indent();
-    this->printRelocationsHelper(Sec);
-    W.unindent();
-    W.startLine() << "}\n";
+    printRelocationSectionInfo(Sec, Name, SecNdx);
   }
 }
 
 template <class ELFT>
 void LLVMELFDumper<ELFT>::printRelrReloc(const Elf_Relr &R) {
   W.startLine() << W.hex(R) << "\n";
+}
+
+template <class ELFT>
+void LLVMELFDumper<ELFT>::printExpandedRelRelaReloc(const Relocation<ELFT> &R,
+                                                    StringRef SymbolName,
+                                                    StringRef RelocName) {
+  DictScope Group(W, "Relocation");
+  W.printHex("Offset", R.Offset);
+  W.printNumber("Type", RelocName, R.Type);
+  W.printNumber("Symbol", !SymbolName.empty() ? SymbolName : "-", R.Symbol);
+  if (R.Addend)
+    W.printHex("Addend", (uintX_t)*R.Addend);
+}
+
+template <class ELFT>
+void LLVMELFDumper<ELFT>::printDefaultRelRelaReloc(const Relocation<ELFT> &R,
+                                                   StringRef SymbolName,
+                                                   StringRef RelocName) {
+  raw_ostream &OS = W.startLine();
+  OS << W.hex(R.Offset) << " " << RelocName << " "
+     << (!SymbolName.empty() ? SymbolName : "-");
+  if (R.Addend)
+    OS << " " << W.hex((uintX_t)*R.Addend);
+  OS << "\n";
+}
+
+template <class ELFT>
+void LLVMELFDumper<ELFT>::printRelocationSectionInfo(const Elf_Shdr &Sec,
+                                                     StringRef Name,
+                                                     const unsigned SecNdx) {
+  DictScope D(W, (Twine("Section (") + Twine(SecNdx) + ") " + Name).str());
+  this->printRelocationsHelper(Sec);
+}
+
+template <class ELFT> void LLVMELFDumper<ELFT>::printEmptyGroupMessage() const {
+  W.startLine() << "There are no group sections in the file.\n";
 }
 
 template <class ELFT>
@@ -6657,19 +6819,9 @@ void LLVMELFDumper<ELFT>::printRelRelaReloc(const Relocation<ELFT> &R,
   this->Obj.getRelocationTypeName(R.Type, RelocName);
 
   if (opts::ExpandRelocs) {
-    DictScope Group(W, "Relocation");
-    W.printHex("Offset", R.Offset);
-    W.printNumber("Type", RelocName, R.Type);
-    W.printNumber("Symbol", !SymbolName.empty() ? SymbolName : "-", R.Symbol);
-    if (R.Addend)
-      W.printHex("Addend", (uintX_t)*R.Addend);
+    printExpandedRelRelaReloc(R, SymbolName, RelocName);
   } else {
-    raw_ostream &OS = W.startLine();
-    OS << W.hex(R.Offset) << " " << RelocName << " "
-       << (!SymbolName.empty() ? SymbolName : "-");
-    if (R.Addend)
-      OS << " " << W.hex((uintX_t)*R.Addend);
-    OS << "\n";
+    printDefaultRelRelaReloc(R, SymbolName, RelocName);
   }
 }
 
@@ -6785,6 +6937,22 @@ void LLVMELFDumper<ELFT>::printSymbolSection(
 }
 
 template <class ELFT>
+void LLVMELFDumper<ELFT>::printSymbolOtherField(const Elf_Sym &Symbol) const {
+  std::vector<EnumEntry<unsigned>> SymOtherFlags =
+      this->getOtherFlagsFromSymbol(this->Obj.getHeader(), Symbol);
+  W.printFlags("Other", Symbol.st_other, ArrayRef(SymOtherFlags), 0x3u);
+}
+
+template <class ELFT>
+void LLVMELFDumper<ELFT>::printZeroSymbolOtherField(
+    const Elf_Sym &Symbol) const {
+  assert(Symbol.st_other == 0 && "non-zero Other Field");
+  // Usually st_other flag is zero. Do not pollute the output
+  // by flags enumeration in that case.
+  W.printNumber("Other", 0);
+}
+
+template <class ELFT>
 void LLVMELFDumper<ELFT>::printSymbol(const Elf_Sym &Symbol, unsigned SymIndex,
                                       DataRegion<Elf_Word> ShndxTable,
                                       std::optional<StringRef> StrTable,
@@ -6805,35 +6973,9 @@ void LLVMELFDumper<ELFT>::printSymbol(const Elf_Sym &Symbol, unsigned SymIndex,
   else
     W.printEnum("Type", SymbolType, ArrayRef(ElfSymbolTypes));
   if (Symbol.st_other == 0)
-    // Usually st_other flag is zero. Do not pollute the output
-    // by flags enumeration in that case.
-    W.printNumber("Other", 0);
-  else {
-    std::vector<EnumEntry<unsigned>> SymOtherFlags(std::begin(ElfSymOtherFlags),
-                                                   std::end(ElfSymOtherFlags));
-    if (this->Obj.getHeader().e_machine == EM_MIPS) {
-      // Someones in their infinite wisdom decided to make STO_MIPS_MIPS16
-      // flag overlapped with other ST_MIPS_xxx flags. So consider both
-      // cases separately.
-      if ((Symbol.st_other & STO_MIPS_MIPS16) == STO_MIPS_MIPS16)
-        SymOtherFlags.insert(SymOtherFlags.end(),
-                             std::begin(ElfMips16SymOtherFlags),
-                             std::end(ElfMips16SymOtherFlags));
-      else
-        SymOtherFlags.insert(SymOtherFlags.end(),
-                             std::begin(ElfMipsSymOtherFlags),
-                             std::end(ElfMipsSymOtherFlags));
-    } else if (this->Obj.getHeader().e_machine == EM_AARCH64) {
-      SymOtherFlags.insert(SymOtherFlags.end(),
-                           std::begin(ElfAArch64SymOtherFlags),
-                           std::end(ElfAArch64SymOtherFlags));
-    } else if (this->Obj.getHeader().e_machine == EM_RISCV) {
-      SymOtherFlags.insert(SymOtherFlags.end(),
-                           std::begin(ElfRISCVSymOtherFlags),
-                           std::end(ElfRISCVSymOtherFlags));
-    }
-    W.printFlags("Other", Symbol.st_other, ArrayRef(SymOtherFlags), 0x3u);
-  }
+    printZeroSymbolOtherField(Symbol);
+  else
+    printSymbolOtherField(Symbol);
   printSymbolSection(Symbol, SymIndex, ShndxTable);
 }
 
@@ -7063,14 +7205,19 @@ static bool getSymbolIndices(const typename ELFT::Shdr *CGRelSection,
 }
 
 template <class ELFT> void LLVMELFDumper<ELFT>::printCGProfile() {
-  llvm::MapVector<const Elf_Shdr *, const Elf_Shdr *> SecToRelocMap;
-
   auto IsMatch = [](const Elf_Shdr &Sec) -> bool {
     return Sec.sh_type == ELF::SHT_LLVM_CALL_GRAPH_PROFILE;
   };
-  this->getSectionAndRelocations(IsMatch, SecToRelocMap);
 
-  for (const auto &CGMapEntry : SecToRelocMap) {
+  Expected<MapVector<const Elf_Shdr *, const Elf_Shdr *>> SecToRelocMapOrErr =
+      this->Obj.getSectionAndRelocations(IsMatch);
+  if (!SecToRelocMapOrErr) {
+    this->reportUniqueWarning("unable to get CG Profile section(s): " +
+                              toString(SecToRelocMapOrErr.takeError()));
+    return;
+  }
+
+  for (const auto &CGMapEntry : *SecToRelocMapOrErr) {
     const Elf_Shdr *CGSection = CGMapEntry.first;
     const Elf_Shdr *CGRelSection = CGMapEntry.second;
 
@@ -7109,21 +7256,35 @@ template <class ELFT> void LLVMELFDumper<ELFT>::printCGProfile() {
 
 template <class ELFT> void LLVMELFDumper<ELFT>::printBBAddrMaps() {
   bool IsRelocatable = this->Obj.getHeader().e_type == ELF::ET_REL;
-  for (const Elf_Shdr &Sec : cantFail(this->Obj.sections())) {
-    if (Sec.sh_type != SHT_LLVM_BB_ADDR_MAP &&
-        Sec.sh_type != SHT_LLVM_BB_ADDR_MAP_V0) {
-      continue;
-    }
+  using Elf_Shdr = typename ELFT::Shdr;
+  auto IsMatch = [](const Elf_Shdr &Sec) -> bool {
+    return Sec.sh_type == ELF::SHT_LLVM_BB_ADDR_MAP ||
+           Sec.sh_type == ELF::SHT_LLVM_BB_ADDR_MAP_V0;
+  };
+  Expected<MapVector<const Elf_Shdr *, const Elf_Shdr *>> SecRelocMapOrErr =
+      this->Obj.getSectionAndRelocations(IsMatch);
+  if (!SecRelocMapOrErr) {
+    this->reportUniqueWarning(
+        "failed to get SHT_LLVM_BB_ADDR_MAP section(s): " +
+        toString(SecRelocMapOrErr.takeError()));
+    return;
+  }
+  for (auto const &[Sec, RelocSec] : *SecRelocMapOrErr) {
     std::optional<const Elf_Shdr *> FunctionSec;
     if (IsRelocatable)
       FunctionSec =
-          unwrapOrError(this->FileName, this->Obj.getSection(Sec.sh_link));
+          unwrapOrError(this->FileName, this->Obj.getSection(Sec->sh_link));
     ListScope L(W, "BBAddrMap");
+    if (IsRelocatable && !RelocSec) {
+      this->reportUniqueWarning("unable to get relocation section for " +
+                                this->describe(*Sec));
+      continue;
+    }
     Expected<std::vector<BBAddrMap>> BBAddrMapOrErr =
-        this->Obj.decodeBBAddrMap(Sec);
+        this->Obj.decodeBBAddrMap(*Sec, RelocSec);
     if (!BBAddrMapOrErr) {
-      this->reportUniqueWarning("unable to dump " + this->describe(Sec) + ": " +
-                                toString(BBAddrMapOrErr.takeError()));
+      this->reportUniqueWarning("unable to dump " + this->describe(*Sec) +
+                                ": " + toString(BBAddrMapOrErr.takeError()));
       continue;
     }
     for (const BBAddrMap &AM : *BBAddrMapOrErr) {
@@ -7135,7 +7296,7 @@ template <class ELFT> void LLVMELFDumper<ELFT>::printBBAddrMaps() {
       if (FuncSymIndex.empty())
         this->reportUniqueWarning(
             "could not identify function symbol for address (0x" +
-            Twine::utohexstr(AM.Addr) + ") in " + this->describe(Sec));
+            Twine::utohexstr(AM.Addr) + ") in " + this->describe(*Sec));
       else
         FuncName = this->getStaticSymbolName(FuncSymIndex.front());
       W.printString("Name", FuncName);
@@ -7214,6 +7375,22 @@ static bool printAndroidNoteLLVMStyle(uint32_t NoteType, ArrayRef<uint8_t> Desc,
   for (const auto &KV : Props)
     W.printString(KV.first, KV.second);
   return true;
+}
+
+template <class ELFT>
+void LLVMELFDumper<ELFT>::printMemtag(
+    const ArrayRef<std::pair<std::string, std::string>> DynamicEntries,
+    const ArrayRef<uint8_t> AndroidNoteDesc) {
+  ListScope L(W, "Memtag Dynamic Entries:");
+  if (DynamicEntries.empty())
+    W.printString("< none found >");
+  for (const auto &DynamicEntryKV : DynamicEntries)
+    W.printString(DynamicEntryKV.first, DynamicEntryKV.second);
+
+  if (!AndroidNoteDesc.empty()) {
+    ListScope L(W, "Memtag Android Note:");
+    printAndroidNoteLLVMStyle(ELF::NT_ANDROID_TYPE_MEMTAG, AndroidNoteDesc, W);
+  }
 }
 
 template <typename ELFT>
@@ -7328,7 +7505,8 @@ template <class ELFT> void LLVMELFDumper<ELFT>::printNotes() {
     return Error::success();
   };
 
-  printNotesHelper(*this, StartNotes, ProcessNote, EndNotes);
+  processNotesHelper(*this, /*StartNotesFn=*/StartNotes,
+                     /*ProcessNoteFn=*/ProcessNote, /*FinishNotesFn=*/EndNotes);
 }
 
 template <class ELFT> void LLVMELFDumper<ELFT>::printELFLinkerOptions() {
@@ -7553,4 +7731,46 @@ void JSONELFDumper<ELFT>::printFileSummary(StringRef FileStr, ObjectFile &Obj,
       "AddressSize",
       std::string(formatv("{0}bit", 8 * Obj.getBytesInAddress())));
   this->printLoadName();
+}
+
+template <class ELFT>
+void JSONELFDumper<ELFT>::printZeroSymbolOtherField(
+    const Elf_Sym &Symbol) const {
+  // We want the JSON format to be uniform, since it is machine readable, so
+  // always print the `Other` field the same way.
+  this->printSymbolOtherField(Symbol);
+}
+
+template <class ELFT>
+void JSONELFDumper<ELFT>::printDefaultRelRelaReloc(const Relocation<ELFT> &R,
+                                                   StringRef SymbolName,
+                                                   StringRef RelocName) {
+  this->printExpandedRelRelaReloc(R, SymbolName, RelocName);
+}
+
+template <class ELFT>
+void JSONELFDumper<ELFT>::printRelocationSectionInfo(const Elf_Shdr &Sec,
+                                                     StringRef Name,
+                                                     const unsigned SecNdx) {
+  DictScope Group(this->W);
+  this->W.printNumber("SectionIndex", SecNdx);
+  ListScope D(this->W, "Relocs");
+  this->printRelocationsHelper(Sec);
+}
+
+template <class ELFT>
+std::string JSONELFDumper<ELFT>::getGroupSectionHeaderName() const {
+  return "GroupSections";
+}
+
+template <class ELFT>
+void JSONELFDumper<ELFT>::printSectionGroupMembers(StringRef Name,
+                                                   uint64_t Idx) const {
+  DictScope Grp(this->W);
+  this->W.printString("Name", Name);
+  this->W.printNumber("Index", Idx);
+}
+
+template <class ELFT> void JSONELFDumper<ELFT>::printEmptyGroupMessage() const {
+  // JSON output does not need to print anything for empty groups
 }

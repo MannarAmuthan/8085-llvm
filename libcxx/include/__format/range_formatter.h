@@ -36,27 +36,27 @@
 
 _LIBCPP_BEGIN_NAMESPACE_STD
 
-#if _LIBCPP_STD_VER > 20
+#if _LIBCPP_STD_VER >= 23
 
 template <class _Tp, class _CharT = char>
   requires same_as<remove_cvref_t<_Tp>, _Tp> && formattable<_Tp, _CharT>
 struct _LIBCPP_TEMPLATE_VIS _LIBCPP_AVAILABILITY_FORMAT range_formatter {
-  _LIBCPP_HIDE_FROM_ABI constexpr void set_separator(basic_string_view<_CharT> __separator) {
+  _LIBCPP_HIDE_FROM_ABI constexpr void set_separator(basic_string_view<_CharT> __separator) noexcept {
     __separator_ = __separator;
   }
   _LIBCPP_HIDE_FROM_ABI constexpr void
-  set_brackets(basic_string_view<_CharT> __opening_bracket, basic_string_view<_CharT> __closing_bracket) {
+  set_brackets(basic_string_view<_CharT> __opening_bracket, basic_string_view<_CharT> __closing_bracket) noexcept {
     __opening_bracket_ = __opening_bracket;
     __closing_bracket_ = __closing_bracket;
   }
 
-  _LIBCPP_HIDE_FROM_ABI constexpr formatter<_Tp, _CharT>& underlying() { return __underlying_; }
-  _LIBCPP_HIDE_FROM_ABI constexpr const formatter<_Tp, _CharT>& underlying() const { return __underlying_; }
+  _LIBCPP_HIDE_FROM_ABI constexpr formatter<_Tp, _CharT>& underlying() noexcept { return __underlying_; }
+  _LIBCPP_HIDE_FROM_ABI constexpr const formatter<_Tp, _CharT>& underlying() const noexcept { return __underlying_; }
 
   template <class _ParseContext>
   _LIBCPP_HIDE_FROM_ABI constexpr typename _ParseContext::iterator parse(_ParseContext& __parse_ctx) {
-    const _CharT* __begin = __parser_.__parse(__parse_ctx, __format_spec::__fields_range);
-    const _CharT* __end   = __parse_ctx.end();
+    auto __begin = __parser_.__parse(__parse_ctx, __format_spec::__fields_range);
+    auto __end   = __parse_ctx.end();
     if (__begin == __end)
       return __begin;
 
@@ -211,7 +211,8 @@ struct _LIBCPP_TEMPLATE_VIS _LIBCPP_AVAILABILITY_FORMAT range_formatter {
   __format_spec::__parser<_CharT> __parser_{.__alignment_ = __format_spec::__alignment::__left};
 
 private:
-  _LIBCPP_HIDE_FROM_ABI constexpr void __parse_type(const _CharT*& __begin, const _CharT* __end) {
+  template <contiguous_iterator _Iterator>
+  _LIBCPP_HIDE_FROM_ABI constexpr void __parse_type(_Iterator& __begin, _Iterator __end) {
     switch (*__begin) {
     case _CharT('m'):
       if constexpr (__fmt_pair_like<_Tp>) {
@@ -248,7 +249,7 @@ private:
   basic_string_view<_CharT> __closing_bracket_ = _LIBCPP_STATICALLY_WIDEN(_CharT, "]");
 };
 
-#endif //_LIBCPP_STD_VER > 20
+#endif //_LIBCPP_STD_VER >= 23
 
 _LIBCPP_END_NAMESPACE_STD
 

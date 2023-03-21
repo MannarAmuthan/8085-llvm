@@ -16,7 +16,6 @@
 #include "mlir/Dialect/PDL/IR/PDLTypes.h"
 #include "mlir/Dialect/Transform/IR/TransformDialect.h"
 #include "mlir/Dialect/Transform/IR/TransformInterfaces.h"
-#include "mlir/Dialect/Transform/IR/TransformUtils.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 using namespace mlir;
@@ -130,10 +129,10 @@ SimplifyBoundedAffineOpsOp::apply(TransformResults &results,
   patterns.insert<SimplifyAffineMinMaxOp<AffineMinOp>,
                   SimplifyAffineMinMaxOp<AffineMaxOp>>(getContext(), cstr);
   FrozenRewritePatternSet frozenPatterns(std::move(patterns));
+  GreedyRewriteConfig config;
+  config.strictMode = GreedyRewriteStrictness::ExistingAndNewOps;
   // Apply the simplification pattern to a fixpoint.
-  if (failed(
-          applyOpPatternsAndFold(targets, frozenPatterns,
-                                 GreedyRewriteStrictness::ExistingAndNewOps))) {
+  if (failed(applyOpPatternsAndFold(targets, frozenPatterns, config))) {
     auto diag = emitDefiniteFailure()
                 << "affine.min/max simplification did not converge";
     return diag;

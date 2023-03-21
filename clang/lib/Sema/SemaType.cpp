@@ -1589,9 +1589,6 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
 
     // TypeQuals handled by caller.
     Result = Context.getTypeDeclType(D);
-    if (const auto *Using =
-            dyn_cast_or_null<UsingShadowDecl>(DS.getRepAsFoundDecl()))
-      Result = Context.getUsingType(Using, Result);
 
     // In both C and C++, make an ElaboratedType.
     ElaboratedTypeKeyword Keyword
@@ -2201,6 +2198,13 @@ QualType Sema::BuildPointerType(QualType T,
   if (getLangOpts().OpenCL)
     T = deduceOpenCLPointeeAddrSpace(*this, T);
 
+  // In WebAssembly, pointers to reference types are illegal.
+  if (getASTContext().getTargetInfo().getTriple().isWasm() &&
+      T->isWebAssemblyReferenceType()) {
+    Diag(Loc, diag::err_wasm_reference_pr) << 0;
+    return QualType();
+  }
+
   // Build the pointer type.
   return Context.getPointerType(T);
 }
@@ -2275,6 +2279,13 @@ QualType Sema::BuildReferenceType(QualType T, bool SpelledAsLValue,
 
   if (getLangOpts().OpenCL)
     T = deduceOpenCLPointeeAddrSpace(*this, T);
+
+  // In WebAssembly, references to reference types are illegal.
+  if (getASTContext().getTargetInfo().getTriple().isWasm() &&
+      T->isWebAssemblyReferenceType()) {
+    Diag(Loc, diag::err_wasm_reference_pr) << 1;
+    return QualType();
+  }
 
   // Handle restrict on references.
   if (LValueRef)
@@ -6257,9 +6268,6 @@ namespace {
     void VisitTagTypeLoc(TagTypeLoc TL) {
       TL.setNameLoc(DS.getTypeSpecTypeNameLoc());
     }
-    void VisitUsingTypeLoc(UsingTypeLoc TL) {
-      TL.setNameLoc(DS.getTypeSpecTypeNameLoc());
-    }
     void VisitAtomicTypeLoc(AtomicTypeLoc TL) {
       // An AtomicTypeLoc can come from either an _Atomic(...) type specifier
       // or an _Atomic qualifier.
@@ -7335,6 +7343,37 @@ static bool handleMSPointerTypeQualifierAttr(TypeProcessingState &State,
     Pointee = S.Context.getAddrSpaceQualType(
         S.Context.removeAddrSpaceQualType(Pointee), ASIdx);
   Type = State.getAttributedType(A, Type, S.Context.getPointerType(Pointee));
+  return false;
+}
+
+static bool HandleWebAssemblyFuncrefAttr(TypeProcessingState &State,
+                                         QualType &QT, ParsedAttr &PAttr) {
+  assert(PAttr.getKind() == ParsedAttr::AT_WebAssemblyFuncref);
+
+  Sema &S = State.getSema();
+  Attr *A = createSimpleAttr<WebAssemblyFuncrefAttr>(S.Context, PAttr);
+
+  std::bitset<attr::LastAttr> Attrs;
+  attr::Kind NewAttrKind = A->getKind();
+  const auto *AT = dyn_cast<AttributedType>(QT);
+  while (AT) {
+    Attrs[AT->getAttrKind()] = true;
+    AT = dyn_cast<AttributedType>(AT->getModifiedType());
+  }
+
+  // You cannot specify duplicate type attributes, so if the attribute has
+  // already been applied, flag it.
+  if (Attrs[NewAttrKind]) {
+    S.Diag(PAttr.getLoc(), diag::warn_duplicate_attribute_exact) << PAttr;
+    return true;
+  }
+
+  // Add address space to type based on its attributes.
+  LangAS ASIdx = LangAS::wasm_funcref;
+  QualType Pointee = QT->getPointeeType();
+  Pointee = S.Context.getAddrSpaceQualType(
+      S.Context.removeAddrSpaceQualType(Pointee), ASIdx);
+  QT = State.getAttributedType(A, QT, S.Context.getPointerType(Pointee));
   return false;
 }
 
@@ -8494,6 +8533,12 @@ static void processTypeAttrs(TypeProcessingState &state, QualType &type,
       HandleMatrixTypeAttr(type, attr, state.getSema());
       attr.setUsedAsTypeAttr();
       break;
+
+    case ParsedAttr::AT_WebAssemblyFuncref: {
+      if (!HandleWebAssemblyFuncrefAttr(state, type, attr))
+        attr.setUsedAsTypeAttr();
+      break;
+    }
 
     MS_TYPE_ATTRS_CASELIST:
       if (!handleMSPointerTypeQualifierAttr(state, attr, type))

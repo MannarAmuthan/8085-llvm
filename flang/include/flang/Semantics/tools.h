@@ -108,7 +108,7 @@ bool IsBindCProcedure(const Scope &);
 // Returns a pointer to the function's symbol when true, else null
 const Symbol *IsFunctionResultWithSameNameAsFunction(const Symbol &);
 bool IsOrContainsEventOrLockComponent(const Symbol &);
-bool CanBeTypeBoundProc(const Symbol *);
+bool CanBeTypeBoundProc(const Symbol &);
 // Does a non-PARAMETER symbol have explicit initialization with =value or
 // =>target in its declaration (but not in a DATA statement)? (Being
 // ALLOCATABLE or having a derived type with default component initialization
@@ -123,7 +123,6 @@ bool IsDestructible(const Symbol &, const Symbol *derivedType = nullptr);
 bool HasIntrinsicTypeName(const Symbol &);
 bool IsSeparateModuleProcedureInterface(const Symbol *);
 bool HasAlternateReturns(const Symbol &);
-bool InCommonBlock(const Symbol &);
 
 // Return an ultimate component of type that matches predicate, or nullptr.
 const Symbol *FindUltimateComponent(const DerivedTypeSpec &type,
@@ -170,6 +169,7 @@ inline bool IsProtected(const Symbol &symbol) {
 inline bool IsImpliedDoIndex(const Symbol &symbol) {
   return symbol.owner().kind() == Scope::Kind::ImpliedDos;
 }
+SymbolVector FinalsForDerivedTypeInstantiation(const DerivedTypeSpec &);
 bool IsFinalizable(
     const Symbol &, std::set<const DerivedTypeSpec *> * = nullptr);
 bool IsFinalizable(
@@ -186,6 +186,7 @@ bool IsModuleProcedure(const Symbol &);
 bool HasCoarray(const parser::Expr &);
 bool IsAssumedType(const Symbol &);
 bool IsPolymorphic(const Symbol &);
+bool IsUnlimitedPolymorphic(const Symbol &);
 bool IsPolymorphicAllocatable(const Symbol &);
 
 // Return an error if a symbol is not accessible from a scope
@@ -252,7 +253,7 @@ const Symbol *FindExternallyVisibleObject(
       expr.u);
 }
 
-// Apply GetUltimate(), then if the symbol is a generic procedure shadowing a
+// Applies GetUltimate(), then if the symbol is a generic procedure shadowing a
 // specific procedure of the same name, return it instead.
 const Symbol &BypassGeneric(const Symbol &);
 

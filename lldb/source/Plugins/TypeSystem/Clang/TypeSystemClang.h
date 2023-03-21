@@ -331,17 +331,81 @@ public:
 
   class TemplateParameterInfos {
   public:
+    TemplateParameterInfos() = default;
+    TemplateParameterInfos(llvm::ArrayRef<const char *> names_in,
+                           llvm::ArrayRef<clang::TemplateArgument> args_in)
+        : names(names_in), args(args_in) {
+      assert(names.size() == args_in.size());
+    }
+
+    TemplateParameterInfos(TemplateParameterInfos const &) = delete;
+    TemplateParameterInfos(TemplateParameterInfos &&) = delete;
+
+    TemplateParameterInfos &operator=(TemplateParameterInfos const &) = delete;
+    TemplateParameterInfos &operator=(TemplateParameterInfos &&) = delete;
+
+    ~TemplateParameterInfos() = default;
+
     bool IsValid() const {
       // Having a pack name but no packed args doesn't make sense, so mark
       // these template parameters as invalid.
       if (pack_name && !packed_args)
         return false;
       return args.size() == names.size() &&
-        (!packed_args || !packed_args->packed_args);
+             (!packed_args || !packed_args->packed_args);
     }
+
+    bool IsEmpty() const { return args.empty(); }
+    size_t Size() const { return args.size(); }
+
+    llvm::ArrayRef<clang::TemplateArgument> GetArgs() const { return args; }
+    llvm::ArrayRef<const char *> GetNames() const { return names; }
+
+    clang::TemplateArgument const &Front() const {
+      assert(!args.empty());
+      return args.front();
+    }
+
+    void InsertArg(char const *name, clang::TemplateArgument arg) {
+      args.emplace_back(std::move(arg));
+      names.push_back(name);
+    }
+
+    // Parameter pack related
 
     bool hasParameterPack() const { return static_cast<bool>(packed_args); }
 
+    TemplateParameterInfos const &GetParameterPack() const {
+      assert(packed_args != nullptr);
+      return *packed_args;
+    }
+
+    TemplateParameterInfos &GetParameterPack() {
+      assert(packed_args != nullptr);
+      return *packed_args;
+    }
+
+    llvm::ArrayRef<clang::TemplateArgument> GetParameterPackArgs() const {
+      assert(packed_args != nullptr);
+      return packed_args->GetArgs();
+    }
+
+    bool HasPackName() const { return pack_name && pack_name[0]; }
+
+    llvm::StringRef GetPackName() const {
+      assert(HasPackName());
+      return pack_name;
+    }
+
+    void SetPackName(char const *name) { pack_name = name; }
+
+    void SetParameterPack(std::unique_ptr<TemplateParameterInfos> args) {
+      packed_args = std::move(args);
+    }
+
+  private:
+    /// Element 'names[i]' holds the template argument name
+    /// of 'args[i]'
     llvm::SmallVector<const char *, 2> names;
     llvm::SmallVector<clang::TemplateArgument, 2> args;
 
@@ -515,13 +579,12 @@ public:
 
   ConstString DeclContextGetScopeQualifiedName(void *opaque_decl_ctx) override;
 
-  bool DeclContextIsClassMethod(void *opaque_decl_ctx,
-                                lldb::LanguageType *language_ptr,
-                                bool *is_instance_method_ptr,
-                                ConstString *language_object_name_ptr) override;
+  bool DeclContextIsClassMethod(void *opaque_decl_ctx) override;
 
   bool DeclContextIsContainedInLookup(void *opaque_decl_ctx,
                                       void *other_opaque_decl_ctx) override;
+
+  lldb::LanguageType DeclContextGetLanguage(void *opaque_decl_ctx) override;
 
   // Clang specific clang::DeclContext functions
 
@@ -594,6 +657,8 @@ public:
 
   bool IsFunctionPointerType(lldb::opaque_compiler_type_t type) override;
 
+  bool IsMemberFunctionPointerType(lldb::opaque_compiler_type_t type) override;
+
   bool IsBlockPointerType(lldb::opaque_compiler_type_t type,
                           CompilerType *function_pointer_type_ptr) override;
 
@@ -645,6 +710,8 @@ public:
   bool CanPassInRegisters(const CompilerType &type) override;
 
   bool SupportsLanguage(lldb::LanguageType language) override;
+
+  ConstString GetInstanceVariableName(lldb::LanguageType language) override;
 
   static std::optional<std::string> GetCXXClassName(const CompilerType &type);
 
@@ -1082,6 +1149,9 @@ private:
 
   const clang::ClassTemplateSpecializationDecl *
   GetAsTemplateSpecialization(lldb::opaque_compiler_type_t type);
+
+  bool IsTypeImpl(lldb::opaque_compiler_type_t type,
+                  llvm::function_ref<bool(clang::QualType)> predicate) const;
 
   // Classes that inherit from TypeSystemClang can see and modify these
   std::string m_target_triple;

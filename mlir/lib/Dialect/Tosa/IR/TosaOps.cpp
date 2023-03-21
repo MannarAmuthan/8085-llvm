@@ -409,6 +409,16 @@ LogicalResult tosa::RFFT2dOp::inferReturnTypeComponents(
 
   inferredReturnShapes.push_back(ShapedTypeComponents(outputShape));
   inferredReturnShapes.push_back(ShapedTypeComponents(outputShape));
+
+  return success();
+}
+
+LogicalResult tosa::FFT2dOp::inferReturnTypeComponents(
+    MLIRContext *context, ::std::optional<Location> location,
+    ValueShapeRange operands, DictionaryAttr attributes, RegionRange regions,
+    SmallVectorImpl<ShapedTypeComponents> &inferredReturnShapes) {
+  inferredReturnShapes.push_back(ShapedTypeComponents(operands.getShape(0)));
+  inferredReturnShapes.push_back(ShapedTypeComponents(operands.getShape(1)));
   return success();
 }
 
@@ -1400,6 +1410,12 @@ LogicalResult WhileOp::inferReturnTypeComponents(
   }
 
   return success();
+}
+
+std::optional<SmallVector<int64_t, 4>> ApplyScaleOp::getShapeForUnroll() {
+  if (auto vt = getType().dyn_cast<VectorType>())
+    return llvm::to_vector<4>(vt.getShape());
+  return std::nullopt;
 }
 
 //===----------------------------------------------------------------------===//

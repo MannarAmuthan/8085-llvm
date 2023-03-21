@@ -37,6 +37,11 @@ static cl::opt<unsigned> CacheLineSize(
     cl::desc("Use this to override the target cache line size when "
              "specified by the user."));
 
+static cl::opt<unsigned> PredictableBranchThreshold(
+    "predictable-branch-threshold", cl::init(99), cl::Hidden,
+    cl::desc(
+        "Use this to override the target's predictable branch threshold (%)."));
+
 namespace {
 /// No-op implementation of the TTI interface using the utility base
 /// classes.
@@ -215,6 +220,14 @@ TargetTransformInfo::getGEPCost(Type *PointeeType, const Value *Ptr,
   return TTIImpl->getGEPCost(PointeeType, Ptr, Operands, CostKind);
 }
 
+InstructionCost TargetTransformInfo::getPointersChainCost(
+    ArrayRef<const Value *> Ptrs, const Value *Base,
+    const TTI::PointersChainInfo &Info, TTI::TargetCostKind CostKind) const {
+  assert((Base || !Info.isSameBase()) &&
+         "If pointers have same base address it has to be provided.");
+  return TTIImpl->getPointersChainCost(Ptrs, Base, Info, CostKind);
+}
+
 unsigned TargetTransformInfo::getEstimatedNumberOfCaseClusters(
     const SwitchInst &SI, unsigned &JTSize, ProfileSummaryInfo *PSI,
     BlockFrequencyInfo *BFI) const {
@@ -232,7 +245,9 @@ TargetTransformInfo::getInstructionCost(const User *U,
 }
 
 BranchProbability TargetTransformInfo::getPredictableBranchThreshold() const {
-  return TTIImpl->getPredictableBranchThreshold();
+  return PredictableBranchThreshold.getNumOccurrences() > 0
+             ? BranchProbability(PredictableBranchThreshold, 100)
+             : TTIImpl->getPredictableBranchThreshold();
 }
 
 bool TargetTransformInfo::hasBranchDivergence() const {
@@ -305,8 +320,9 @@ bool TargetTransformInfo::preferPredicateOverEpilogue(
   return TTIImpl->preferPredicateOverEpilogue(L, LI, SE, AC, TLI, DT, LVL, IAI);
 }
 
-PredicationStyle TargetTransformInfo::emitGetActiveLaneMask() const {
-  return TTIImpl->emitGetActiveLaneMask();
+TailFoldingStyle TargetTransformInfo::getPreferredTailFoldingStyle(
+    bool IVUpdateMayOverflow) const {
+  return TTIImpl->getPreferredTailFoldingStyle(IVUpdateMayOverflow);
 }
 
 std::optional<Instruction *>
@@ -728,7 +744,7 @@ bool TargetTransformInfo::shouldPrefetchAddressSpace(unsigned AS) const {
   return TTIImpl->shouldPrefetchAddressSpace(AS);
 }
 
-unsigned TargetTransformInfo::getMaxInterleaveFactor(unsigned VF) const {
+unsigned TargetTransformInfo::getMaxInterleaveFactor(ElementCount VF) const {
   return TTIImpl->getMaxInterleaveFactor(VF);
 }
 
@@ -1161,6 +1177,10 @@ bool TargetTransformInfo::preferEpilogueVectorization() const {
 TargetTransformInfo::VPLegalization
 TargetTransformInfo::getVPLegalizationStrategy(const VPIntrinsic &VPI) const {
   return TTIImpl->getVPLegalizationStrategy(VPI);
+}
+
+bool TargetTransformInfo::hasArmWideBranch(bool Thumb) const {
+  return TTIImpl->hasArmWideBranch(Thumb);
 }
 
 bool TargetTransformInfo::shouldExpandReduction(const IntrinsicInst *II) const {

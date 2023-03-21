@@ -25,7 +25,6 @@
 #include "llvm/Analysis/AssumeBundleQueries.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/DomTreeUpdater.h"
-#include "llvm/Analysis/EHPersonalities.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/Analysis/MemorySSAUpdater.h"
@@ -47,6 +46,7 @@
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Dominators.h"
+#include "llvm/IR/EHPersonalities.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/GlobalObject.h"
@@ -1423,6 +1423,12 @@ static Align tryEnforceAlignment(Value *V, Align PrefAlign,
     if (!GO->canIncreaseAlignment())
       return CurrentAlign;
 
+    if (GO->isThreadLocal()) {
+      unsigned MaxTLSAlign = GO->getParent()->getMaxTLSAlignment() / CHAR_BIT;
+      if (MaxTLSAlign && PrefAlign > Align(MaxTLSAlign))
+        PrefAlign = Align(MaxTLSAlign);
+    }
+
     GO->setAlignment(PrefAlign);
     return PrefAlign;
   }
@@ -1480,19 +1486,16 @@ static bool PhiHasDebugValue(DILocalVariable *DIVar,
 /// (or fragment of the variable) described by \p DII.
 ///
 /// This is primarily intended as a helper for the different
-/// ConvertDebugDeclareToDebugValue functions. The dbg.declare/dbg.addr that is
-/// converted describes an alloca'd variable, so we need to use the
-/// alloc size of the value when doing the comparison. E.g. an i1 value will be
-/// identified as covering an n-bit fragment, if the store size of i1 is at
-/// least n bits.
+/// ConvertDebugDeclareToDebugValue functions. The dbg.declare that is converted
+/// describes an alloca'd variable, so we need to use the alloc size of the
+/// value when doing the comparison. E.g. an i1 value will be identified as
+/// covering an n-bit fragment, if the store size of i1 is at least n bits.
 static bool valueCoversEntireFragment(Type *ValTy, DbgVariableIntrinsic *DII) {
   const DataLayout &DL = DII->getModule()->getDataLayout();
   TypeSize ValueSize = DL.getTypeAllocSizeInBits(ValTy);
-  if (std::optional<uint64_t> FragmentSize = DII->getFragmentSizeInBits()) {
-    assert(!ValueSize.isScalable() &&
-           "Fragments don't work on scalable types.");
-    return ValueSize.getFixedValue() >= *FragmentSize;
-  }
+  if (std::optional<uint64_t> FragmentSize = DII->getFragmentSizeInBits())
+    return TypeSize::isKnownGE(ValueSize, TypeSize::getFixed(*FragmentSize));
+
   // We can't always calculate the size of the DI variable (e.g. if it is a
   // VLA). Try to use the size of the alloca that the dbg intrinsic describes
   // intead.
@@ -1513,7 +1516,7 @@ static bool valueCoversEntireFragment(Type *ValTy, DbgVariableIntrinsic *DII) {
 }
 
 /// Inserts a llvm.dbg.value intrinsic before a store to an alloca'd value
-/// that has an associated llvm.dbg.declare or llvm.dbg.addr intrinsic.
+/// that has an associated llvm.dbg.declare intrinsic.
 void llvm::ConvertDebugDeclareToDebugValue(DbgVariableIntrinsic *DII,
                                            StoreInst *SI, DIBuilder &Builder) {
   assert(DII->isAddressOfVariable() || isa<DbgAssignIntrinsic>(DII));
@@ -1524,24 +1527,39 @@ void llvm::ConvertDebugDeclareToDebugValue(DbgVariableIntrinsic *DII,
 
   DebugLoc NewLoc = getDebugValueLoc(DII);
 
-  if (!valueCoversEntireFragment(DV->getType(), DII)) {
-    // FIXME: If storing to a part of the variable described by the dbg.declare,
-    // then we want to insert a dbg.value for the corresponding fragment.
-    LLVM_DEBUG(dbgs() << "Failed to convert dbg.declare to dbg.value: "
-                      << *DII << '\n');
-    // For now, when there is a store to parts of the variable (but we do not
-    // know which part) we insert an dbg.value intrinsic to indicate that we
-    // know nothing about the variable's content.
-    DV = UndefValue::get(DV->getType());
+  // If the alloca describes the variable itself, i.e. the expression in the
+  // dbg.declare doesn't start with a dereference, we can perform the
+  // conversion if the value covers the entire fragment of DII.
+  // If the alloca describes the *address* of DIVar, i.e. DIExpr is
+  // *just* a DW_OP_deref, we use DV as is for the dbg.value.
+  // We conservatively ignore other dereferences, because the following two are
+  // not equivalent:
+  //     dbg.declare(alloca, ..., !Expr(deref, plus_uconstant, 2))
+  //     dbg.value(DV, ..., !Expr(deref, plus_uconstant, 2))
+  // The former is adding 2 to the address of the variable, whereas the latter
+  // is adding 2 to the value of the variable. As such, we insist on just a
+  // deref expression.
+  bool CanConvert =
+      DIExpr->isDeref() || (!DIExpr->startsWithDeref() &&
+                            valueCoversEntireFragment(DV->getType(), DII));
+  if (CanConvert) {
     Builder.insertDbgValueIntrinsic(DV, DIVar, DIExpr, NewLoc, SI);
     return;
   }
 
+  // FIXME: If storing to a part of the variable described by the dbg.declare,
+  // then we want to insert a dbg.value for the corresponding fragment.
+  LLVM_DEBUG(dbgs() << "Failed to convert dbg.declare to dbg.value: " << *DII
+                    << '\n');
+  // For now, when there is a store to parts of the variable (but we do not
+  // know which part) we insert an dbg.value intrinsic to indicate that we
+  // know nothing about the variable's content.
+  DV = UndefValue::get(DV->getType());
   Builder.insertDbgValueIntrinsic(DV, DIVar, DIExpr, NewLoc, SI);
 }
 
 /// Inserts a llvm.dbg.value intrinsic before a load of an alloca'd value
-/// that has an associated llvm.dbg.declare or llvm.dbg.addr intrinsic.
+/// that has an associated llvm.dbg.declare intrinsic.
 void llvm::ConvertDebugDeclareToDebugValue(DbgVariableIntrinsic *DII,
                                            LoadInst *LI, DIBuilder &Builder) {
   auto *DIVar = DII->getVariable();
@@ -1569,7 +1587,7 @@ void llvm::ConvertDebugDeclareToDebugValue(DbgVariableIntrinsic *DII,
 }
 
 /// Inserts a llvm.dbg.value intrinsic after a phi that has an associated
-/// llvm.dbg.declare or llvm.dbg.addr intrinsic.
+/// llvm.dbg.declare intrinsic.
 void llvm::ConvertDebugDeclareToDebugValue(DbgVariableIntrinsic *DII,
                                            PHINode *APN, DIBuilder &Builder) {
   auto *DIVar = DII->getVariable();
@@ -1752,8 +1770,8 @@ void llvm::insertDebugValuesForPHIs(BasicBlock *BB,
 bool llvm::replaceDbgDeclare(Value *Address, Value *NewAddress,
                              DIBuilder &Builder, uint8_t DIExprFlags,
                              int Offset) {
-  auto DbgAddrs = FindDbgAddrUses(Address);
-  for (DbgVariableIntrinsic *DII : DbgAddrs) {
+  auto DbgDeclares = FindDbgDeclareUses(Address);
+  for (DbgVariableIntrinsic *DII : DbgDeclares) {
     const DebugLoc &Loc = DII->getDebugLoc();
     auto *DIVar = DII->getVariable();
     auto *DIExpr = DII->getExpression();
@@ -1764,7 +1782,7 @@ bool llvm::replaceDbgDeclare(Value *Address, Value *NewAddress,
     Builder.insertDeclare(NewAddress, DIVar, DIExpr, Loc, DII);
     DII->eraseFromParent();
   }
-  return !DbgAddrs.empty();
+  return !DbgDeclares.empty();
 }
 
 static void replaceOneDbgValueForAlloca(DbgValueInst *DVI, Value *NewAddress,
@@ -1860,9 +1878,8 @@ void llvm::salvageDebugInfoForDbgValues(
         continue;
     }
 
-    // Do not add DW_OP_stack_value for DbgDeclare and DbgAddr, because they
-    // are implicitly pointing out the value as a DWARF memory location
-    // description.
+    // Do not add DW_OP_stack_value for DbgDeclare, because they are implicitly
+    // pointing out the value as a DWARF memory location description.
     bool StackValue = isa<DbgValueInst>(DII);
     auto DIILocation = DII->location_ops();
     assert(
@@ -1896,17 +1913,14 @@ void llvm::salvageDebugInfoForDbgValues(
     bool IsValidSalvageExpr = SalvagedExpr->getNumElements() <= MaxExpressionSize;
     if (AdditionalValues.empty() && IsValidSalvageExpr) {
       DII->setExpression(SalvagedExpr);
-    } else if (isa<DbgValueInst>(DII) && !isa<DbgAssignIntrinsic>(DII) &&
-               IsValidSalvageExpr &&
+    } else if (isa<DbgValueInst>(DII) && IsValidSalvageExpr &&
                DII->getNumVariableLocationOps() + AdditionalValues.size() <=
                    MaxDebugArgs) {
       DII->addVariableLocationOps(AdditionalValues, SalvagedExpr);
     } else {
-      // Do not salvage using DIArgList for dbg.addr/dbg.declare, as it is
-      // not currently supported in those instructions. Do not salvage using
-      // DIArgList for dbg.assign yet. FIXME: support this.
-      // Also do not salvage if the resulting DIArgList would contain an
-      // unreasonably large number of values.
+      // Do not salvage using DIArgList for dbg.declare, as it is not currently
+      // supported in those instructions. Also do not salvage if the resulting
+      // DIArgList would contain an unreasonably large number of values.
       DII->setKillLocation();
     }
     LLVM_DEBUG(dbgs() << "SALVAGE: " << *DII << '\n');
@@ -2698,6 +2712,15 @@ void llvm::combineMetadata(Instruction *K, const Instruction *J,
       case LLVMContext::MD_preserve_access_index:
         // Preserve !preserve.access.index in K.
         break;
+      case LLVMContext::MD_noundef:
+        // If K does move, keep noundef if it is present in both instructions.
+        if (DoesKMove)
+          K->setMetadata(Kind, JMD);
+        break;
+      case LLVMContext::MD_nontemporal:
+        // Preserve !nontemporal if it is present on both instructions.
+        K->setMetadata(Kind, JMD);
+        break;
     }
   }
   // Set !invariant.group from J if J has it. If both instructions have it
@@ -2720,7 +2743,8 @@ void llvm::combineMetadataForCSE(Instruction *K, const Instruction *J,
       LLVMContext::MD_invariant_group, LLVMContext::MD_align,
       LLVMContext::MD_dereferenceable,
       LLVMContext::MD_dereferenceable_or_null,
-      LLVMContext::MD_access_group,    LLVMContext::MD_preserve_access_index};
+      LLVMContext::MD_access_group,    LLVMContext::MD_preserve_access_index,
+      LLVMContext::MD_nontemporal,     LLVMContext::MD_noundef};
   combineMetadata(K, J, KnownIDs, KDominatesJ);
 }
 
@@ -2804,7 +2828,8 @@ void llvm::patchReplacementInstruction(Instruction *I, Value *Repl) {
       LLVMContext::MD_noalias,         LLVMContext::MD_range,
       LLVMContext::MD_fpmath,          LLVMContext::MD_invariant_load,
       LLVMContext::MD_invariant_group, LLVMContext::MD_nonnull,
-      LLVMContext::MD_access_group,    LLVMContext::MD_preserve_access_index};
+      LLVMContext::MD_access_group,    LLVMContext::MD_preserve_access_index,
+      LLVMContext::MD_noundef,         LLVMContext::MD_nontemporal};
   combineMetadata(ReplInst, I, KnownIDs, false);
 }
 
@@ -3125,7 +3150,7 @@ collectBitParts(Value *V, bool MatchBSwaps, bool MatchBitReversals,
 
       // Check that the mask allows a multiple of 8 bits for a bswap, for an
       // early exit.
-      unsigned NumMaskedBits = AndMask.countPopulation();
+      unsigned NumMaskedBits = AndMask.popcount();
       if (!MatchBitReversals && (NumMaskedBits % 8) != 0)
         return Result;
 

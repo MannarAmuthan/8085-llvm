@@ -45,15 +45,18 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Option/ArgList.h"
-#include "llvm/Support/ARMTargetParserCommon.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Compression.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Host.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
+#include "llvm/Support/RISCVISAInfo.h"
 #include "llvm/Support/YAMLParser.h"
+#include "llvm/TargetParser/ARMTargetParserCommon.h"
+#include "llvm/TargetParser/Host.h"
+#include "llvm/TargetParser/RISCVTargetParser.h"
 #include <cctype>
 
 using namespace clang::driver;
@@ -1989,22 +1992,19 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
 
 void Clang::AddPPCTargetArgs(const ArgList &Args,
                              ArgStringList &CmdArgs) const {
-  if (const Arg *A = Args.getLastArg(options::OPT_mtune_EQ)) {
+  const llvm::Triple &T = getToolChain().getTriple();
+  if (Args.getLastArg(options::OPT_mtune_EQ)) {
     CmdArgs.push_back("-tune-cpu");
-    if (strcmp(A->getValue(), "native") == 0)
-      CmdArgs.push_back(Args.MakeArgString(llvm::sys::getHostCPUName()));
-    else
-      CmdArgs.push_back(A->getValue());
+    std::string CPU = ppc::getPPCTuneCPU(Args, T);
+    CmdArgs.push_back(Args.MakeArgString(CPU));
   }
 
   // Select the ABI to use.
   const char *ABIName = nullptr;
-  const llvm::Triple &T = getToolChain().getTriple();
   if (T.isOSBinFormatELF()) {
     switch (getToolChain().getArch()) {
     case llvm::Triple::ppc64: {
-      if ((T.isOSFreeBSD() && T.getOSMajorVersion() >= 13) ||
-          T.isOSOpenBSD() || T.isMusl())
+      if (T.isPPC64ELFv2ABI())
         ABIName = "elfv2";
       else
         ABIName = "elfv1";
@@ -2105,6 +2105,50 @@ void Clang::AddRISCVTargetArgs(const ArgList &Args,
       CmdArgs.push_back(Args.MakeArgString(llvm::sys::getHostCPUName()));
     else
       CmdArgs.push_back(A->getValue());
+  }
+
+  // Handle -mrvv-vector-bits=<bits>
+  if (Arg *A = Args.getLastArg(options::OPT_mrvv_vector_bits_EQ)) {
+    StringRef Val = A->getValue();
+    const Driver &D = getToolChain().getDriver();
+
+    // Get minimum VLen from march.
+    unsigned MinVLen = 0;
+    StringRef Arch = riscv::getRISCVArch(Args, Triple);
+    auto ISAInfo = llvm::RISCVISAInfo::parseArchString(
+        Arch, /*EnableExperimentalExtensions*/ true);
+    if (!ISAInfo) {
+      // Ignore parsing error.
+      consumeError(ISAInfo.takeError());
+    } else {
+      MinVLen = (*ISAInfo)->getMinVLen();
+    }
+
+    // If the value is "zvl", use MinVLen from march. Otherwise, try to parse
+    // as integer as long as we have a MinVLen.
+    unsigned Bits = 0;
+    if (Val.equals("zvl") && MinVLen >= llvm::RISCV::RVVBitsPerBlock) {
+      Bits = MinVLen;
+    } else if (!Val.getAsInteger(10, Bits)) {
+      // Only accept power of 2 values beteen RVVBitsPerBlock and 65536 that
+      // at least MinVLen.
+      if (Bits < MinVLen || Bits < llvm::RISCV::RVVBitsPerBlock ||
+          Bits > 65536 || !llvm::isPowerOf2_32(Bits))
+        Bits = 0;
+    }
+
+    // If we got a valid value try to use it.
+    if (Bits != 0) {
+      unsigned VScaleMin = Bits / llvm::RISCV::RVVBitsPerBlock;
+      CmdArgs.push_back(
+          Args.MakeArgString("-mvscale-max=" + llvm::Twine(VScaleMin)));
+      CmdArgs.push_back(
+          Args.MakeArgString("-mvscale-min=" + llvm::Twine(VScaleMin)));
+    } else if (!Val.equals("scalable")) {
+      // Handle the unsupported values passed to mrvv-vector-bits.
+      D.Diag(diag::err_drv_unsupported_option_argument)
+          << A->getSpelling() << Val;
+    }
   }
 }
 
@@ -3639,11 +3683,6 @@ static bool RenderModulesOptions(Compilation &C, const Driver &D,
   }
 
   HaveModules |= HaveClangModules;
-  if (Args.hasArg(options::OPT_fmodules_ts)) {
-    D.Diag(diag::warn_deprecated_fmodules_ts_flag);
-    CmdArgs.push_back("-fmodules-ts");
-    HaveModules = true;
-  }
 
   // -fmodule-maps enables implicit reading of module map files. By default,
   // this is enabled if we are using Clang's flavor of precompiled modules.
@@ -4932,7 +4971,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
     C.addCommand(std::make_unique<Command>(
         JA, *this, ResponseFileSupport::AtFileUTF8(), D.getClangProgramPath(),
-        CmdArgs, Inputs, Output));
+        CmdArgs, Inputs, Output, D.getPrependArg()));
     return;
   }
 
@@ -5520,22 +5559,6 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   RenderTargetOptions(Triple, Args, KernelOrKext, CmdArgs);
-
-  // FIXME: For now we want to demote any errors to warnings, when they have
-  // been raised for asking the wrong question of scalable vectors, such as
-  // asking for the fixed number of elements. This may happen because code that
-  // is not yet ported to work for scalable vectors uses the wrong interfaces,
-  // whereas the behaviour is actually correct. Emitting a warning helps bring
-  // up scalable vector support in an incremental way. When scalable vector
-  // support is stable enough, all uses of wrong interfaces should be considered
-  // as errors, but until then, we can live with a warning being emitted by the
-  // compiler. This way, Clang can be used to compile code with scalable vectors
-  // and identify possible issues.
-  if (isa<AssembleJobAction>(JA) || isa<CompileJobAction>(JA) ||
-      isa<BackendJobAction>(JA)) {
-    CmdArgs.push_back("-mllvm");
-    CmdArgs.push_back("-treat-scalable-fixed-error-as-warning");
-  }
 
   // These two are potentially updated by AddClangCLArgs.
   codegenoptions::DebugInfoKind DebugInfoKind = codegenoptions::NoDebugInfo;
@@ -6238,7 +6261,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (Arg *A = Args.getLastArg(options::OPT_fpatchable_function_entry_EQ)) {
     StringRef S0 = A->getValue(), S = S0;
     unsigned Size, Offset = 0;
-    if (!Triple.isAArch64() && !Triple.isRISCV() && !Triple.isX86())
+    if (!Triple.isAArch64() && !Triple.isLoongArch() && !Triple.isRISCV() &&
+        !Triple.isX86())
       D.Diag(diag::err_drv_unsupported_opt_for_target)
           << A->getAsString(Args) << TripleStr;
     else if (S.consumeInteger(10, Size) ||
@@ -6283,10 +6307,24 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
             << A->getAsString(Args) << TripleStr;
     }
   }
-  if (Arg *A = Args.getLastArgNoClaim(options::OPT_p)) {
-    if (!TC.getTriple().isOSAIX() && !TC.getTriple().isOSOpenBSD()) {
+
+  if (Arg *A = Args.getLastArgNoClaim(options::OPT_pg)) {
+    if (TC.getTriple().isOSzOS()) {
       D.Diag(diag::err_drv_unsupported_opt_for_target)
           << A->getAsString(Args) << TripleStr;
+    }
+  }
+  if (Arg *A = Args.getLastArgNoClaim(options::OPT_p)) {
+    if (!(TC.getTriple().isOSAIX() || TC.getTriple().isOSOpenBSD())) {
+      D.Diag(diag::err_drv_unsupported_opt_for_target)
+          << A->getAsString(Args) << TripleStr;
+    }
+  }
+  if (Arg *A = Args.getLastArgNoClaim(options::OPT_p, options::OPT_pg)) {
+    if (A->getOption().matches(options::OPT_p)) {
+      A->claim();
+      if (TC.getTriple().isOSAIX() && !Args.hasArgNoClaim(options::OPT_pg))
+        CmdArgs.push_back("-pg");
     }
   }
 
@@ -6480,13 +6518,6 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // -fencode-extended-block-signature=1 is default.
   if (TC.IsEncodeExtendedBlockSignatureDefault())
     CmdArgs.push_back("-fencode-extended-block-signature");
-
-  if (Args.hasFlag(options::OPT_fcoroutines_ts, options::OPT_fno_coroutines_ts,
-                   false) &&
-      types::isCXX(InputType)) {
-    D.Diag(diag::warn_deperecated_fcoroutines_ts_flag);
-    CmdArgs.push_back("-fcoroutines-ts");
-  }
 
   if (Args.hasFlag(options::OPT_fcoro_aligned_allocation,
                    options::OPT_fno_coro_aligned_allocation, false) &&
@@ -6983,10 +7014,20 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     A->claim();
   }
 
+  // Forward --vfsoverlay to -cc1.
+  for (const Arg *A : Args.filtered(options::OPT_vfsoverlay)) {
+    CmdArgs.push_back("--vfsoverlay");
+    CmdArgs.push_back(A->getValue());
+    A->claim();
+  }
+
   // Setup statistics file output.
   SmallString<128> StatsFile = getStatsFileName(Args, Output, Input, D);
-  if (!StatsFile.empty())
+  if (!StatsFile.empty()) {
     CmdArgs.push_back(Args.MakeArgString(Twine("-stats-file=") + StatsFile));
+    if (D.CCPrintInternalStats)
+      CmdArgs.push_back("-stats-file-append");
+  }
 
   // Forward -Xclang arguments to -cc1, and -mllvm arguments to the LLVM option
   // parser.
@@ -7353,13 +7394,13 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   if (D.CC1Main && !D.CCGenDiagnostics) {
     // Invoke the CC1 directly in this process
-    C.addCommand(std::make_unique<CC1Command>(JA, *this,
-                                              ResponseFileSupport::AtFileUTF8(),
-                                              Exec, CmdArgs, Inputs, Output));
+    C.addCommand(std::make_unique<CC1Command>(
+        JA, *this, ResponseFileSupport::AtFileUTF8(), Exec, CmdArgs, Inputs,
+        Output, D.getPrependArg()));
   } else {
-    C.addCommand(std::make_unique<Command>(JA, *this,
-                                           ResponseFileSupport::AtFileUTF8(),
-                                           Exec, CmdArgs, Inputs, Output));
+    C.addCommand(std::make_unique<Command>(
+        JA, *this, ResponseFileSupport::AtFileUTF8(), Exec, CmdArgs, Inputs,
+        Output, D.getPrependArg()));
   }
 
   // Make the compile command echo its inputs for /showFilenames.
@@ -8118,13 +8159,13 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
   const char *Exec = getToolChain().getDriver().getClangProgramPath();
   if (D.CC1Main && !D.CCGenDiagnostics) {
     // Invoke cc1as directly in this process.
-    C.addCommand(std::make_unique<CC1Command>(JA, *this,
-                                              ResponseFileSupport::AtFileUTF8(),
-                                              Exec, CmdArgs, Inputs, Output));
+    C.addCommand(std::make_unique<CC1Command>(
+        JA, *this, ResponseFileSupport::AtFileUTF8(), Exec, CmdArgs, Inputs,
+        Output, D.getPrependArg()));
   } else {
-    C.addCommand(std::make_unique<Command>(JA, *this,
-                                           ResponseFileSupport::AtFileUTF8(),
-                                           Exec, CmdArgs, Inputs, Output));
+    C.addCommand(std::make_unique<Command>(
+        JA, *this, ResponseFileSupport::AtFileUTF8(), Exec, CmdArgs, Inputs,
+        Output, D.getPrependArg()));
   }
 }
 

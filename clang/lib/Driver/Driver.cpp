@@ -85,7 +85,6 @@
 #include "llvm/Support/ExitCodes.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormatVariadic.h"
-#include "llvm/Support/Host.h"
 #include "llvm/Support/MD5.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/PrettyStackTrace.h"
@@ -94,6 +93,7 @@
 #include "llvm/Support/StringSaver.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/TargetParser/Host.h"
 #include <cstdlib> // ::getenv
 #include <map>
 #include <memory>
@@ -199,7 +199,8 @@ Driver::Driver(StringRef ClangExecutable, StringRef TargetTriple,
       ClangExecutable(ClangExecutable), SysRoot(DEFAULT_SYSROOT),
       DriverTitle(Title), CCCPrintBindings(false), CCPrintOptions(false),
       CCLogDiagnostics(false), CCGenDiagnostics(false),
-      CCPrintProcessStats(false), TargetTriple(TargetTriple), Saver(Alloc),
+      CCPrintProcessStats(false), CCPrintInternalStats(false),
+      TargetTriple(TargetTriple), Saver(Alloc), PrependArg(nullptr),
       CheckInputsExist(true), ProbePrecompiled(true),
       SuppressMissingInputWarning(false) {
   // Provide a sane fallback if no VFS is specified.
@@ -594,13 +595,21 @@ static llvm::Triple computeTargetTriple(const Driver &D,
     }
   }
 
+  // The `-maix[32|64]` flags are only valid for AIX targets.
+  if (Arg *A = Args.getLastArgNoClaim(options::OPT_maix32, options::OPT_maix64);
+      A && !Target.isOSAIX())
+    D.Diag(diag::err_drv_unsupported_opt_for_target)
+        << A->getAsString(Args) << Target.str();
+
   // Handle pseudo-target flags '-m64', '-mx32', '-m32' and '-m16'.
   Arg *A = Args.getLastArg(options::OPT_m64, options::OPT_mx32,
-                           options::OPT_m32, options::OPT_m16);
+                           options::OPT_m32, options::OPT_m16,
+                           options::OPT_maix32, options::OPT_maix64);
   if (A) {
     llvm::Triple::ArchType AT = llvm::Triple::UnknownArch;
 
-    if (A->getOption().matches(options::OPT_m64)) {
+    if (A->getOption().matches(options::OPT_m64) ||
+        A->getOption().matches(options::OPT_maix64)) {
       AT = Target.get64BitArchVariant().getArch();
       if (Target.getEnvironment() == llvm::Triple::GNUX32)
         Target.setEnvironment(llvm::Triple::GNU);
@@ -613,7 +622,8 @@ static llvm::Triple computeTargetTriple(const Driver &D,
         Target.setEnvironment(llvm::Triple::MuslX32);
       else
         Target.setEnvironment(llvm::Triple::GNUX32);
-    } else if (A->getOption().matches(options::OPT_m32)) {
+    } else if (A->getOption().matches(options::OPT_m32) ||
+               A->getOption().matches(options::OPT_maix32)) {
       AT = Target.get32BitArchVariant().getArch();
       if (Target.getEnvironment() == llvm::Triple::GNUX32)
         Target.setEnvironment(llvm::Triple::GNU);
@@ -952,7 +962,7 @@ void Driver::CreateOffloadingDeviceToolChains(Compilation &C,
         } else
           TC = &getToolChain(C.getInputArgs(), TT);
         C.addOffloadDeviceToolChain(TC, Action::OFK_OpenMP);
-        if (DerivedArchs.find(TT.getTriple()) != DerivedArchs.end())
+        if (DerivedArchs.contains(TT.getTriple()))
           KnownArchs[TC] = DerivedArchs[TT.getTriple()];
       }
     }
@@ -1873,14 +1883,12 @@ int Driver::ExecuteCompilation(
         C.CleanupFileMap(C.getFailureResultFiles(), JA, true);
     }
 
-#if LLVM_ON_UNIX
-    // llvm/lib/Support/Unix/Signals.inc will exit with a special return code
+    // llvm/lib/Support/*/Signals.inc will exit with a special return code
     // for SIGPIPE. Do not print diagnostics for this case.
     if (CommandRes == EX_IOERR) {
       Res = CommandRes;
       continue;
     }
-#endif
 
     // Print extra information about abnormal failures, if possible.
     //
@@ -2566,17 +2574,21 @@ void Driver::BuildInputs(const ToolChain &TC, DerivedArgList &Args,
     }
     if (ShowNote)
       Diag(clang::diag::note_drv_t_option_is_global);
-
-    // No driver mode exposes -x and /TC or /TP; we don't support mixing them.
-    assert(!Args.hasArg(options::OPT_x) && "-x and /TC or /TP is not allowed");
   }
 
   // Warn -x after last input file has no effect
-  {
+  if (!IsCLMode()) {
     Arg *LastXArg = Args.getLastArgNoClaim(options::OPT_x);
     Arg *LastInputArg = Args.getLastArgNoClaim(options::OPT_INPUT);
-    if (LastXArg && LastInputArg && LastInputArg->getIndex() < LastXArg->getIndex())
+    if (LastXArg && LastInputArg &&
+        LastInputArg->getIndex() < LastXArg->getIndex())
       Diag(clang::diag::warn_drv_unused_x) << LastXArg->getValue();
+  } else {
+    // In CL mode suggest /TC or /TP since -x doesn't make sense if passed via
+    // /clang:.
+    if (auto *A = Args.getLastArg(options::OPT_x))
+      Diag(diag::err_drv_unsupported_opt_with_suggestion)
+          << A->getAsString(Args) << "/TC' or '/TP";
   }
 
   for (Arg *A : Args) {
@@ -4212,6 +4224,18 @@ void Driver::BuildActions(Compilation &C, DerivedArgList &Args,
       I.second->claim();
   }
 
+  // Call validator for dxil when -Vd not in Args.
+  if (C.getDefaultToolChain().getTriple().isDXIL()) {
+    // Only add action when needValidation.
+    const auto &TC =
+        static_cast<const toolchains::HLSLToolChain &>(C.getDefaultToolChain());
+    if (TC.requiresValidation(Args)) {
+      Action *LastAction = Actions.back();
+      Actions.push_back(C.MakeAction<BinaryAnalyzeJobAction>(
+          LastAction, types::TY_DX_CONTAINER));
+    }
+  }
+
   // Claim ignored clang-cl options.
   Args.ClaimAllArgs(options::OPT_cl_ignored_Group);
 }
@@ -4290,7 +4314,7 @@ Driver::getOffloadArchs(Compilation &C, const llvm::opt::DerivedArgList &Args,
                 : "--no-offload-arch");
   }
 
-  if (KnownArchs.find(TC) != KnownArchs.end())
+  if (KnownArchs.contains(TC))
     return KnownArchs.lookup(TC);
 
   llvm::DenseSet<StringRef> Archs;
@@ -4680,6 +4704,7 @@ void Driver::BuildJobs(Compilation &C) const {
     unsigned NumIfsOutputs = 0;
     for (const Action *A : C.getActions()) {
       if (A->getType() != types::TY_Nothing &&
+          A->getType() != types::TY_DX_CONTAINER &&
           !(A->getKind() == Action::IfsMergeJobClass ||
             (A->getType() == clang::driver::types::TY_IFS_CPP &&
              A->getKind() == clang::driver::Action::CompileJobClass &&
@@ -5530,7 +5555,8 @@ static bool HasPreprocessOutput(const Action &JA) {
 
 const char *Driver::CreateTempFile(Compilation &C, StringRef Prefix,
                                    StringRef Suffix, bool MultipleArchs,
-                                   StringRef BoundArch) const {
+                                   StringRef BoundArch,
+                                   bool NeedUniqueDirectory) const {
   SmallString<128> TmpName;
   Arg *A = C.getArgs().getLastArg(options::OPT_fcrash_diagnostics_dir);
   std::optional<std::string> CrashDirectory =
@@ -5550,9 +5576,15 @@ const char *Driver::CreateTempFile(Compilation &C, StringRef Prefix,
     }
   } else {
     if (MultipleArchs && !BoundArch.empty()) {
-      TmpName = GetTemporaryDirectory(Prefix);
-      llvm::sys::path::append(TmpName,
-                              Twine(Prefix) + "-" + BoundArch + "." + Suffix);
+      if (NeedUniqueDirectory) {
+        TmpName = GetTemporaryDirectory(Prefix);
+        llvm::sys::path::append(TmpName,
+                                Twine(Prefix) + "-" + BoundArch + "." + Suffix);
+      } else {
+        TmpName =
+            GetTemporaryPath((Twine(Prefix) + "-" + BoundArch).str(), Suffix);
+      }
+
     } else {
       TmpName = GetTemporaryPath(Prefix, Suffix);
     }
@@ -5668,7 +5700,16 @@ const char *Driver::GetNamedOutputPath(Compilation &C, const JobAction &JA,
     StringRef Name = llvm::sys::path::filename(BaseInput);
     std::pair<StringRef, StringRef> Split = Name.split('.');
     const char *Suffix = types::getTypeTempSuffix(JA.getType(), IsCLMode());
-    return CreateTempFile(C, Split.first, Suffix, MultipleArchs, BoundArch);
+    // The non-offloading toolchain on Darwin requires deterministic input
+    // file name for binaries to be deterministic, therefore it needs unique
+    // directory.
+    llvm::Triple Triple(C.getDriver().getTargetTriple());
+    bool NeedUniqueDirectory =
+        (JA.getOffloadingDeviceKind() == Action::OFK_None ||
+         JA.getOffloadingDeviceKind() == Action::OFK_Host) &&
+        Triple.isOSDarwin();
+    return CreateTempFile(C, Split.first, Suffix, MultipleArchs, BoundArch,
+                          NeedUniqueDirectory);
   }
 
   SmallString<128> BasePath(BaseInput);
@@ -6394,3 +6435,58 @@ llvm::StringRef clang::driver::getDriverMode(StringRef ProgName,
 }
 
 bool driver::IsClangCL(StringRef DriverMode) { return DriverMode.equals("cl"); }
+
+llvm::Error driver::expandResponseFiles(SmallVectorImpl<const char *> &Args,
+                                        bool ClangCLMode,
+                                        llvm::BumpPtrAllocator &Alloc,
+                                        llvm::vfs::FileSystem *FS) {
+  // Parse response files using the GNU syntax, unless we're in CL mode. There
+  // are two ways to put clang in CL compatibility mode: ProgName is either
+  // clang-cl or cl, or --driver-mode=cl is on the command line. The normal
+  // command line parsing can't happen until after response file parsing, so we
+  // have to manually search for a --driver-mode=cl argument the hard way.
+  // Finally, our -cc1 tools don't care which tokenization mode we use because
+  // response files written by clang will tokenize the same way in either mode.
+  enum { Default, POSIX, Windows } RSPQuoting = Default;
+  for (const char *F : Args) {
+    if (strcmp(F, "--rsp-quoting=posix") == 0)
+      RSPQuoting = POSIX;
+    else if (strcmp(F, "--rsp-quoting=windows") == 0)
+      RSPQuoting = Windows;
+  }
+
+  // Determines whether we want nullptr markers in Args to indicate response
+  // files end-of-lines. We only use this for the /LINK driver argument with
+  // clang-cl.exe on Windows.
+  bool MarkEOLs = ClangCLMode;
+
+  llvm::cl::TokenizerCallback Tokenizer;
+  if (RSPQuoting == Windows || (RSPQuoting == Default && ClangCLMode))
+    Tokenizer = &llvm::cl::TokenizeWindowsCommandLine;
+  else
+    Tokenizer = &llvm::cl::TokenizeGNUCommandLine;
+
+  if (MarkEOLs && Args.size() > 1 && StringRef(Args[1]).startswith("-cc1"))
+    MarkEOLs = false;
+
+  llvm::cl::ExpansionContext ECtx(Alloc, Tokenizer);
+  ECtx.setMarkEOLs(MarkEOLs);
+  if (FS)
+    ECtx.setVFS(FS);
+
+  if (llvm::Error Err = ECtx.expandResponseFiles(Args))
+    return Err;
+
+  // If -cc1 came from a response file, remove the EOL sentinels.
+  auto FirstArg = llvm::find_if(llvm::drop_begin(Args),
+                                [](const char *A) { return A != nullptr; });
+  if (FirstArg != Args.end() && StringRef(*FirstArg).startswith("-cc1")) {
+    // If -cc1 came from a response file, remove the EOL sentinels.
+    if (MarkEOLs) {
+      auto newEnd = std::remove(Args.begin(), Args.end(), nullptr);
+      Args.resize(newEnd - Args.begin());
+    }
+  }
+
+  return llvm::Error::success();
+}

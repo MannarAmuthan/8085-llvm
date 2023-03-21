@@ -18,10 +18,6 @@ def p4 : PtrValueType<i64, 4>;
 def p5 : PtrValueType<i32, 5>;
 def p6 : PtrValueType<i32, 6>;
 
-class BoolToList<bit Value> {
-  list<int> ret = !if(Value, [1]<int>, []<int>);
-}
-
 //===------------------------------------------------------------===//
 // Subtarget Features (device properties)
 //===------------------------------------------------------------===//
@@ -494,6 +490,12 @@ def FeatureNSAEncoding : SubtargetFeature<"nsa-encoding",
   "Support NSA encoding for image instructions"
 >;
 
+def FeaturePartialNSAEncoding : SubtargetFeature<"partial-nsa-encoding",
+  "HasPartialNSAEncoding",
+  "true",
+  "Support partial NSA encoding for image instructions"
+>;
+
 def FeatureImageInsts : SubtargetFeature<"image-insts",
   "HasImageInsts",
   "true",
@@ -581,7 +583,7 @@ def FeatureDot6Insts : SubtargetFeature<"dot6-insts",
 def FeatureDot7Insts : SubtargetFeature<"dot7-insts",
   "HasDot7Insts",
   "true",
-  "Has v_dot2_f32_f16, v_dot4_u32_u8, v_dot8_u32_u4 instructions"
+  "Has v_dot4_u32_u8, v_dot8_u32_u4 instructions"
 >;
 
 def FeatureDot8Insts : SubtargetFeature<"dot8-insts",
@@ -594,6 +596,12 @@ def FeatureDot9Insts : SubtargetFeature<"dot9-insts",
   "HasDot9Insts",
   "true",
   "Has v_dot2_f16_f16, v_dot2_bf16_bf16, v_dot2_f32_bf16 instructions"
+>;
+
+def FeatureDot10Insts : SubtargetFeature<"dot10-insts",
+  "HasDot10Insts",
+  "true",
+  "Has v_dot2_f32_f16 instruction"
 >;
 
 def FeatureMAIInsts : SubtargetFeature<"mai-insts",
@@ -718,15 +726,6 @@ def FeatureGFX11FullVGPRs : SubtargetFeature<"gfx11-full-vgprs",
   "GFX11 with 50% more physical VGPRs and 50% larger allocation granule than GFX10"
 >;
 
-class SubtargetFeatureNSAMaxSize <int Value> : SubtargetFeature <
-  "nsa-max-size-"#Value,
-  "NSAMaxSize",
-  !cast<string>(Value),
-  "The maximum non-sequential address size in VGPRs."
->;
-
-def FeatureNSAMaxSize5 : SubtargetFeatureNSAMaxSize<5>;
-def FeatureNSAMaxSize13 : SubtargetFeatureNSAMaxSize<13>;
 
 def FeatureVOPD : SubtargetFeature<"vopd",
   "HasVOPDInsts",
@@ -858,6 +857,12 @@ def FeatureArchitectedFlatScratch : SubtargetFeature<"architected-flat-scratch",
   "HasArchitectedFlatScratch",
   "true",
   "Flat Scratch register is a readonly SPI initialized architected register"
+>;
+
+def FeatureArchitectedSGPRs : SubtargetFeature<"architected-sgprs",
+  "HasArchitectedSGPRs",
+  "true",
+  "Enable the architected SGPRs"
 >;
 
 // Dummy feature used to disable assembler instructions.
@@ -1081,6 +1086,7 @@ def FeatureISAVersion9_0_6 : FeatureSet<
    FeatureDot1Insts,
    FeatureDot2Insts,
    FeatureDot7Insts,
+   FeatureDot10Insts,
    FeatureSupportsSRAMECC,
    FeatureImageGather4D16Bug]>;
 
@@ -1101,6 +1107,7 @@ def FeatureISAVersion9_0_8 : FeatureSet<
    FeatureDot5Insts,
    FeatureDot6Insts,
    FeatureDot7Insts,
+   FeatureDot10Insts,
    FeatureMAIInsts,
    FeaturePkFmacF16Inst,
    FeatureAtomicFaddNoRtnInsts,
@@ -1133,6 +1140,7 @@ def FeatureISAVersion9_0_A : FeatureSet<
    FeatureDot5Insts,
    FeatureDot6Insts,
    FeatureDot7Insts,
+   FeatureDot10Insts,
    Feature64BitDPP,
    FeaturePackedFP32Ops,
    FeatureMAIInsts,
@@ -1172,6 +1180,7 @@ def FeatureISAVersion9_4_0 : FeatureSet<
    FeatureDot5Insts,
    FeatureDot6Insts,
    FeatureDot7Insts,
+   FeatureDot10Insts,
    Feature64BitDPP,
    FeaturePackedFP32Ops,
    FeatureMAIInsts,
@@ -1211,7 +1220,6 @@ def FeatureISAVersion10_1_0 : FeatureSet<
      FeatureLDSBankCount32,
      FeatureDLInsts,
      FeatureNSAEncoding,
-     FeatureNSAMaxSize5,
      FeatureWavefrontSize32,
      FeatureScalarStores,
      FeatureScalarAtomics,
@@ -1233,8 +1241,8 @@ def FeatureISAVersion10_1_1 : FeatureSet<
      FeatureDot5Insts,
      FeatureDot6Insts,
      FeatureDot7Insts,
+     FeatureDot10Insts,
      FeatureNSAEncoding,
-     FeatureNSAMaxSize5,
      FeatureWavefrontSize32,
      FeatureScalarStores,
      FeatureScalarAtomics,
@@ -1256,8 +1264,8 @@ def FeatureISAVersion10_1_2 : FeatureSet<
      FeatureDot5Insts,
      FeatureDot6Insts,
      FeatureDot7Insts,
+     FeatureDot10Insts,
      FeatureNSAEncoding,
-     FeatureNSAMaxSize5,
      FeatureWavefrontSize32,
      FeatureScalarStores,
      FeatureScalarAtomics,
@@ -1276,7 +1284,6 @@ def FeatureISAVersion10_1_3 : FeatureSet<
      FeatureLDSBankCount32,
      FeatureDLInsts,
      FeatureNSAEncoding,
-     FeatureNSAMaxSize5,
      FeatureWavefrontSize32,
      FeatureScalarStores,
      FeatureScalarAtomics,
@@ -1300,8 +1307,8 @@ def FeatureISAVersion10_3_0 : FeatureSet<
    FeatureDot5Insts,
    FeatureDot6Insts,
    FeatureDot7Insts,
+   FeatureDot10Insts,
    FeatureNSAEncoding,
-   FeatureNSAMaxSize13,
    FeatureWavefrontSize32,
    FeatureShaderCyclesRegister,
    FeatureBackOffBarrier]>;
@@ -1314,8 +1321,9 @@ def FeatureISAVersion11_Common : FeatureSet<
    FeatureDot7Insts,
    FeatureDot8Insts,
    FeatureDot9Insts,
+   FeatureDot10Insts,
    FeatureNSAEncoding,
-   FeatureNSAMaxSize5,
+   FeaturePartialNSAEncoding,
    FeatureWavefrontSize32,
    FeatureShaderCyclesRegister,
    FeatureArchitectedFlatScratch,
@@ -1765,6 +1773,9 @@ def HasDot8Insts : Predicate<"Subtarget->hasDot8Insts()">,
 
 def HasDot9Insts : Predicate<"Subtarget->hasDot9Insts()">,
   AssemblerPredicate<(all_of FeatureDot9Insts)>;
+
+def HasDot10Insts : Predicate<"Subtarget->hasDot10Insts()">,
+  AssemblerPredicate<(all_of FeatureDot10Insts)>;
 
 def HasGetWaveIdInst : Predicate<"Subtarget->hasGetWaveIdInst()">,
   AssemblerPredicate<(all_of FeatureGetWaveIdInst)>;

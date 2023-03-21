@@ -294,10 +294,8 @@ void ReorderFunctions::runOnFunctions(BinaryContext &BC) {
     {
       std::vector<BinaryFunction *> SortedFunctions(BFs.size());
       uint32_t Index = 0;
-      llvm::transform(BFs, SortedFunctions.begin(),
-                      [](std::pair<const uint64_t, BinaryFunction> &BFI) {
-                        return &BFI.second;
-                      });
+      llvm::transform(llvm::make_second_range(BFs), SortedFunctions.begin(),
+                      [](BinaryFunction &BF) { return &BF; });
       llvm::stable_sort(SortedFunctions, [&](const BinaryFunction *A,
                                              const BinaryFunction *B) {
         if (A->isIgnored())
@@ -362,7 +360,7 @@ void ReorderFunctions::runOnFunctions(BinaryContext &BC) {
           }
           // Strip LTO suffixes
           if (std::optional<StringRef> CommonName = getLTOCommonName(Function))
-            if (LTOCommonNameMap.find(*CommonName) != LTOCommonNameMap.end())
+            if (LTOCommonNameMap.contains(*CommonName))
               llvm::append_range(FuncAddrs, LTOCommonNameMap[*CommonName]);
         } else {
           FuncAddrs.push_back(BD->getAddress());
@@ -428,10 +426,8 @@ void ReorderFunctions::runOnFunctions(BinaryContext &BC) {
 
   if (FuncsFile || LinkSectionsFile) {
     std::vector<BinaryFunction *> SortedFunctions(BFs.size());
-    llvm::transform(BFs, SortedFunctions.begin(),
-                    [](std::pair<const uint64_t, BinaryFunction> &BFI) {
-                      return &BFI.second;
-                    });
+    llvm::transform(llvm::make_second_range(BFs), SortedFunctions.begin(),
+                    [](BinaryFunction &BF) { return &BF; });
 
     // Sort functions by index.
     llvm::stable_sort(SortedFunctions,

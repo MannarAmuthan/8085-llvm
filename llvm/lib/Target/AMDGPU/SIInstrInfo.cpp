@@ -537,7 +537,7 @@ static void reportIllegalCopy(const SIInstrInfo *TII, MachineBasicBlock &MBB,
                               MachineBasicBlock::iterator MI,
                               const DebugLoc &DL, MCRegister DestReg,
                               MCRegister SrcReg, bool KillSrc,
-                              const char *Msg = "illegal SGPR to VGPR copy") {
+                              const char *Msg = "illegal VGPR to SGPR copy") {
   MachineFunction *MF = MBB.getParent();
   DiagnosticInfoUnsupported IllegalCopy(MF->getFunction(), Msg, DL, DS_Error);
   LLVMContext &C = MF->getFunction().getContext();
@@ -2555,12 +2555,6 @@ void SIInstrInfo::insertIndirectBranch(MachineBasicBlock &MBB,
   BuildMI(&MBB, DL, get(AMDGPU::S_SETPC_B64))
     .addReg(PCReg);
 
-  // FIXME: If spilling is necessary, this will fail because this scavenger has
-  // no emergency stack slots. It is non-trivial to spill in this situation,
-  // because the restore code needs to be specially placed after the
-  // jump. BranchRelaxation then needs to be made aware of the newly inserted
-  // block.
-  //
   // If a spill is needed for the pc register pair, we need to insert a spill
   // restore block right before the destination block, and insert a short branch
   // into the old destination block's fallthrough predecessor.
@@ -4352,7 +4346,7 @@ bool SIInstrInfo::verifyInstruction(const MachineInstr &MI,
 
       // Adjust for packed 16 bit values
       if (D16 && D16->getImm() && !ST.hasUnpackedD16VMem())
-        RegCount >>= 1;
+        RegCount = divideCeil(RegCount, 2);
 
       // Adjust if using LWE or TFE
       if ((LWE && LWE->getImm()) || (TFE && TFE->getImm()))
@@ -4365,7 +4359,7 @@ bool SIInstrInfo::verifyInstruction(const MachineInstr &MI,
         const TargetRegisterClass *DstRC = getOpRegClass(MI, DstIdx);
         uint32_t DstSize = RI.getRegSizeInBits(*DstRC) / 32;
         if (RegCount > DstSize) {
-          ErrInfo = "MIMG instruction returns too many registers for dst "
+          ErrInfo = "Image instruction returns too many registers for dst "
                     "register class";
           return false;
         }
@@ -4636,9 +4630,12 @@ bool SIInstrInfo::verifyInstruction(const MachineInstr &MI,
       unsigned VAddrWords;
       if (IsNSA) {
         VAddrWords = SRsrcIdx - VAddr0Idx;
+        if (ST.hasPartialNSAEncoding() && AddrWords > ST.getNSAMaxSize()) {
+          unsigned LastVAddrIdx = SRsrcIdx - 1;
+          VAddrWords += getOpSize(MI, LastVAddrIdx) / 4 - 1;
+        }
       } else {
-        const TargetRegisterClass *RC = getOpRegClass(MI, VAddr0Idx);
-        VAddrWords = MRI.getTargetRegisterInfo()->getRegSizeInBits(*RC) / 32;
+        VAddrWords = getOpSize(MI, VAddr0Idx) / 4;
         if (AddrWords > 12)
           AddrWords = 16;
       }
@@ -7874,6 +7871,8 @@ const MCInstrDesc &SIInstrInfo::getKillTerminatorFromPseudo(unsigned Opcode) con
   }
 }
 
+unsigned SIInstrInfo::getMaxMUBUFImmOffset() { return (1 << 12) - 1; }
+
 void SIInstrInfo::fixImplicitOperands(MachineInstr &MI) const {
   if (!ST.isWave32())
     return;
@@ -7895,6 +7894,52 @@ bool SIInstrInfo::isBufferSMRD(const MachineInstr &MI) const {
 
   const auto RCID = MI.getDesc().operands()[Idx].RegClass;
   return RI.getRegClass(RCID)->hasSubClassEq(&AMDGPU::SGPR_128RegClass);
+}
+
+// Given Imm, split it into the values to put into the SOffset and ImmOffset
+// fields in an MUBUF instruction. Return false if it is not possible (due to a
+// hardware bug needing a workaround).
+//
+// The required alignment ensures that individual address components remain
+// aligned if they are aligned to begin with. It also ensures that additional
+// offsets within the given alignment can be added to the resulting ImmOffset.
+bool SIInstrInfo::splitMUBUFOffset(uint32_t Imm, uint32_t &SOffset,
+                                   uint32_t &ImmOffset, Align Alignment) const {
+  const uint32_t MaxOffset = SIInstrInfo::getMaxMUBUFImmOffset();
+  const uint32_t MaxImm = alignDown(MaxOffset, Alignment.value());
+  uint32_t Overflow = 0;
+
+  if (Imm > MaxImm) {
+    if (Imm <= MaxImm + 64) {
+      // Use an SOffset inline constant for 4..64
+      Overflow = Imm - MaxImm;
+      Imm = MaxImm;
+    } else {
+      // Try to keep the same value in SOffset for adjacent loads, so that
+      // the corresponding register contents can be re-used.
+      //
+      // Load values with all low-bits (except for alignment bits) set into
+      // SOffset, so that a larger range of values can be covered using
+      // s_movk_i32.
+      //
+      // Atomic operations fail to work correctly when individual address
+      // components are unaligned, even if their sum is aligned.
+      uint32_t High = (Imm + Alignment.value()) & ~MaxOffset;
+      uint32_t Low = (Imm + Alignment.value()) & MaxOffset;
+      Imm = Low;
+      Overflow = High - Alignment.value();
+    }
+  }
+
+  // There is a hardware bug in SI and CI which prevents address clamping in
+  // MUBUF instructions from working correctly with SOffsets. The immediate
+  // offset is unaffected.
+  if (Overflow > 0 && ST.getGeneration() <= AMDGPUSubtarget::SEA_ISLANDS)
+    return false;
+
+  ImmOffset = Imm;
+  SOffset = Overflow;
+  return true;
 }
 
 // Depending on the used address space and instructions, some immediate offsets
@@ -8368,9 +8413,20 @@ SIInstrInfo::getGenericInstructionUniformity(const MachineInstr &MI) const {
   unsigned opcode = MI.getOpcode();
   if (opcode == AMDGPU::G_INTRINSIC ||
       opcode == AMDGPU::G_INTRINSIC_W_SIDE_EFFECTS) {
-    return AMDGPU::isIntrinsicSourceOfDivergence(MI.getIntrinsicID())
-               ? InstructionUniformity::NeverUniform
-               : InstructionUniformity::AlwaysUniform;
+    auto IID = static_cast<Intrinsic::ID>(MI.getIntrinsicID());
+    if (AMDGPU::isIntrinsicSourceOfDivergence(IID))
+      return InstructionUniformity::NeverUniform;
+    if (AMDGPU::isIntrinsicAlwaysUniform(IID))
+      return InstructionUniformity::AlwaysUniform;
+
+    switch (IID) {
+    case Intrinsic::amdgcn_if:
+    case Intrinsic::amdgcn_else:
+      // FIXME: Uniform if second result
+      break;
+    }
+
+    return InstructionUniformity::Default;
   }
 
   // Loads from the private and flat address spaces are divergent, because
@@ -8403,6 +8459,29 @@ SIInstrInfo::getGenericInstructionUniformity(const MachineInstr &MI) const {
 
 InstructionUniformity
 SIInstrInfo::getInstructionUniformity(const MachineInstr &MI) const {
+
+  if (isNeverUniform(MI))
+    return InstructionUniformity::NeverUniform;
+
+  unsigned opcode = MI.getOpcode();
+  if (opcode == AMDGPU::V_READLANE_B32 || opcode == AMDGPU::V_READFIRSTLANE_B32)
+    return InstructionUniformity::AlwaysUniform;
+
+  if (MI.isCopy()) {
+    const MachineOperand &srcOp = MI.getOperand(1);
+    if (srcOp.isReg() && srcOp.getReg().isPhysical()) {
+      const TargetRegisterClass *regClass =
+          RI.getPhysRegBaseClass(srcOp.getReg());
+      return RI.isSGPRClass(regClass) ? InstructionUniformity::AlwaysUniform
+                                      : InstructionUniformity::NeverUniform;
+    }
+    return InstructionUniformity::Default;
+  }
+
+  // GMIR handling
+  if (MI.isPreISelOpcode())
+    return SIInstrInfo::getGenericInstructionUniformity(MI);
+
   // Atomics are divergent because they are executed sequentially: when an
   // atomic operation refers to the same address in each thread, then each
   // thread after the first sees the value written by the previous thread as
@@ -8429,44 +8508,26 @@ SIInstrInfo::getInstructionUniformity(const MachineInstr &MI) const {
     return InstructionUniformity::Default;
   }
 
-  unsigned opcode = MI.getOpcode();
-  if (opcode == AMDGPU::COPY) {
-    const MachineOperand &srcOp = MI.getOperand(1);
-    if (srcOp.isReg() && srcOp.getReg().isPhysical()) {
-      const TargetRegisterClass *regClass = RI.getPhysRegBaseClass(srcOp.getReg());
-      return RI.isSGPRClass(regClass) ? InstructionUniformity::AlwaysUniform
-                                      : InstructionUniformity::NeverUniform;
-    }
-    return InstructionUniformity::Default;
-  }
-  if (opcode == AMDGPU::INLINEASM || opcode == AMDGPU::INLINEASM_BR) {
-    const MachineRegisterInfo &MRI = MI.getParent()->getParent()->getRegInfo();
-    for (auto &op : MI.operands()) {
-      if (!op.isReg() || !op.isDef())
-        continue;
-      auto *RC = MRI.getRegClass(op.getReg());
-      if (!RC || RI.isDivergentRegClass(RC))
-        return InstructionUniformity::NeverUniform;
-    }
-    return InstructionUniformity::AlwaysUniform;
-  }
-  if (opcode == AMDGPU::V_READLANE_B32 || opcode == AMDGPU::V_READFIRSTLANE_B32)
-    return InstructionUniformity::AlwaysUniform;
+  const MachineRegisterInfo &MRI = MI.getParent()->getParent()->getRegInfo();
+  const AMDGPURegisterBankInfo *RBI = ST.getRegBankInfo();
 
-  if (opcode == AMDGPU::V_WRITELANE_B32)
-    return InstructionUniformity::NeverUniform;
+  // FIXME: It's conceptually broken to report this for an instruction, and not
+  // a specific def operand. For inline asm in particular, there could be mixed
+  // uniform and divergent results.
+  for (unsigned I = 0, E = MI.getNumOperands(); I != E; ++I) {
+    const MachineOperand &SrcOp = MI.getOperand(I);
+    if (!SrcOp.isReg())
+      continue;
 
-  // GMIR handling
-  if (SIInstrInfo::isGenericOpcode(opcode))
-    return SIInstrInfo::getGenericInstructionUniformity(MI);
+    Register Reg = SrcOp.getReg();
+    if (!Reg || !SrcOp.readsReg())
+      continue;
 
-  // Handling $vpgr reads
-  for (auto srcOp : MI.operands()) {
-    if (srcOp.isReg() && srcOp.getReg().isPhysical()) {
-      const TargetRegisterClass *regClass = RI.getPhysRegBaseClass(srcOp.getReg());
-      if (RI.isVGPRClass(regClass))
-        return InstructionUniformity::NeverUniform;
-    }
+    // If RegBank is null, this is unassigned or an unallocatable special
+    // register, which are all scalars.
+    const RegisterBank *RegBank = RBI->getRegBank(Reg, MRI, RI);
+    if (RegBank && RegBank->getID() != AMDGPU::SGPRRegBankID)
+      return InstructionUniformity::NeverUniform;
   }
 
   // TODO: Uniformity check condtions above can be rearranged for more
@@ -8622,7 +8683,7 @@ bool SIInstrInfo::optimizeCompareInstr(MachineInstr &CmpInstr, Register SrcReg,
     else
       return false;
 
-    unsigned BitNo = countTrailingZeros((uint64_t)Mask);
+    unsigned BitNo = llvm::countr_zero((uint64_t)Mask);
     if (IsSigned && BitNo == SrcSize - 1)
       return false;
 

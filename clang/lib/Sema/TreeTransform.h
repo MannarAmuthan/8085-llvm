@@ -2803,6 +2803,21 @@ public:
     R.addDecl(FoundDecl);
     R.resolveKind();
 
+    if (getSema().isUnevaluatedContext() && Base->isImplicitCXXThis() &&
+        isa<FieldDecl, IndirectFieldDecl, MSPropertyDecl>(Member)) {
+      if (auto *ThisClass = cast<CXXThisExpr>(Base)
+                                ->getType()
+                                ->getPointeeType()
+                                ->getAsCXXRecordDecl()) {
+        auto *Class = cast<CXXRecordDecl>(Member->getDeclContext());
+        // In unevaluated contexts, an expression supposed to be a member access
+        // might reference a member in an unrelated class.
+        if (!ThisClass->Equals(Class) && !ThisClass->isDerivedFrom(Class))
+          return getSema().BuildDeclRefExpr(Member, Member->getType(),
+                                            VK_LValue, Member->getLocation());
+      }
+    }
+
     return getSema().BuildMemberReferenceExpr(Base, BaseType, OpLoc, isArrow,
                                               SS, TemplateKWLoc,
                                               FirstQualifierInScope,
@@ -4569,7 +4584,7 @@ bool TreeTransform<Derived>::TransformTemplateArgument(
         getSema(),
         Uneval ? Sema::ExpressionEvaluationContext::Unevaluated
                : Sema::ExpressionEvaluationContext::ConstantEvaluated,
-        /*LambdaContextDecl=*/nullptr, /*ExprContext=*/
+        Sema::ReuseLambdaContextDecl, /*ExprContext=*/
         Sema::ExpressionEvaluationContextRecord::EK_TemplateArgument);
 
     Expr *InputExpr = Input.getSourceExpression();
@@ -5897,7 +5912,6 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
                                        = dyn_cast<PackExpansionType>(OldType)) {
       // We have a function parameter pack that may need to be expanded.
       QualType Pattern = Expansion->getPattern();
-      NumExpansions = Expansion->getNumExpansions();
       SmallVector<UnexpandedParameterPack, 2> Unexpanded;
       getSema().collectUnexpandedParameterPacks(Pattern, Unexpanded);
 
@@ -6992,7 +7006,8 @@ QualType TreeTransform<Derived>::TransformAttributedType(
     // type sugar, and therefore cannot be diagnosed in any other way.
     if (auto nullability = oldType->getImmediateNullability()) {
       if (!modifiedType->canHaveNullability()) {
-        SemaRef.Diag(TL.getAttr()->getLocation(),
+        SemaRef.Diag((TL.getAttr() ? TL.getAttr()->getLocation()
+                                   : TL.getModifiedLoc().getBeginLoc()),
                      diag::err_nullability_nonpointer)
             << DiagNullabilityKind(*nullability, false) << modifiedType;
         return QualType();
@@ -7943,8 +7958,7 @@ TreeTransform<Derived>::TransformMSAsmStmt(MSAsmStmt *S) {
                                        TransformedExprs, S->getEndLoc());
 }
 
-// C++ Coroutines TS
-
+// C++ Coroutines
 template<typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCoroutineBodyStmt(CoroutineBodyStmt *S) {
@@ -13237,37 +13251,6 @@ TreeTransform<Derived>::TransformLambdaExpr(LambdaExpr *E) {
   LambdaScopeInfo *LSI = getSema().PushLambdaScope();
   Sema::FunctionScopeRAII FuncScopeCleanup(getSema());
 
-  // Transform the template parameters, and add them to the current
-  // instantiation scope. The null case is handled correctly.
-  auto TPL = getDerived().TransformTemplateParameterList(
-      E->getTemplateParameterList());
-  LSI->GLTemplateParameterList = TPL;
-
-  // Transform the type of the original lambda's call operator.
-  // The transformation MUST be done in the CurrentInstantiationScope since
-  // it introduces a mapping of the original to the newly created
-  // transformed parameters.
-  TypeSourceInfo *NewCallOpTSI = nullptr;
-  {
-    TypeSourceInfo *OldCallOpTSI = E->getCallOperator()->getTypeSourceInfo();
-    FunctionProtoTypeLoc OldCallOpFPTL =
-        OldCallOpTSI->getTypeLoc().getAs<FunctionProtoTypeLoc>();
-
-    TypeLocBuilder NewCallOpTLBuilder;
-    SmallVector<QualType, 4> ExceptionStorage;
-    TreeTransform *This = this; // Work around gcc.gnu.org/PR56135.
-    QualType NewCallOpType = TransformFunctionProtoType(
-        NewCallOpTLBuilder, OldCallOpFPTL, nullptr, Qualifiers(),
-        [&](FunctionProtoType::ExceptionSpecInfo &ESI, bool &Changed) {
-          return This->TransformExceptionSpec(OldCallOpFPTL.getBeginLoc(), ESI,
-                                              ExceptionStorage, Changed);
-        });
-    if (NewCallOpType.isNull())
-      return ExprError();
-    NewCallOpTSI = NewCallOpTLBuilder.getTypeSourceInfo(getSema().Context,
-                                                        NewCallOpType);
-  }
-
   // Create the local class that will describe the lambda.
 
   // FIXME: DependencyKind below is wrong when substituting inside a templated
@@ -13284,10 +13267,9 @@ TreeTransform<Derived>::TransformLambdaExpr(LambdaExpr *E) {
     DependencyKind = CXXRecordDecl::LDK_NeverDependent;
 
   CXXRecordDecl *OldClass = E->getLambdaClass();
-  CXXRecordDecl *Class =
-      getSema().createLambdaClosureType(E->getIntroducerRange(), NewCallOpTSI,
-                                        DependencyKind, E->getCaptureDefault());
-
+  CXXRecordDecl *Class = getSema().createLambdaClosureType(
+      E->getIntroducerRange(), /*Info=*/nullptr, DependencyKind,
+      E->getCaptureDefault());
   getDerived().transformedLocalDecl(OldClass, {Class});
 
   std::optional<std::tuple<bool, unsigned, unsigned, Decl *>> Mangling;
@@ -13297,35 +13279,18 @@ TreeTransform<Derived>::TransformLambdaExpr(LambdaExpr *E) {
                                OldClass->getDeviceLambdaManglingNumber(),
                                OldClass->getLambdaContextDecl());
 
-  // Build the call operator.
-  CXXMethodDecl *NewCallOperator = getSema().startLambdaDefinition(
-      Class, E->getIntroducerRange(), NewCallOpTSI,
-      E->getCallOperator()->getEndLoc(),
-      NewCallOpTSI->getTypeLoc().castAs<FunctionProtoTypeLoc>().getParams(),
-      E->getCallOperator()->getConstexprKind(),
-      E->getCallOperator()->getStorageClass(),
-      E->getCallOperator()->getTrailingRequiresClause());
+  CXXMethodDecl *NewCallOperator =
+      getSema().CreateLambdaCallOperator(E->getIntroducerRange(), Class);
+  NewCallOperator->setLexicalDeclContext(getSema().CurContext);
 
-  LSI->CallOperator = NewCallOperator;
-
-  getDerived().transformAttrs(E->getCallOperator(), NewCallOperator);
-  getDerived().transformedLocalDecl(E->getCallOperator(), {NewCallOperator});
-
-  // Number the lambda for linkage purposes if necessary.
-  getSema().handleLambdaNumbering(Class, NewCallOperator, Mangling);
+  // Enter the scope of the lambda.
+  getSema().buildLambdaScope(LSI, NewCallOperator, E->getIntroducerRange(),
+                             E->getCaptureDefault(), E->getCaptureDefaultLoc(),
+                             E->hasExplicitParameters(), E->isMutable());
 
   // Introduce the context of the call operator.
   Sema::ContextRAII SavedContext(getSema(), NewCallOperator,
                                  /*NewThisContext*/false);
-
-  // Enter the scope of the lambda.
-  getSema().buildLambdaScope(LSI, NewCallOperator,
-                             E->getIntroducerRange(),
-                             E->getCaptureDefault(),
-                             E->getCaptureDefaultLoc(),
-                             E->hasExplicitParameters(),
-                             E->hasExplicitResultType(),
-                             E->isMutable());
 
   bool Invalid = false;
 
@@ -13366,7 +13331,8 @@ TreeTransform<Derived>::TransformLambdaExpr(LambdaExpr *E) {
         }
         VarDecl *NewVD = getSema().createLambdaInitCaptureVarDecl(
             OldVD->getLocation(), InitQualType, NewC.EllipsisLoc,
-            OldVD->getIdentifier(), OldVD->getInitStyle(), Init.get());
+            OldVD->getIdentifier(), OldVD->getInitStyle(), Init.get(),
+            getSema().CurContext);
         if (!NewVD) {
           Invalid = true;
           break;
@@ -13445,6 +13411,55 @@ TreeTransform<Derived>::TransformLambdaExpr(LambdaExpr *E) {
                                  EllipsisLoc);
   }
   getSema().finishLambdaExplicitCaptures(LSI);
+
+  // Transform the template parameters, and add them to the current
+  // instantiation scope. The null case is handled correctly.
+  auto TPL = getDerived().TransformTemplateParameterList(
+      E->getTemplateParameterList());
+  LSI->GLTemplateParameterList = TPL;
+
+  // Transform the type of the original lambda's call operator.
+  // The transformation MUST be done in the CurrentInstantiationScope since
+  // it introduces a mapping of the original to the newly created
+  // transformed parameters.
+  TypeSourceInfo *NewCallOpTSI = nullptr;
+  {
+    TypeSourceInfo *OldCallOpTSI = E->getCallOperator()->getTypeSourceInfo();
+    auto OldCallOpFPTL =
+        OldCallOpTSI->getTypeLoc().getAs<FunctionProtoTypeLoc>();
+
+    TypeLocBuilder NewCallOpTLBuilder;
+    SmallVector<QualType, 4> ExceptionStorage;
+    TreeTransform *This = this; // Work around gcc.gnu.org/PR56135.
+    QualType NewCallOpType = TransformFunctionProtoType(
+        NewCallOpTLBuilder, OldCallOpFPTL, nullptr, Qualifiers(),
+        [&](FunctionProtoType::ExceptionSpecInfo &ESI, bool &Changed) {
+          return This->TransformExceptionSpec(OldCallOpFPTL.getBeginLoc(), ESI,
+                                              ExceptionStorage, Changed);
+        });
+    if (NewCallOpType.isNull())
+      return ExprError();
+    NewCallOpTSI =
+        NewCallOpTLBuilder.getTypeSourceInfo(getSema().Context, NewCallOpType);
+  }
+
+  getSema().CompleteLambdaCallOperator(
+      NewCallOperator, E->getCallOperator()->getLocation(),
+      E->getCallOperator()->getInnerLocStart(),
+      E->getCallOperator()->getTrailingRequiresClause(), NewCallOpTSI,
+      E->getCallOperator()->getConstexprKind(),
+      E->getCallOperator()->getStorageClass(),
+      NewCallOpTSI->getTypeLoc().castAs<FunctionProtoTypeLoc>().getParams(),
+      E->hasExplicitResultType());
+
+  getDerived().transformAttrs(E->getCallOperator(), NewCallOperator);
+  getDerived().transformedLocalDecl(E->getCallOperator(), {NewCallOperator});
+
+  {
+    // Number the lambda for linkage purposes if necessary.
+    Sema::ContextRAII ManglingContext(getSema(), Class->getDeclContext());
+    getSema().handleLambdaNumbering(Class, NewCallOperator, Mangling);
+  }
 
   // FIXME: Sema's lambda-building mechanism expects us to push an expression
   // evaluation context even if we're not transforming the function body.
@@ -14600,7 +14615,12 @@ TreeTransform<Derived>::TransformBlockExpr(BlockExpr *E) {
                                                  oldCapture));
       assert(blockScope->CaptureMap.count(newCapture));
     }
-    assert(oldBlock->capturesCXXThis() == blockScope->isCXXThisCaptured());
+
+    // The this pointer may not be captured by the instantiated block, even when
+    // it's captured by the original block, if the expression causing the
+    // capture is in the discarded branch of a constexpr if statement.
+    assert((!blockScope->isCXXThisCaptured() || oldBlock->capturesCXXThis()) &&
+           "this pointer isn't captured in the old block");
   }
 #endif
 

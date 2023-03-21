@@ -151,14 +151,14 @@ struct IntFieldInfo {
 
   IntFieldInfo() = default;
   IntFieldInfo(const SmallVector<const MCExpr *, 1> &V) { Values = V; }
-  IntFieldInfo(SmallVector<const MCExpr *, 1> &&V) { Values = V; }
+  IntFieldInfo(SmallVector<const MCExpr *, 1> &&V) { Values = std::move(V); }
 };
 struct RealFieldInfo {
   SmallVector<APInt, 1> AsIntValues;
 
   RealFieldInfo() = default;
   RealFieldInfo(const SmallVector<APInt, 1> &V) { AsIntValues = V; }
-  RealFieldInfo(SmallVector<APInt, 1> &&V) { AsIntValues = V; }
+  RealFieldInfo(SmallVector<APInt, 1> &&V) { AsIntValues = std::move(V); }
 };
 struct StructFieldInfo {
   std::vector<StructInitializer> Initializers;
@@ -269,12 +269,12 @@ FieldInitializer::FieldInitializer(FieldType FT) : FT(FT) {
 
 FieldInitializer::FieldInitializer(SmallVector<const MCExpr *, 1> &&Values)
     : FT(FT_INTEGRAL) {
-  new (&IntInfo) IntFieldInfo(Values);
+  new (&IntInfo) IntFieldInfo(std::move(Values));
 }
 
 FieldInitializer::FieldInitializer(SmallVector<APInt, 1> &&AsIntValues)
     : FT(FT_REAL) {
-  new (&RealInfo) RealFieldInfo(AsIntValues);
+  new (&RealInfo) RealFieldInfo(std::move(AsIntValues));
 }
 
 FieldInitializer::FieldInitializer(
@@ -479,7 +479,7 @@ public:
   void addDirectiveHandler(StringRef Directive,
                            ExtensionDirectiveHandler Handler) override {
     ExtensionDirectiveMap[Directive] = Handler;
-    if (DirectiveKindMap.find(Directive) == DirectiveKindMap.end()) {
+    if (!DirectiveKindMap.contains(Directive)) {
       DirectiveKindMap[Directive] = DK_HANDLER_DIRECTIVE;
     }
   }
@@ -6260,9 +6260,9 @@ bool MasmParser::parseDirectiveIfdef(SMLoc DirectiveLoc, bool expect_defined) {
           parseEOL())
         return true;
 
-      if (BuiltinSymbolMap.find(Name.lower()) != BuiltinSymbolMap.end()) {
+      if (BuiltinSymbolMap.contains(Name.lower())) {
         is_defined = true;
-      } else if (Variables.find(Name.lower()) != Variables.end()) {
+      } else if (Variables.contains(Name.lower())) {
         is_defined = true;
       } else {
         MCSymbol *Sym = getContext().lookupSymbol(Name.lower());
@@ -6381,9 +6381,9 @@ bool MasmParser::parseDirectiveElseIfdef(SMLoc DirectiveLoc,
           parseEOL())
         return true;
 
-      if (BuiltinSymbolMap.find(Name.lower()) != BuiltinSymbolMap.end()) {
+      if (BuiltinSymbolMap.contains(Name.lower())) {
         is_defined = true;
-      } else if (Variables.find(Name.lower()) != Variables.end()) {
+      } else if (Variables.contains(Name.lower())) {
         is_defined = true;
       } else {
         MCSymbol *Sym = getContext().lookupSymbol(Name);
@@ -6551,9 +6551,9 @@ bool MasmParser::parseDirectiveErrorIfdef(SMLoc DirectiveLoc,
     if (check(parseIdentifier(Name), "expected identifier after '.errdef'"))
       return true;
 
-    if (BuiltinSymbolMap.find(Name.lower()) != BuiltinSymbolMap.end()) {
+    if (BuiltinSymbolMap.contains(Name.lower())) {
       IsDefined = true;
-    } else if (Variables.find(Name.lower()) != Variables.end()) {
+    } else if (Variables.contains(Name.lower())) {
       IsDefined = true;
     } else {
       MCSymbol *Sym = getContext().lookupSymbol(Name);

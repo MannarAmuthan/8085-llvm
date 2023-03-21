@@ -105,23 +105,23 @@ public:
 
   /// Add a def for a variable that is valid for its lifetime.
   void addSingleLocVar(DebugVariable Var, DIExpression *Expr, DebugLoc DL,
-                       Value *V) {
+                       RawLocationWrapper R) {
     VarLocInfo VarLoc;
     VarLoc.VariableID = insertVariable(Var);
     VarLoc.Expr = Expr;
     VarLoc.DL = DL;
-    VarLoc.V = V;
+    VarLoc.Values = R;
     SingleLocVars.emplace_back(VarLoc);
   }
 
   /// Add a def to the wedge of defs just before /p Before.
   void addVarLoc(Instruction *Before, DebugVariable Var, DIExpression *Expr,
-                 DebugLoc DL, Value *V) {
+                 DebugLoc DL, RawLocationWrapper R) {
     VarLocInfo VarLoc;
     VarLoc.VariableID = insertVariable(Var);
     VarLoc.Expr = Expr;
     VarLoc.DL = DL;
-    VarLoc.V = V;
+    VarLoc.Values = R;
     VarLocsBeforeInst[Before].emplace_back(VarLoc);
   }
 };
@@ -148,7 +148,11 @@ void FunctionVarLocs::print(raw_ostream &OS, const Function &Fn) const {
 
   auto PrintLoc = [&OS](const VarLocInfo &Loc) {
     OS << "DEF Var=[" << (unsigned)Loc.VariableID << "]"
-       << " Expr=" << *Loc.Expr << " V=" << *Loc.V << "\n";
+       << " Expr=" << *Loc.Expr << " Values=(";
+    for (auto *Op : Loc.Values.location_ops()) {
+      errs() << Op->getName() << " ";
+    }
+    errs() << ")\n";
   };
 
   // Print the single location variables.
@@ -234,13 +238,13 @@ getDerefOffsetInBytes(const DIExpression *DIExpr) {
   int64_t Offset = 0;
   const unsigned NumElements = DIExpr->getNumElements();
   const auto Elements = DIExpr->getElements();
-  unsigned NextElement = 0;
+  unsigned ExpectedDerefIdx = 0;
   // Extract the offset.
   if (NumElements > 2 && Elements[0] == dwarf::DW_OP_plus_uconst) {
     Offset = Elements[1];
-    NextElement = 2;
+    ExpectedDerefIdx = 2;
   } else if (NumElements > 3 && Elements[0] == dwarf::DW_OP_constu) {
-    NextElement = 3;
+    ExpectedDerefIdx = 3;
     if (Elements[2] == dwarf::DW_OP_plus)
       Offset = Elements[1];
     else if (Elements[2] == dwarf::DW_OP_minus)
@@ -250,19 +254,21 @@ getDerefOffsetInBytes(const DIExpression *DIExpr) {
   }
 
   // If that's all there is it means there's no deref.
-  if (NextElement >= NumElements)
+  if (ExpectedDerefIdx >= NumElements)
     return std::nullopt;
 
   // Check the next element is DW_OP_deref - otherwise this is too complex or
   // isn't a deref expression.
-  if (Elements[NextElement] != dwarf::DW_OP_deref)
+  if (Elements[ExpectedDerefIdx] != dwarf::DW_OP_deref)
     return std::nullopt;
 
   // Check the final operation is either the DW_OP_deref or is a fragment.
-  if (NumElements == NextElement + 1)
+  if (NumElements == ExpectedDerefIdx + 1)
     return Offset; // Ends with deref.
-  else if (NumElements == NextElement + 3 &&
-           Elements[NextElement] == dwarf::DW_OP_LLVM_fragment)
+  unsigned ExpectedFragFirstIdx = ExpectedDerefIdx + 1;
+  unsigned ExpectedFragFinalIdx = ExpectedFragFirstIdx + 2;
+  if (NumElements == ExpectedFragFinalIdx + 1 &&
+      Elements[ExpectedFragFirstIdx] == dwarf::DW_OP_LLVM_fragment)
     return Offset; // Ends with deref + fragment.
 
   // Don't bother trying to interpret anything more complex.
@@ -315,7 +321,7 @@ class MemLocFragmentFill {
 
   /// IDs for memory location base addresses in maps. Use 0 to indicate that
   /// there's no memory location.
-  UniqueVector<Value *> Bases;
+  UniqueVector<RawLocationWrapper> Bases;
   UniqueVector<DebugAggregate> Aggregates;
   DenseMap<const BasicBlock *, VarFragMap> LiveIn;
   DenseMap<const BasicBlock *, VarFragMap> LiveOut;
@@ -368,7 +374,7 @@ class MemLocFragmentFill {
   /// Return a string for the value that \p BaseID represents.
   std::string toString(unsigned BaseID) {
     if (BaseID)
-      return Bases[BaseID]->getName().str();
+      return Bases[BaseID].getVariableLocationOp(0)->getName().str();
     else
       return "None";
   }
@@ -601,7 +607,7 @@ class MemLocFragmentFill {
     const auto DerefOffsetInBytes = getDerefOffsetInBytes(DIExpr);
     const unsigned Base =
         DerefOffsetInBytes && *DerefOffsetInBytes * 8 == StartBit
-            ? Bases.insert(VarLoc.V)
+            ? Bases.insert(VarLoc.Values)
             : 0;
     LLVM_DEBUG(dbgs() << "DEF " << DbgVar.getVariable()->getName() << " ["
                       << StartBit << ", " << EndBit << "): " << toString(Base)
@@ -1242,10 +1248,11 @@ void AssignmentTrackingLowering::emitDbgValue(
     const DbgVariableIntrinsic *Source, Instruction *After) {
 
   DILocation *DL = Source->getDebugLoc();
-  auto Emit = [this, Source, After, DL](Value *Val, DIExpression *Expr) {
+  auto Emit = [this, Source, After, DL](Metadata *Val, DIExpression *Expr) {
     assert(Expr);
     if (!Val)
-      Val = PoisonValue::get(Type::getInt1Ty(Source->getContext()));
+      Val = ValueAsMetadata::get(
+          PoisonValue::get(Type::getInt1Ty(Source->getContext())));
 
     // Find a suitable insert point.
     Instruction *InsertBefore = After->getNextNode();
@@ -1255,7 +1262,7 @@ void AssignmentTrackingLowering::emitDbgValue(
     VarLocInfo VarLoc;
     VarLoc.VariableID = static_cast<VariableID>(Var);
     VarLoc.Expr = Expr;
-    VarLoc.V = Val;
+    VarLoc.Values = RawLocationWrapper(Val);
     VarLoc.DL = DL;
     // Insert it into the map for later.
     InsertBeforeMap[InsertBefore].push_back(VarLoc);
@@ -1284,16 +1291,13 @@ void AssignmentTrackingLowering::emitDbgValue(
       // The address-expression has an implicit deref, add it now.
       std::tie(Val, Expr) =
           walkToAllocaAndPrependOffsetDeref(Layout, Val, Expr);
-      Emit(Val, Expr);
+      Emit(ValueAsMetadata::get(Val), Expr);
       return;
     }
   }
 
   if (Kind == LocKind::Val) {
-    /// Get the value component, converting to Undef if it is variadic.
-    Value *Val =
-        Source->hasArgList() ? nullptr : Source->getVariableLocationOp(0);
-    Emit(Val, Source->getExpression());
+    Emit(Source->getRawLocation(), Source->getExpression());
     return;
   }
 
@@ -1371,7 +1375,8 @@ void AssignmentTrackingLowering::processUntaggedInstruction(
     VarLocInfo VarLoc;
     VarLoc.VariableID = static_cast<VariableID>(Var);
     VarLoc.Expr = DIE;
-    VarLoc.V = const_cast<AllocaInst *>(Info.Base);
+    VarLoc.Values = RawLocationWrapper(
+        ValueAsMetadata::get(const_cast<AllocaInst *>(Info.Base)));
     VarLoc.DL = DILoc;
     // 3. Insert it into the map for later.
     InsertBeforeMap[InsertBefore].push_back(VarLoc);
@@ -1531,7 +1536,6 @@ void AssignmentTrackingLowering::processDbgValue(DbgValueInst &DVI,
 
 void AssignmentTrackingLowering::processDbgInstruction(
     Instruction &I, AssignmentTrackingLowering::BlockInfo *LiveSet) {
-  assert(!isa<DbgAddrIntrinsic>(&I) && "unexpected dbg.addr");
   if (auto *DAI = dyn_cast<DbgAssignIntrinsic>(&I))
     processDbgAssign(*DAI, LiveSet);
   else if (auto *DVI = dyn_cast<DbgValueInst>(&I))
@@ -1610,7 +1614,7 @@ AssignmentTrackingLowering::joinLocMap(const LocMap &A, const LocMap &B) {
   // then adding LocKind::None elements for vars in A xor B. The latter part is
   // equivalent to performing join on elements with variables in A xor B with
   // LocKind::None (⊤) since join(x, ⊤) = ⊤.
-  LocMap Join;
+  LocMap Join(std::max(A.size(), B.size()));
   SmallVector<VariableID, 16> SymmetricDifference;
   // Insert the join of the elements with common vars into Join. Add the
   // remaining elements to into SymmetricDifference.
@@ -1627,6 +1631,10 @@ AssignmentTrackingLowering::joinLocMap(const LocMap &A, const LocMap &B) {
   }
   unsigned IntersectSize = Join.size();
   (void)IntersectSize;
+
+  // Check if A and B contain the same variables.
+  if (SymmetricDifference.empty() && A.size() == B.size())
+    return Join;
 
   // Add the elements in B with variables that are not in A into
   // SymmetricDifference.
@@ -1701,7 +1709,7 @@ AssignmentTrackingLowering::joinAssignmentMap(const AssignmentMap &A,
   // then adding LocKind::None elements for vars in A xor B. The latter part is
   // equivalent to performing join on elements with variables in A xor B with
   // Status::NoneOrPhi (⊤) since join(x, ⊤) = ⊤.
-  AssignmentMap Join;
+  AssignmentMap Join(std::max(A.size(), B.size()));
   SmallVector<VariableID, 16> SymmetricDifference;
   // Insert the join of the elements with common vars into Join. Add the
   // remaining elements to into SymmetricDifference.
@@ -1718,6 +1726,10 @@ AssignmentTrackingLowering::joinAssignmentMap(const AssignmentMap &A,
   }
   unsigned IntersectSize = Join.size();
   (void)IntersectSize;
+
+  // Check if A and B contain the same variables.
+  if (SymmetricDifference.empty() && A.size() == B.size())
+    return Join;
 
   // Add the elements in B with variables that are not in A into
   // SymmetricDifference.
@@ -1847,7 +1859,8 @@ static AssignmentTrackingLowering::OverlapMap buildOverlapMapAndRecordDeclares(
     for (auto &I : BB) {
       if (auto *DDI = dyn_cast<DbgDeclareInst>(&I)) {
         FnVarLocs->addSingleLocVar(DebugVariable(DDI), DDI->getExpression(),
-                                   DDI->getDebugLoc(), DDI->getAddress());
+                                   DDI->getDebugLoc(),
+                                   DDI->getWrappedLocation());
       } else if (auto *DII = dyn_cast<DbgVariableIntrinsic>(&I)) {
         DebugVariable DV = DebugVariable(DII);
         DebugAggregate DA = {DV.getVariable(), DV.getInlinedAt()};
@@ -2059,14 +2072,15 @@ bool AssignmentTrackingLowering::run(FunctionVarLocsBuilder *FnVarLocsBuilder) {
       //
       // Unless we've already done so, create the single location def now.
       if (AlwaysStackHomed.insert(Aggr).second) {
-        assert(isa<AllocaInst>(VarLoc.V));
+        assert(!VarLoc.Values.hasArgList() &&
+               isa<AllocaInst>(VarLoc.Values.getVariableLocationOp(0)));
         // TODO: When more complex cases are handled VarLoc.Expr should be
         // built appropriately rather than always using an empty DIExpression.
         // The assert below is a reminder.
         assert(Simple);
         VarLoc.Expr = DIExpression::get(Fn.getContext(), std::nullopt);
         DebugVariable Var = FnVarLocs->getVariable(VarLoc.VariableID);
-        FnVarLocs->addSingleLocVar(Var, VarLoc.Expr, VarLoc.DL, VarLoc.V);
+        FnVarLocs->addSingleLocVar(Var, VarLoc.Expr, VarLoc.DL, VarLoc.Values);
         InsertedAnyIntrinsics = true;
       }
     }
@@ -2109,20 +2123,11 @@ bool AssignmentTrackingLowering::emitPromotedVarLocs(
       // already.
       if (VarsWithStackSlot->contains(getAggregate(DVI)))
         continue;
-      // Wrapper to get a single value (or undef) from DVI.
-      auto GetValue = [DVI]() -> Value * {
-        // We can't handle variadic DIExpressions yet so treat those as
-        // kill locations.
-        if (DVI->isKillLocation() || DVI->getValue() == nullptr ||
-            DVI->hasArgList())
-          return PoisonValue::get(Type::getInt32Ty(DVI->getContext()));
-        return DVI->getValue();
-      };
       Instruction *InsertBefore = I.getNextNode();
       assert(InsertBefore && "Unexpected: debug intrinsics after a terminator");
       FnVarLocs->addVarLoc(InsertBefore, DebugVariable(DVI),
                            DVI->getExpression(), DVI->getDebugLoc(),
-                           GetValue());
+                           DVI->getWrappedLocation());
       InsertedAnyIntrinsics = true;
     }
   }
@@ -2204,7 +2209,8 @@ static bool
 removeRedundantDbgLocsUsingForwardScan(const BasicBlock *BB,
                                        FunctionVarLocsBuilder &FnVarLocs) {
   bool Changed = false;
-  DenseMap<DebugVariable, std::pair<Value *, DIExpression *>> VariableMap;
+  DenseMap<DebugVariable, std::pair<RawLocationWrapper, DIExpression *>>
+      VariableMap;
 
   // Scan over the entire block, not just over the instructions mapped by
   // FnVarLocs, because wedges in FnVarLocs may only be seperated by debug
@@ -2229,9 +2235,9 @@ removeRedundantDbgLocsUsingForwardScan(const BasicBlock *BB,
 
       // Update the map if we found a new value/expression describing the
       // variable, or if the variable wasn't mapped already.
-      if (VMI == VariableMap.end() || VMI->second.first != Loc.V ||
+      if (VMI == VariableMap.end() || VMI->second.first != Loc.Values ||
           VMI->second.second != Loc.Expr) {
-        VariableMap[Key] = {Loc.V, Loc.Expr};
+        VariableMap[Key] = {Loc.Values, Loc.Expr};
         NewDefs.push_back(Loc);
         continue;
       }
@@ -2311,7 +2317,7 @@ removeUndefDbgLocsFromEntryBlock(const BasicBlock *BB,
 
       // Remove undef entries that are encountered before any non-undef
       // intrinsics from the entry block.
-      if (isa<UndefValue>(Loc.V) && !HasDefinedBits(Aggr, Var)) {
+      if (Loc.Values.isKillLocation(Loc.Expr) && !HasDefinedBits(Aggr, Var)) {
         // Did not insert this Loc, which is the same as removing it.
         NumDefsRemoved++;
         ChangedThisWedge = true;

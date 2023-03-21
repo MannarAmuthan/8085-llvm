@@ -16,36 +16,150 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Transform/IR/TransformDialect.h"
 #include "mlir/Dialect/Transform/IR/TransformInterfaces.h"
-#include "mlir/Dialect/Transform/IR/TransformUtils.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/IRMapping.h"
+#include "mlir/IR/OpDefinition.h"
+#include "mlir/Support/LLVM.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Debug.h"
 
 using namespace mlir;
 using namespace mlir::gpu;
 using namespace mlir::transform;
 
+#define DEBUG_TYPE "gpu-transforms"
+
+#define DBGS() (llvm::dbgs() << '[' << DEBUG_TYPE << "] ")
+#define LDBG(X) LLVM_DEBUG(DBGS() << X << "\n")
+
+namespace {
+
+/// Helper type for functions that generate ids for the mapping of a scf.forall.
+using IdGeneratorFnType = llvm::function_ref<void(RewriterBase &, scf::ForallOp,
+                                                  SmallVectorImpl<Value> &)>;
+
+struct MappingToGpuHelper {
+  MappingToGpuHelper(SmallVector<DeviceMappingAttrInterface> mappingAttributes,
+                     IdGeneratorFnType idGenerator)
+      : mappingAttributes(mappingAttributes), idGenerator(idGenerator) {}
+
+  SmallVector<DeviceMappingAttrInterface> mappingAttributes;
+  IdGeneratorFnType idGenerator;
+};
+
+struct MappingToGpuBlocksHelper : public MappingToGpuHelper {
+
+  MappingToGpuBlocksHelper(MLIRContext *ctx)
+      : MappingToGpuHelper(
+            SmallVector<DeviceMappingAttrInterface>{
+                GPUBlockMappingAttr::get(ctx, Blocks::DimX),
+                GPUBlockMappingAttr::get(ctx, Blocks::DimY),
+                GPUBlockMappingAttr::get(ctx, Blocks::DimZ)},
+            IdGeneratorFnType{[](RewriterBase &rewriter, scf::ForallOp forallOp,
+                                 SmallVectorImpl<Value> &ids) {
+              OpBuilder::InsertionGuard guard(rewriter);
+              rewriter.setInsertionPoint(forallOp);
+              IndexType indexType = rewriter.getIndexType();
+              auto loc = forallOp->getLoc();
+              ids.assign(
+                  {rewriter.create<BlockIdOp>(loc, indexType, Dimension::x),
+                   rewriter.create<BlockIdOp>(loc, indexType, Dimension::y),
+                   rewriter.create<BlockIdOp>(loc, indexType, Dimension::z)});
+            }}) {}
+};
+
+struct MappingToGpuThreadsHelper : public MappingToGpuHelper {
+  MappingToGpuThreadsHelper(MLIRContext *ctx)
+      : MappingToGpuHelper(
+            SmallVector<DeviceMappingAttrInterface>{
+                GPUThreadMappingAttr::get(ctx, Threads::DimX),
+                GPUThreadMappingAttr::get(ctx, Threads::DimY),
+                GPUThreadMappingAttr::get(ctx, Threads::DimZ)},
+            IdGeneratorFnType{[](RewriterBase &rewriter, scf::ForallOp forallOp,
+                                 SmallVectorImpl<Value> &ids) {
+              OpBuilder::InsertionGuard guard(rewriter);
+              rewriter.setInsertionPoint(forallOp);
+              IndexType indexType = rewriter.getIndexType();
+              auto loc = forallOp->getLoc();
+              ids.assign(
+                  {rewriter.create<ThreadIdOp>(loc, indexType, Dimension::x),
+                   rewriter.create<ThreadIdOp>(loc, indexType, Dimension::y),
+                   rewriter.create<ThreadIdOp>(loc, indexType, Dimension::z)});
+            }}) {}
+};
+
+} // namespace
+
+static DiagnosedSilenceableFailure
+failureHelper(std::optional<TransformOpInterface> transformOp,
+              scf::ForallOp forallOp, const Twine &message) {
+  if (transformOp.has_value())
+    return emitDefiniteFailure(*transformOp, message);
+  return emitDefiniteFailure(forallOp, message);
+}
+
 /// Check if given mapping attributes are one of the desired attributes
 static DiagnosedSilenceableFailure
-checkAttributeType(ArrayRef<DeviceMappingAttrInterface> threadMappingAttributes,
-                   const std::optional<ArrayAttr> &foreachMapping,
-                   std::optional<TransformOpInterface> transformOp) {
-  if (!foreachMapping.has_value())
-    return transformOp->emitSilenceableError() << "mapping must be present";
+checkMappingAttributeTypes(std::optional<TransformOpInterface> transformOp,
+                           scf::ForallOp forallOp) {
+  if (!forallOp.getMapping().has_value())
+    return failureHelper(transformOp, forallOp, "mapping must be present");
+
+  bool hasBlockMapping =
+      llvm::any_of(forallOp.getMapping().value(), [](Attribute attr) {
+        return attr.isa<GPUBlockMappingAttr>();
+      });
+  bool hasThreadMapping =
+      llvm::any_of(forallOp.getMapping().value(), [](Attribute attr) {
+        return attr.isa<GPUThreadMappingAttr>();
+      });
+  int64_t countMappingTypes = 0;
+  countMappingTypes += hasBlockMapping ? 1 : 0;
+  countMappingTypes += hasThreadMapping ? 1 : 0;
+  if (countMappingTypes > 1) {
+    return failureHelper(transformOp, forallOp,
+                         "cannot mix different mapping types, use nesting");
+  }
 
   DenseSet<Attribute> seen;
-  for (Attribute map : foreachMapping->getValue()) {
-    if (!llvm::is_contained(threadMappingAttributes, map)) {
-      return transformOp->emitDefiniteFailure()
-             << "mapping must be one of " << threadMappingAttributes;
-    }
-    if (llvm::is_contained(seen, map)) {
-      return transformOp->emitDefiniteFailure()
-             << map
-             << " is duplicated, cannot map different "
-                "loops to the same processor";
+  for (Attribute map : forallOp.getMapping()->getValue()) {
+    if (seen.contains(map)) {
+      return failureHelper(transformOp, forallOp,
+                           "duplicated attribute, cannot map different loops "
+                           "to the same processor");
     }
     seen.insert(map);
   }
 
+  return DiagnosedSilenceableFailure::success();
+}
+
+static DiagnosedSilenceableFailure
+verifyGpuMapping(std::optional<TransformOpInterface> transformOp,
+                 scf::ForallOp forallOp) {
+  // Check the types of the mapping attributes match.
+  DiagnosedSilenceableFailure typeRes =
+      checkMappingAttributeTypes(transformOp, forallOp);
+  if (!typeRes.succeeded())
+    return typeRes;
+
+  // Perform other non-types verifications.
+  if (!forallOp.isNormalized())
+    return failureHelper(transformOp, forallOp,
+                         "unsupported non-normalized loops");
+  if (forallOp.getNumResults() > 0)
+    return failureHelper(transformOp, forallOp,
+                         "only bufferized scf.forall can be mapped");
+  if (forallOp.getRank() > 3)
+    return failureHelper(transformOp, forallOp,
+                         "scf.forall with rank > 3 does not lower");
+  if (llvm::any_of(forallOp.getMixedUpperBound(), [&](OpFoldResult ofr) {
+        return !getConstantIntValue(ofr).has_value();
+      })) {
+    return failureHelper(transformOp, forallOp,
+                         "unsupported dynamic sizes in forall op");
+  }
   return DiagnosedSilenceableFailure::success();
 }
 
@@ -124,7 +238,7 @@ createGpuLaunch(RewriterBase &rewriter, Location loc,
 
 /// Alter kernel configuration of the given kernel.
 static DiagnosedSilenceableFailure
-alterGpuLaunch(TrivialPatternRewriter &rewriter, LaunchOp gpuLaunch,
+alterGpuLaunch(IRRewriter &rewriter, LaunchOp gpuLaunch,
                TransformOpInterface transformOp,
                std::optional<int64_t> gridDimX = std::nullopt,
                std::optional<int64_t> gridDimY = std::nullopt,
@@ -165,50 +279,38 @@ alterGpuLaunch(TrivialPatternRewriter &rewriter, LaunchOp gpuLaunch,
 }
 
 //===----------------------------------------------------------------------===//
-// MapForeachToBlocks
+// MapForallToBlocks
 //===----------------------------------------------------------------------===//
 
-DiagnosedSilenceableFailure mlir::transform::gpu::mapForeachToBlocksImpl(
-    RewriterBase &rewriter, scf::ForeachThreadOp foreachThreadOp,
-    function_ref<void(RewriterBase &, scf::ForeachThreadOp,
-                      SmallVectorImpl<Value> &)>
-        blockIdGenerator,
-    SmallVectorImpl<int64_t> &gridDims, TransformOpInterface transformOp,
-    const ArrayRef<DeviceMappingAttrInterface> &mappingAttributes) {
-  // Step 0. Target-specific verifications. There is no good place to anchor
-  // those right now: the ForeachThreadOp is target-independent and the
-  // transform op does not apply to individual ForeachThreadOp.
-  Location loc = foreachThreadOp->getLoc();
+static FailureOr<SmallVector<int64_t>> rewriteOneForallCommonImpl(
+    RewriterBase &rewriter, std::optional<TransformOpInterface> transformOp,
+    scf::ForallOp forallOp,
+    const SmallVectorImpl<int64_t> &availableMappingSizes,
+    const ArrayRef<DeviceMappingAttrInterface> &allMappingAttributes,
+    IdGeneratorFnType idGenerator) {
+  LDBG("Start rewriteOneForallCommonImpl");
 
-  if (foreachThreadOp.getNumResults() > 0)
-    return transformOp.emitSilenceableError()
-           << "only bufferized scf.foreach_thread lowers to "
-              "gpu.block_id";
-  if (foreachThreadOp.getNumThreads().size() > 3)
-    return transformOp.emitSilenceableError()
-           << "scf.foreach_thread with rank > 3 does not lower to "
-              "gpu.block_id";
-  if (llvm::any_of(foreachThreadOp.getNumThreads(), [](Value v) {
-        return !v.getDefiningOp<arith::ConstantIndexOp>();
-      })) {
-    return transformOp.emitSilenceableError()
-           << "unsupported dynamic griddim size";
-  }
-  SmallVector<Attribute> blockMapping =
-      llvm::to_vector(foreachThreadOp.getMapping()->getValue());
+  // Step 0. GPU-specific verifications. There is no better place to anchor
+  // those right now: the ForallOp is target-independent and the transform op
+  // does not apply to individual ForallOp.
+  DiagnosedSilenceableFailure diag = verifyGpuMapping(transformOp, forallOp);
+  if (!diag.succeeded())
+    return failure();
 
-  // Step 1. Complete the blockMapping to a full mapping (with 1s) if necessary.
-  SmallVector<Value> numBlocks =
-      llvm::to_vector(foreachThreadOp.getNumThreads());
-  // Ensure we have 3 block sizes, one for each id.
-  Value one;
-  for (auto attr : mappingAttributes) {
-    if (std::find(blockMapping.begin(), blockMapping.end(), attr) ==
-        blockMapping.end()) {
-      blockMapping.push_back(attr);
-      one = one ? one : rewriter.create<arith::ConstantIndexOp>(loc, 1);
-      numBlocks.push_back(one);
-    }
+  // Step 1. Complete the mapping to a full mapping (with 1s) if necessary.
+  SmallVector<int64_t> tmpMappingSizes = llvm::to_vector(
+      llvm::map_range(forallOp.getMixedUpperBound(), [](OpFoldResult ofr) {
+        auto maybeStaticValue = getConstantIntValue(ofr);
+        assert(maybeStaticValue && "expected static value");
+        return maybeStaticValue.value();
+      }));
+  SmallVector<Attribute> forallMappings =
+      llvm::to_vector(forallOp.getMapping()->getValue());
+  for (auto attr : allMappingAttributes) {
+    if (llvm::is_contained(forallMappings, attr))
+      continue;
+    forallMappings.push_back(attr);
+    tmpMappingSizes.push_back(1);
   }
 
   // Step 2. sort the values by the corresponding DeviceMappingAttrInterface.
@@ -216,85 +318,145 @@ DiagnosedSilenceableFailure mlir::transform::gpu::mapForeachToBlocksImpl(
                         DeviceMappingAttrInterface b) -> bool {
     return a.getMappingId() < b.getMappingId();
   };
-  SmallVector<Value> gridDimValues = scf::ForeachThreadOp::getValuesSortedByKey(
-      blockMapping, numBlocks, comparator);
-  for (Value v : gridDimValues)
-    gridDims.push_back(v.getDefiningOp<arith::ConstantIndexOp>().value());
+  SmallVector<int64_t> mappingSizes =
+      getValuesSortedByKey(forallMappings, tmpMappingSizes, comparator);
+  LLVM_DEBUG(llvm::interleaveComma(mappingSizes, DBGS() << "mappingSizes: ");
+             llvm::dbgs() << "\n";
+             llvm::interleaveComma(forallMappings, DBGS() << "mappingAttrs: ");
+             llvm::dbgs() << "\n");
 
-  // Step 3. Generate the blockIds using the provided generator and map the
-  // induction variables to the newly created ops.
-  SmallVector<Value> blockOps;
-  blockIdGenerator(rewriter, foreachThreadOp, blockOps);
-  IRMapping bvm;
-  for (auto [blockIdx, blockDim] :
-       llvm::zip(foreachThreadOp.getThreadIndices(), blockMapping)) {
-    bvm.map(blockIdx,
-            blockOps[static_cast<int64_t>(
-                blockDim.cast<DeviceMappingAttrInterface>().getMappingId())]);
+  // Step 3. Generate the mappingIdOps using the provided generator and map the
+  // induction variables to the newly created ops. Replace ids of dimension
+  // known to be of size 1 by zero to simplify the IR.
+  SmallVector<Value> mappingIdOps;
+  Location loc = forallOp.getLoc();
+  idGenerator(rewriter, forallOp, mappingIdOps);
+  LLVM_DEBUG(llvm::interleaveComma(mappingIdOps, DBGS() << "mappingIdOps: ");
+             llvm::dbgs() << "\n");
+  assert(mappingIdOps.size() == mappingSizes.size() && "expect equal sizes");
+  Value zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+  if (!availableMappingSizes.empty()) {
+    for (size_t i : llvm::seq(size_t(0), availableMappingSizes.size())) {
+      if (availableMappingSizes[i] == 1)
+        mappingIdOps[i] = zero;
+    }
   }
 
-  // Step 4. Move the body of foreachThreadOp.
-  // Erase the terminator first, it will not be used since we are on buffers.
-  rewriter.eraseOp(foreachThreadOp.getTerminator());
-  Block *targetBlock = foreachThreadOp->getBlock();
-  Block::iterator insertionPoint = Block::iterator(foreachThreadOp);
-  Block &sourceBlock = foreachThreadOp.getRegion().front();
+  IRMapping bvm;
+  for (auto [iv, dim] :
+       llvm::zip_equal(forallOp.getInductionVars(),
+                       ArrayRef<Attribute>{forallMappings}.take_front(
+                           forallOp.getInductionVars().size()))) {
+    Value peIdOp = mappingIdOps[static_cast<int64_t>(
+        dim.cast<DeviceMappingAttrInterface>().getMappingId())];
+    bvm.map(iv, peIdOp);
+  }
+
+  // Step 4. Maybe create conditionals to predicate the region.
+  // Skip this step when availableMappingSizes is empty.
+  Value predicate;
+  if (!availableMappingSizes.empty()) {
+    LLVM_DEBUG(llvm::interleaveComma(availableMappingSizes,
+                                     DBGS() << "availableMappingSizes: ");
+               llvm::dbgs() << "\n");
+    for (auto [id, mappingSize, availableMappingSize] :
+         llvm::zip_equal(mappingIdOps, mappingSizes, availableMappingSizes)) {
+      if (mappingSize > availableMappingSize) {
+        (void)failureHelper(
+            transformOp, forallOp,
+            "Trying to map to fewer GPU threads than loop iterations but "
+            "overprovisioning is not yet supported. "
+            "Try additional tiling of the before mapping or map to more "
+            "threads.");
+        return failure();
+      }
+      if (mappingSize == availableMappingSize)
+        continue;
+      Value idx = rewriter.create<arith::ConstantIndexOp>(loc, mappingSize);
+      Value tmpPredicate = rewriter.create<arith::CmpIOp>(
+          loc, arith::CmpIPredicate::ult, id, idx);
+      LDBG("predicate: " << tmpPredicate);
+      predicate = predicate ? rewriter.create<arith::AndIOp>(loc, predicate,
+                                                             tmpPredicate)
+                            : tmpPredicate;
+    }
+  }
+
+  // Step 5. Move the body of forallOp.
+  // Erase the terminator first, it will not be used.
+  rewriter.eraseOp(forallOp.getTerminator());
+  Block *targetBlock;
+  Block::iterator insertionPoint;
+  if (predicate) {
+    // Step 5.a. If predicated, move at the beginning.
+    auto ifOp =
+        rewriter.create<scf::IfOp>(loc, predicate, /*withElseRegion=*/false);
+    targetBlock = ifOp.thenBlock();
+    insertionPoint = ifOp.thenBlock()->begin();
+  } else {
+    // Step 5.b. Otherwise, move inline just at the rewriter insertion point.
+    targetBlock = forallOp->getBlock();
+    insertionPoint = rewriter.getInsertionPoint();
+  }
+  Block &sourceBlock = forallOp.getRegion().front();
   targetBlock->getOperations().splice(insertionPoint,
                                       sourceBlock.getOperations());
 
-  // Step 5. RAUW thread indices to thread ops.
-  for (Value loopIndex : foreachThreadOp.getThreadIndices()) {
-    Value blockIdx = bvm.lookup(loopIndex);
-    rewriter.replaceAllUsesWith(loopIndex, blockIdx);
+  // Step 6. RAUW thread indices to thread ops.
+  for (Value loopIndex : forallOp.getInductionVars()) {
+    Value threadIdx = bvm.lookup(loopIndex);
+    rewriter.replaceAllUsesWith(loopIndex, threadIdx);
   }
 
-  // Step 6. Erase old op.
-  rewriter.eraseOp(foreachThreadOp);
+  // Step 7. Erase old op.
+  rewriter.eraseOp(forallOp);
 
+  return mappingSizes;
+}
+
+DiagnosedSilenceableFailure mlir::transform::gpu::mapForallToBlocksImpl(
+    RewriterBase &rewriter, TransformOpInterface transformOp,
+    scf::ForallOp forallOp, SmallVectorImpl<int64_t> &gridDims,
+    const ArrayRef<DeviceMappingAttrInterface> &allMappingAttributes,
+    IdGeneratorFnType idGenerator) {
+  // Pass an empty anyAvailableMappingSizes.
+  SmallVector<int64_t> anyAvailableMappingSizes;
+  FailureOr<SmallVector<int64_t>> maybeMappingSizes =
+      rewriteOneForallCommonImpl(rewriter, transformOp, forallOp,
+                                 anyAvailableMappingSizes, allMappingAttributes,
+                                 idGenerator);
+  if (failed(maybeMappingSizes))
+    return DiagnosedSilenceableFailure::definiteFailure();
+  gridDims = *maybeMappingSizes;
   return DiagnosedSilenceableFailure::success();
 }
 
-DiagnosedSilenceableFailure mlir::transform::gpu::findTopLevelForeachThreadOp(
-    Operation *target, scf::ForeachThreadOp &topLevelForeachThreadOp,
-    TransformOpInterface transformOp) {
-  auto walkResult = target->walk([&](scf::ForeachThreadOp foreachThreadOp) {
-    if (foreachThreadOp->getParentOfType<scf::ForeachThreadOp>())
+DiagnosedSilenceableFailure
+mlir::transform::gpu::findTopLevelForallOp(Operation *target,
+                                           scf::ForallOp &topLevelForallOp,
+                                           TransformOpInterface transformOp) {
+  auto walkResult = target->walk([&](scf::ForallOp forallOp) {
+    if (forallOp->getParentOfType<scf::ForallOp>())
       return WalkResult::advance();
-    if (topLevelForeachThreadOp)
-      // TODO: Handle multiple foreach if there is no dependences between them
+    if (topLevelForallOp)
+      // TODO: Handle multiple forall if they are independent.
       return WalkResult::interrupt();
-    topLevelForeachThreadOp = foreachThreadOp;
+    topLevelForallOp = forallOp;
     return WalkResult::advance();
   });
 
   if (walkResult.wasInterrupted())
     return transformOp.emitSilenceableError()
-           << "could not find a unique topLevel scf.foreach_thread";
+           << "could not find a unique topLevel scf.forall";
   return DiagnosedSilenceableFailure::success();
 }
 
-/// This is a helper that is only used in
-/// rewriteTopLevelForeachThreadToGpuBlocks. It generates GPU dialects
-/// block_id.
-static void generateGpuBlockIds(RewriterBase &rewriter,
-                                scf::ForeachThreadOp foreachOp,
-                                SmallVectorImpl<Value> &blockOps) {
-  Location loc = foreachOp->getLoc();
-  OpBuilder::InsertionGuard guard(rewriter);
-  rewriter.setInsertionPoint(foreachOp);
-  IndexType indexType = rewriter.getIndexType();
-  blockOps = SmallVector<Value>{
-      rewriter.create<BlockIdOp>(loc, indexType, Dimension::x),
-      rewriter.create<BlockIdOp>(loc, indexType, Dimension::y),
-      rewriter.create<BlockIdOp>(loc, indexType, Dimension::z)};
-}
-
 DiagnosedSilenceableFailure
-transform::MapForeachToBlocks::applyToOne(Operation *target,
-                                          ApplyToEachResultList &results,
-                                          transform::TransformState &state) {
+transform::MapForallToBlocks::applyToOne(Operation *target,
+                                         ApplyToEachResultList &results,
+                                         transform::TransformState &state) {
   LaunchOp gpuLaunch = dyn_cast<LaunchOp>(target);
-  TrivialPatternRewriter rewriter(getContext());
+  IRRewriter rewriter(getContext());
   auto transformOp = cast<TransformOpInterface>(getOperation());
 
   if (!getGenerateGpuLaunch() && !gpuLaunch) {
@@ -306,19 +468,22 @@ transform::MapForeachToBlocks::applyToOne(Operation *target,
     return diag;
   }
 
-  scf::ForeachThreadOp topLevelForeachThreadOp;
-  DiagnosedSilenceableFailure diag =
-      mlir::transform::gpu::findTopLevelForeachThreadOp(
-          target, topLevelForeachThreadOp, transformOp);
+  scf::ForallOp topLevelForallOp;
+  DiagnosedSilenceableFailure diag = mlir::transform::gpu::findTopLevelForallOp(
+      target, topLevelForallOp, transformOp);
   if (!diag.succeeded()) {
     diag.attachNote(target->getLoc()) << "when applied to this payload op";
     return diag;
   }
 
-  OpBuilder::InsertionGuard guard(rewriter);
-  rewriter.setInsertionPoint(topLevelForeachThreadOp);
+  SmallVector<int64_t> gridDims = extractFromI64ArrayAttr(getGridDim());
+  if (!getGenerateGpuLaunch() && gridDims.size() != 3)
+    return transformOp.emitDefiniteFailure("transform require size-3 mapping");
 
-  // Generate gpu launch here and move the foreach_thread inside
+  OpBuilder::InsertionGuard guard(rewriter);
+  rewriter.setInsertionPoint(topLevelForallOp);
+
+  // Generate gpu launch here and move the forall inside
   if (getGenerateGpuLaunch()) {
     DiagnosedSilenceableFailure diag =
         createGpuLaunch(rewriter, target->getLoc(), transformOp, gpuLaunch);
@@ -326,240 +491,101 @@ transform::MapForeachToBlocks::applyToOne(Operation *target,
       return diag;
     }
     rewriter.setInsertionPointToStart(&gpuLaunch.getBody().front());
-    Operation *newForeachThreadOp = rewriter.clone(*topLevelForeachThreadOp);
-    rewriter.eraseOp(topLevelForeachThreadOp);
-    topLevelForeachThreadOp = cast<scf::ForeachThreadOp>(newForeachThreadOp);
+    Operation *newForallOp = rewriter.clone(*topLevelForallOp);
+    rewriter.eraseOp(topLevelForallOp);
+    topLevelForallOp = cast<scf::ForallOp>(newForallOp);
   }
 
-  SmallVector<int64_t> gridDim = extractFromI64ArrayAttr(getGridDim());
-  SmallVector<DeviceMappingAttrInterface> blockMappingAttributes = {
-      GPUBlockMappingAttr::get(getContext(), Blocks::DimX),
-      GPUBlockMappingAttr::get(getContext(), Blocks::DimY),
-      GPUBlockMappingAttr::get(getContext(), Blocks::DimZ)};
+  diag = verifyGpuMapping(transformOp, topLevelForallOp);
+  if (!diag.succeeded())
+    return diag;
 
-  diag = checkAttributeType(blockMappingAttributes,
-                            topLevelForeachThreadOp.getMapping(), transformOp);
-  if (diag.succeeded())
-    diag = mlir::transform::gpu::mapForeachToBlocksImpl(
-        rewriter, topLevelForeachThreadOp, generateGpuBlockIds, gridDim,
-        transformOp, blockMappingAttributes);
-  if (diag.succeeded()) {
-    diag = alterGpuLaunch(rewriter, gpuLaunch,
-                          cast<TransformOpInterface>(getOperation()),
-                          gridDim[0], gridDim[1], gridDim[2]);
-  }
+  MappingToGpuBlocksHelper helper(getContext());
+  diag = mlir::transform::gpu::mapForallToBlocksImpl(
+      rewriter, transformOp, topLevelForallOp, gridDims,
+      helper.mappingAttributes, helper.idGenerator);
+  if (!diag.succeeded())
+    return diag;
+
+  diag = alterGpuLaunch(rewriter, gpuLaunch,
+                        cast<TransformOpInterface>(getOperation()), gridDims[0],
+                        gridDims[1], gridDims[2]);
 
   results.push_back(gpuLaunch);
   return diag;
 }
 
 //===----------------------------------------------------------------------===//
-// MapNestedForeachToThreads
+// MapNestedForallToThreads
 //===----------------------------------------------------------------------===//
 
-/// Searches `scf.foreach_thread` ops nested under `target` and maps each such
-/// op to GPU threads. Mapping is one-to-one and the induction variables of
-/// `scf.foreach_thread` are rewritten to gpu.thread_id according to the
-/// thread_dim_mapping attribute. Sibling `scf.foreach_thread` are supported in
-/// which case, the union of the number of threads is computed and may result
-/// in predication. Dynamic, `scf.foreach_thread` trip counts are currently
-/// not supported. Dynamic block dim sizes are currently not supported.
-static DiagnosedSilenceableFailure rewriteOneForeachThreadToGpuThreads(
-    RewriterBase &rewriter, scf::ForeachThreadOp foreachThreadOp,
-    const SmallVectorImpl<int64_t> &globalBlockDims, bool syncAfterDistribute,
-    std::optional<TransformOpInterface> transformOp,
-    const ArrayRef<DeviceMappingAttrInterface> &threadMappingAttributes) {
-  // Step 0. Target-specific verifications. There is no good place to anchor
-  // those right now: the ForeachThreadOp is target-independent and the
-  // transform op does not apply to individual ForeachThreadOp.
-  auto failureHelper =
-      [&](const Twine &message) -> DiagnosedSilenceableFailure {
-    if (transformOp.has_value()) {
-      return transformOp->emitSilenceableError() << message;
-    }
-    return emitDefiniteFailure(foreachThreadOp, message);
-  };
-  Location loc = foreachThreadOp->getLoc();
-  if (foreachThreadOp.getNumResults() > 0)
-    return failureHelper(
-        "only bufferized scf.foreach_thread lowers to gpu.thread_id");
-  if (foreachThreadOp.getNumThreads().size() > 3)
-    return failureHelper(
-        "scf.foreach_thread with rank > 3 does not lower to gpu.thread_id");
-  if (llvm::any_of(foreachThreadOp.getNumThreads(), [](Value v) {
-        return !v.getDefiningOp<arith::ConstantIndexOp>();
-      })) {
-    return failureHelper("unsupported dynamic blockdim size");
-  }
-  if (!foreachThreadOp.getMapping().has_value())
-    return failureHelper("mapping must be present");
-  SmallVector<Attribute> threadMapping =
-      llvm::to_vector(foreachThreadOp.getMapping()->getValue());
-
-  // Step 1. Complete the threadMapping to a full mapping (with 1s) if
-  // necessary.
-  SmallVector<Value> numThreads =
-      llvm::to_vector(foreachThreadOp.getNumThreads());
-  // Ensure we have 3 block sizes, one for each id.
-  Value one;
-  for (auto attr : threadMappingAttributes) {
-    if (std::find(threadMapping.begin(), threadMapping.end(), attr) ==
-        threadMapping.end()) {
-      threadMapping.push_back(attr);
-      one = one ? one : rewriter.create<arith::ConstantIndexOp>(loc, 1);
-      numThreads.push_back(one);
-    }
-  }
-
-  // Step 2. sort the values by the corresponding DeviceMappingAttrInterface.
-  auto comparator = [&](DeviceMappingAttrInterface a,
-                        DeviceMappingAttrInterface b) -> bool {
-    return a.getMappingId() < b.getMappingId();
-  };
-  SmallVector<Value> blockDimValues =
-      scf::ForeachThreadOp::getValuesSortedByKey(threadMapping, numThreads,
-                                                 comparator);
-  SmallVector<int64_t> blockDims =
-      llvm::to_vector(llvm::map_range(blockDimValues, [](Value v) {
-        return v.getDefiningOp<arith::ConstantIndexOp>().value();
-      }));
-
-  // Step 3. Create the gpu.thread ops and map the induction variables to the
-  // newly created ops.
-  IndexType indexType = rewriter.getIndexType();
-  SmallVector<Value> threadOps{
-      rewriter.create<ThreadIdOp>(loc, indexType, Dimension::x),
-      rewriter.create<ThreadIdOp>(loc, indexType, Dimension::y),
-      rewriter.create<ThreadIdOp>(loc, indexType, Dimension::z)};
-  // Replace ids of dimension size 1 by zero to simplify the IR.
-  Value zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
-  for (size_t i : llvm::seq(size_t(0), globalBlockDims.size())) {
-    if (globalBlockDims[i] == 1)
-      threadOps[i] = zero;
-  }
-  IRMapping bvm;
-  for (auto [blockIdx, blockDim] :
-       llvm::zip(foreachThreadOp.getThreadIndices(), threadMapping)) {
-    bvm.map(
-        blockIdx,
-        threadOps[blockDim.cast<DeviceMappingAttrInterface>().getMappingId()]);
-  }
-
-  // Step 4. Maybe create conditionals to predicate the region.
-  Value predicate;
-  for (auto [threadId, blockDim, globalBlockDim] :
-       llvm::zip(threadOps, blockDims, globalBlockDims)) {
-    if (blockDim > globalBlockDim) {
-      return failureHelper(
-          "The requested GPU threads are fewer than the number of loop trip "
-          "counts. Try to tile scf.foreach_thread before mapping or set "
-          "small blockDim.");
-    }
-    if (blockDim == globalBlockDim)
-      continue;
-    Value blockIdx = rewriter.create<arith::ConstantIndexOp>(loc, blockDim);
-    Value tmpPredicate = rewriter.create<arith::CmpIOp>(
-        loc, arith::CmpIPredicate::ult, threadId, blockIdx);
-    predicate =
-        predicate ? rewriter.create<arith::AndIOp>(loc, predicate, tmpPredicate)
-                  : tmpPredicate;
-  }
-
-  // Step 5. Move the body of foreachThreadOp.
-  // Erase the terminator first, it will not be used.
-  rewriter.eraseOp(foreachThreadOp.getTerminator());
-  Block *targetBlock;
-  Block::iterator insertionPoint;
-  if (predicate) {
-    // Step 5.a. If predicated, move at the beginning.
-    auto ifOp =
-        rewriter.create<scf::IfOp>(loc, predicate, /*withElseRegion=*/false);
-    targetBlock = ifOp.thenBlock();
-    insertionPoint = ifOp.thenBlock()->begin();
-  } else {
-    // Step 5.b. Otherwise, move inline just before foreachThreadOp.
-    targetBlock = foreachThreadOp->getBlock();
-    insertionPoint = Block::iterator(foreachThreadOp);
-  }
-  Block &sourceBlock = foreachThreadOp.getRegion().front();
-  targetBlock->getOperations().splice(insertionPoint,
-                                      sourceBlock.getOperations());
-
-  // Step 6. RAUW thread indices to thread ops.
-  for (Value loopIndex : foreachThreadOp.getThreadIndices()) {
-    Value threadIdx = bvm.lookup(loopIndex);
-    rewriter.replaceAllUsesWith(loopIndex, threadIdx);
-  }
-
-  // Step 7. syncthreads.
-  // TODO: Need warpsync
-  if (syncAfterDistribute)
-    rewriter.create<BarrierOp>(loc);
-
-  // Step 8. Erase old op.
-  rewriter.eraseOp(foreachThreadOp);
-
-  return DiagnosedSilenceableFailure::success();
-}
-
-DiagnosedSilenceableFailure mlir::transform::gpu::mapNestedForeachToThreadsImpl(
-    RewriterBase &rewriter, Operation *target,
-    const SmallVectorImpl<int64_t> &blockDim, bool syncAfterDistribute,
-    std::optional<TransformOpInterface> transformOp,
-    const ArrayRef<DeviceMappingAttrInterface> &threadMappingAttributes) {
+DiagnosedSilenceableFailure mlir::transform::gpu::mapNestedForallToThreadsImpl(
+    RewriterBase &rewriter, std::optional<TransformOpInterface> transformOp,
+    Operation *target, const SmallVectorImpl<int64_t> &kernelBlockDims,
+    bool syncAfterDistribute,
+    const ArrayRef<DeviceMappingAttrInterface> &allMappingAttributes,
+    IdGeneratorFnType idGenerator) {
   DiagnosedSilenceableFailure diag = DiagnosedSilenceableFailure::success();
-  target->walk([&](scf::ForeachThreadOp foreachThreadOp) {
-    diag = checkAttributeType(threadMappingAttributes,
-                              foreachThreadOp.getMapping(), transformOp);
+  target->walk([&](scf::ForallOp forallOp) {
+    // Ignore cases with different attributes.
+    for (Attribute map : forallOp.getMapping()->getValue()) {
+      if (!llvm::is_contained(allMappingAttributes, map)) {
+        return WalkResult::skip();
+      }
+    }
+    diag = verifyGpuMapping(transformOp, forallOp);
     if (diag.succeeded()) {
-      rewriter.setInsertionPoint(foreachThreadOp);
-      diag = rewriteOneForeachThreadToGpuThreads(
-          rewriter, foreachThreadOp, blockDim, syncAfterDistribute, transformOp,
-          threadMappingAttributes);
+      // Take the loc ahead of time
+      Location loc = forallOp.getLoc();
+      OpBuilder::InsertionGuard g(rewriter);
+      rewriter.setInsertionPointAfter(forallOp);
+      if (failed(rewriteOneForallCommonImpl(rewriter, transformOp, forallOp,
+                                            kernelBlockDims,
+                                            allMappingAttributes, idGenerator)))
+        diag = DiagnosedSilenceableFailure::definiteFailure();
+      // Add a syncthreads if needed. TODO: warpsync
+      if (syncAfterDistribute)
+        rewriter.create<BarrierOp>(loc);
     }
     return diag.succeeded() ? WalkResult::advance() : WalkResult::interrupt();
   });
   return diag;
 }
 
-DiagnosedSilenceableFailure transform::MapNestedForeachToThreads::applyToOne(
+DiagnosedSilenceableFailure transform::MapNestedForallToThreads::applyToOne(
     Operation *target, ApplyToEachResultList &results, TransformState &state) {
   LaunchOp gpuLaunch = dyn_cast<LaunchOp>(target);
   auto transformOp = cast<TransformOpInterface>(getOperation());
 
-  if (!gpuLaunch) {
-    return emitSilenceableError() << "Given target is not gpu.launch";
-  }
+  // Basic high-level verifications.
+  if (!gpuLaunch)
+    return emitSilenceableError() << "Given target is not a gpu.launch";
 
-  SmallVector<int64_t> blockDim = extractFromI64ArrayAttr(getBlockDim());
-  blockDim.resize(/*size=*/3, /*value=*/1);
+  SmallVector<int64_t> blockDims = extractFromI64ArrayAttr(getBlockDim());
+  if (blockDims.size() != 3)
+    return transformOp.emitDefiniteFailure("transform require size-3 mapping");
 
   DiagnosedSilenceableFailure diag =
       checkGpuLimits(transformOp, std::nullopt, std::nullopt, std::nullopt,
-                     blockDim[0], blockDim[1], blockDim[2]);
+                     blockDims[0], blockDims[1], blockDims[2]);
   if (diag.isSilenceableFailure()) {
-    diag.attachNote(getLoc()) << getBlockDimAttrName() << " is very large";
+    diag.attachNote(getLoc()) << getBlockDimAttrName() << " is too large";
     return diag;
   }
 
   MLIRContext *ctx = getContext();
-  TrivialPatternRewriter rewriter(ctx);
-  rewriter.setInsertionPoint(target);
+  IRRewriter rewriter(ctx);
+  MappingToGpuThreadsHelper helper(ctx);
+  diag = mlir::transform::gpu::mapNestedForallToThreadsImpl(
+      rewriter, transformOp, target, blockDims, getSyncAfterDistribute(),
+      helper.mappingAttributes, helper.idGenerator);
 
-  SmallVector<DeviceMappingAttrInterface> threadMappingAttributes = {
-      GPUThreadMappingAttr::get(ctx, Threads::DimX),
-      GPUThreadMappingAttr::get(ctx, Threads::DimY),
-      GPUThreadMappingAttr::get(ctx, Threads::DimZ)};
+  if (!diag.succeeded())
+    return diag;
 
-  diag = mlir::transform::gpu::mapNestedForeachToThreadsImpl(
-      rewriter, target, blockDim, getSyncAfterDistribute(), transformOp,
-      threadMappingAttributes);
-
-  if (diag.succeeded()) {
-    diag = alterGpuLaunch(rewriter, gpuLaunch, transformOp, std::nullopt,
-                          std::nullopt, std::nullopt, blockDim[0], blockDim[1],
-                          blockDim[2]);
-  }
+  diag = alterGpuLaunch(rewriter, gpuLaunch, transformOp, std::nullopt,
+                        std::nullopt, std::nullopt, blockDims[0], blockDims[1],
+                        blockDims[2]);
 
   results.push_back(gpuLaunch.getOperation());
   return diag;

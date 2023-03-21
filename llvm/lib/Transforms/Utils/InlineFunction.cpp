@@ -23,7 +23,6 @@
 #include "llvm/Analysis/BlockFrequencyInfo.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/CaptureTracking.h"
-#include "llvm/Analysis/EHPersonalities.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/MemoryProfileInfo.h"
 #include "llvm/Analysis/ObjCARCAnalysisUtils.h"
@@ -42,6 +41,7 @@
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Dominators.h"
+#include "llvm/IR/EHPersonalities.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InlineAsm.h"
@@ -1537,7 +1537,8 @@ static void UpdateCallGraphAfterInlining(CallBase &CB,
 
 static void HandleByValArgumentInit(Type *ByValType, Value *Dst, Value *Src,
                                     Module *M, BasicBlock *InsertBlock,
-                                    InlineFunctionInfo &IFI) {
+                                    InlineFunctionInfo &IFI,
+                                    Function *CalledFunc) {
   IRBuilder<> Builder(InsertBlock, InsertBlock->begin());
 
   Value *Size =
@@ -1546,8 +1547,15 @@ static void HandleByValArgumentInit(Type *ByValType, Value *Dst, Value *Src,
   // Always generate a memcpy of alignment 1 here because we don't know
   // the alignment of the src pointer.  Other optimizations can infer
   // better alignment.
-  Builder.CreateMemCpy(Dst, /*DstAlign*/ Align(1), Src,
-                       /*SrcAlign*/ Align(1), Size);
+  CallInst *CI = Builder.CreateMemCpy(Dst, /*DstAlign*/ Align(1), Src,
+                                      /*SrcAlign*/ Align(1), Size);
+
+  // The verifier requires that all calls of debug-info-bearing functions
+  // from debug-info-bearing functions have a debug location (for inlining
+  // purposes). Assign a dummy location to satisfy the constraint.
+  if (!CI->getDebugLoc() && InsertBlock->getParent()->getSubprogram())
+    if (DISubprogram *SP = CalledFunc->getSubprogram())
+      CI->setDebugLoc(DILocation::get(SP->getContext(), 0, 0, SP));
 }
 
 /// When inlining a call site that has a byval argument,
@@ -2242,7 +2250,7 @@ llvm::InlineResult llvm::InlineFunction(CallBase &CB, InlineFunctionInfo &IFI,
     // Inject byval arguments initialization.
     for (ByValInit &Init : ByValInits)
       HandleByValArgumentInit(Init.Ty, Init.Dst, Init.Src, Caller->getParent(),
-                              &*FirstNewBlock, IFI);
+                              &*FirstNewBlock, IFI, CalledFunc);
 
     std::optional<OperandBundleUse> ParentDeopt =
         CB.getOperandBundle(LLVMContext::OB_deopt);
@@ -2333,7 +2341,7 @@ llvm::InlineResult llvm::InlineFunction(CallBase &CB, InlineFunctionInfo &IFI,
       for (BasicBlock &NewBlock :
            make_range(FirstNewBlock->getIterator(), Caller->end()))
         for (Instruction &I : NewBlock)
-          if (auto *II = dyn_cast<CondGuardInst>(&I))
+          if (auto *II = dyn_cast<AssumeInst>(&I))
             IFI.GetAssumptionCache(*Caller).registerAssumption(II);
   }
 

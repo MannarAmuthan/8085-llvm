@@ -382,8 +382,8 @@ private:
 
 public:
   ELFLinkGraphBuilder_aarch64(StringRef FileName,
-                              const object::ELFFile<ELFT> &Obj, const Triple T)
-      : ELFLinkGraphBuilder<ELFT>(Obj, std::move(T), FileName,
+                              const object::ELFFile<ELFT> &Obj, Triple TT)
+      : ELFLinkGraphBuilder<ELFT>(Obj, std::move(TT), FileName,
                                   aarch64::getEdgeKindName) {}
 };
 
@@ -552,6 +552,7 @@ void link_ELF_aarch64(std::unique_ptr<LinkGraph> G,
     Config.PrePrunePasses.push_back(EHFrameEdgeFixer(
         ".eh_frame", 8, aarch64::Pointer32, aarch64::Pointer64,
         aarch64::Delta32, aarch64::Delta64, aarch64::NegDelta32));
+    Config.PrePrunePasses.push_back(EHFrameNullTerminator(".eh_frame"));
 
     // Add a mark-live pass.
     if (auto MarkLive = Ctx->getMarkLivePass(TT))

@@ -15,7 +15,6 @@
 #include "ExecutionUtils.h"
 #include "ForwardingMemoryManager.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/ADT/Triple.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
@@ -68,6 +67,7 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/WithColor.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/TargetParser/Triple.h"
 #include "llvm/Transforms/Instrumentation.h"
 #include <cerrno>
 #include <optional>
@@ -663,10 +663,6 @@ int main(int argc, char **argv, char * const *envp) {
 #endif
   }
 
-  std::unique_ptr<orc::ExecutorProcessControl> EPC =
-      RemoteMCJIT ? ExitOnErr(launchRemote())
-                  : ExitOnErr(orc::SelfExecutorProcessControl::Create());
-
   if (!RemoteMCJIT) {
     // If the program doesn't explicitly call exit, we will need the Exit
     // function later on to make an explicit call, so get the function now.
@@ -712,6 +708,7 @@ int main(int argc, char **argv, char * const *envp) {
     abort();
   } else {
     // else == "if (RemoteMCJIT)"
+    std::unique_ptr<orc::ExecutorProcessControl> EPC = ExitOnErr(launchRemote());
 
     // Remote target MCJIT doesn't (yet) support static constructors. No reason
     // it couldn't. This is a limitation of the LLI implementation, not the
@@ -949,9 +946,22 @@ int runOrcJIT(const char *ProgName) {
   auto J = ExitOnErr(Builder.create());
 
   auto *ObjLayer = &J->getObjLinkingLayer();
-  if (auto *RTDyldObjLayer = dyn_cast<orc::RTDyldObjectLinkingLayer>(ObjLayer))
+  if (auto *RTDyldObjLayer = dyn_cast<orc::RTDyldObjectLinkingLayer>(ObjLayer)) {
     RTDyldObjLayer->registerJITEventListener(
         *JITEventListener::createGDBRegistrationListener());
+#if LLVM_USE_OPROFILE
+    RTDyldObjLayer->registerJITEventListener(
+        *JITEventListener::createOProfileJITEventListener());
+#endif
+#if LLVM_USE_INTEL_JITEVENTS
+    RTDyldObjLayer->registerJITEventListener(
+        *JITEventListener::createIntelJITEventListener());
+#endif
+#if LLVM_USE_PERF
+    RTDyldObjLayer->registerJITEventListener(
+        *JITEventListener::createPerfJITEventListener());
+#endif
+  }
 
   if (PerModuleLazy)
     J->setPartitionFunction(orc::CompileOnDemandLayer::compileWholeModule);
@@ -1061,7 +1071,7 @@ int runOrcJIT(const char *ProgName) {
       auto JDItr = std::prev(IdxToDylib.lower_bound(EAIdx));
       auto &JD = *JDItr->second;
       JD.addGenerator(ExitOnErr(orc::StaticLibraryDefinitionGenerator::Load(
-          J->getObjLinkingLayer(), EAItr->c_str(), *TT)));
+          J->getObjLinkingLayer(), EAItr->c_str())));
     }
   }
 

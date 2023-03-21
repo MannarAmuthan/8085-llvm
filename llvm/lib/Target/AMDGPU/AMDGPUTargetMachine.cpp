@@ -19,6 +19,7 @@
 #include "AMDGPUExportClustering.h"
 #include "AMDGPUIGroupLP.h"
 #include "AMDGPUMacroFusion.h"
+#include "AMDGPURegBankSelect.h"
 #include "AMDGPUTargetObjectFile.h"
 #include "AMDGPUTargetTransformInfo.h"
 #include "GCNIterativeScheduler.h"
@@ -43,7 +44,6 @@
 #include "llvm/CodeGen/RegAllocRegistry.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/IR/IntrinsicsAMDGPU.h"
-#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/InitializePasses.h"
@@ -216,6 +216,12 @@ static cl::opt<bool> EarlyInlineAll(
   cl::init(false),
   cl::Hidden);
 
+static cl::opt<bool> RemoveIncompatibleFunctions(
+    "amdgpu-enable-remove-incompatible-functions", cl::Hidden,
+    cl::desc("Enable removal of functions when they"
+             "use features not supported by the target GPU"),
+    cl::init(true));
+
 static cl::opt<bool> EnableSDWAPeephole(
   "amdgpu-sdwa-peephole",
   cl::desc("Enable SDWA peepholer"),
@@ -373,12 +379,14 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAMDGPUTarget() {
   initializeAMDGPUPostLegalizerCombinerPass(*PR);
   initializeAMDGPUPreLegalizerCombinerPass(*PR);
   initializeAMDGPURegBankCombinerPass(*PR);
+  initializeAMDGPURegBankSelectPass(*PR);
   initializeAMDGPUPromoteAllocaPass(*PR);
   initializeAMDGPUPromoteAllocaToVectorPass(*PR);
   initializeAMDGPUCodeGenPreparePass(*PR);
   initializeAMDGPULateCodeGenPreparePass(*PR);
   initializeAMDGPUPropagateAttributesEarlyPass(*PR);
   initializeAMDGPUPropagateAttributesLatePass(*PR);
+  initializeAMDGPURemoveIncompatibleFunctionsPass(*PR);
   initializeAMDGPUReplaceLDSUseWithPointerPass(*PR);
   initializeAMDGPULowerModuleLDSPass(*PR);
   initializeAMDGPURewriteOutArgumentsPass(*PR);
@@ -1039,6 +1047,9 @@ void AMDGPUPassConfig::addIRPasses() {
 
 void AMDGPUPassConfig::addCodeGenPrepare() {
   if (TM->getTargetTriple().getArch() == Triple::amdgcn) {
+    if (RemoveIncompatibleFunctions)
+      addPass(createAMDGPURemoveIncompatibleFunctionsPass(TM));
+
     addPass(createAMDGPUAttributorPass());
 
     // FIXME: This pass adds 2 hacky attributes that can be replaced with an
@@ -1211,7 +1222,7 @@ void GCNPassConfig::addPreRegBankSelect() {
 }
 
 bool GCNPassConfig::addRegBankSelect() {
-  addPass(new RegBankSelect());
+  addPass(new AMDGPURegBankSelect());
   return false;
 }
 

@@ -27,9 +27,7 @@ include "I8085RegisterInfo.td"
 include "I8085InstrInfo.td"
 
 
-def I8085InstrInfo : InstrInfo {
-  let useDeprecatedPositionallyEncodedOperands = true;
-}
+def I8085InstrInfo : InstrInfo;
 
 //===---------------------------------------------------------------------===//
 // Calling Conventions
