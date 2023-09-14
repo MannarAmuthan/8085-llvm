@@ -1,5 +1,7 @@
 # This file sets up a CMakeCache for a Fuchsia toolchain build.
 
+option(FUCHSIA_ENABLE_LLDB "Enable LLDB")
+
 set(LLVM_TARGETS_TO_BUILD X86;ARM;AArch64;RISCV CACHE STRING "")
 
 set(PACKAGE_VENDOR Fuchsia CACHE STRING "")
@@ -30,11 +32,26 @@ set(_FUCHSIA_BOOTSTRAP_PASSTHROUGH
   LLVM_ENABLE_LIBXML2
   LibXml2_ROOT
   LLVM_ENABLE_CURL
+  LLVM_ENABLE_HTTPLIB
+  LLVM_ENABLE_TERMINFO
+  LLVM_ENABLE_LIBEDIT
   CURL_ROOT
   OpenSSL_ROOT
+  httplib_ROOT
+  CursesAndPanel_ROOT
+  Terminfo_ROOT
+  LibEdit_ROOT
   FUCHSIA_ENABLE_LLDB
   LLDB_ENABLE_CURSES
   LLDB_ENABLE_LIBEDIT
+  LLDB_ENABLE_PYTHON
+  LLDB_EMBED_PYTHON_HOME
+  LLDB_PYTHON_HOME
+  LLDB_PYTHON_RELATIVE_PATH
+  Python3_EXECUTABLE
+  Python3_LIBRARIES
+  Python3_INCLUDE_DIRS
+  Python3_RPATH
   CMAKE_FIND_PACKAGE_PREFER_CONFIG
   CMAKE_SYSROOT
   CMAKE_MODULE_LINKER_FLAGS
@@ -86,7 +103,6 @@ endif()
 
 if(WIN32)
   set(LIBCXX_ABI_VERSION 2 CACHE STRING "")
-  set(LIBCXX_ENABLE_FILESYSTEM OFF CACHE BOOL "")
   set(LIBCXX_ENABLE_ABI_LINKER_SCRIPT OFF CACHE BOOL "")
   set(LIBCXX_ENABLE_SHARED OFF CACHE BOOL "")
   set(BUILTINS_CMAKE_ARGS -DCMAKE_SYSTEM_NAME=Windows CACHE STRING "")
@@ -156,17 +172,23 @@ set(_FUCHSIA_BOOTSTRAP_TARGETS
   llvm-test-depends
   test-suite
   test-depends
-  distribution
-  install-distribution
-  install-distribution-stripped
-  install-distribution-toolchain
+  toolchain-distribution
+  install-toolchain-distribution
+  install-toolchain-distribution-stripped
+  install-toolchain-distribution-toolchain
   clang)
 
-set(FUCHSIA_ENABLE_LLDB OFF CACHE BOOL "Enable LLDB")
 if(FUCHSIA_ENABLE_LLDB)
   list(APPEND _FUCHSIA_ENABLE_PROJECTS lldb)
-  list(APPEND _FUCHSIA_BOOTSTRAP_TARGETS check-lldb lldb-test-depends)
+  list(APPEND _FUCHSIA_BOOTSTRAP_TARGETS
+    check-lldb
+    lldb-test-depends
+    debugger-distribution
+    install-debugger-distribution
+    install-debugger-distribution-stripped
+    install-debugger-distribution-toolchain)
 endif()
+
 set(LLVM_ENABLE_PROJECTS ${_FUCHSIA_ENABLE_PROJECTS} CACHE STRING "")
 set(CLANG_BOOTSTRAP_TARGETS ${_FUCHSIA_BOOTSTRAP_TARGETS} CACHE STRING "")
 
@@ -174,7 +196,8 @@ get_cmake_property(variableNames VARIABLES)
 foreach(variableName ${variableNames})
   if(variableName MATCHES "^STAGE2_")
     string(REPLACE "STAGE2_" "" new_name ${variableName})
-    list(APPEND EXTRA_ARGS "-D${new_name}=${${variableName}}")
+    string(REPLACE ";" "|" value "${${variableName}}")
+    list(APPEND EXTRA_ARGS "-D${new_name}=${value}")
   endif()
 endforeach()
 

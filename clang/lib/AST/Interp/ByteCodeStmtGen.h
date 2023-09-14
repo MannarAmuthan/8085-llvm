@@ -54,6 +54,7 @@ private:
   // Statement visitors.
   bool visitStmt(const Stmt *S);
   bool visitCompoundStmt(const CompoundStmt *S);
+  bool visitLoopBody(const Stmt *S);
   bool visitDeclStmt(const DeclStmt *DS);
   bool visitReturnStmt(const ReturnStmt *RS);
   bool visitIfStmt(const IfStmt *IS);
@@ -66,6 +67,9 @@ private:
   bool visitSwitchStmt(const SwitchStmt *S);
   bool visitCaseStmt(const CaseStmt *S);
   bool visitDefaultStmt(const DefaultStmt *S);
+  bool visitAsmStmt(const AsmStmt *S);
+
+  bool emitLambdaStaticInvokerBody(const CXXMethodDecl *MD);
 
   /// Type of the expression returned by the function.
   std::optional<PrimType> ReturnType;

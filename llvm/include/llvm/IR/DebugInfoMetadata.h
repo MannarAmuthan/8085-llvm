@@ -22,6 +22,7 @@
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Metadata.h"
+#include "llvm/IR/PseudoProbe.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Discriminator.h"
@@ -1377,7 +1378,8 @@ public:
     Default = 0,
     GNU = 1,
     None = 2,
-    LastDebugNameTableKind = None
+    Apple = 3,
+    LastDebugNameTableKind = Apple
   };
 
   static std::optional<DebugEmissionKind> getEmissionKind(StringRef Str);
@@ -1817,6 +1819,7 @@ public:
   DISubprogram *getDeclaration() const {
     return cast_or_null<DISubprogram>(getRawDeclaration());
   }
+  void replaceDeclaration(DISubprogram *Decl) { replaceOperandWith(6, Decl); }
   DINodeArray getRetainedNodes() const {
     return cast_or_null<MDTuple>(getRawRetainedNodes());
   }
@@ -1855,6 +1858,9 @@ public:
 
   void replaceRawLinkageName(MDString *LinkageName) {
     replaceOperandWith(3, LinkageName);
+  }
+  void replaceRetainedNodes(DINodeArray N) {
+    replaceOperandWith(7, N.get());
   }
 
   /// Check if this subprogram describes the given function.
@@ -1921,7 +1927,7 @@ public:
 
   /// Return the linkage name of Subprogram. If the linkage name is empty,
   /// return scope name (the demangled name).
-  const StringRef getSubprogramLinkageName() const {
+  StringRef getSubprogramLinkageName() const {
     DISubprogram *SP = getScope()->getSubprogram();
     if (!SP)
       return "";
@@ -2048,15 +2054,13 @@ public:
   /// use the scope of any location.
   ///
   /// \p LocA \p LocB: The locations to be merged.
-  static const DILocation *getMergedLocation(const DILocation *LocA,
-                                             const DILocation *LocB);
+  static DILocation *getMergedLocation(DILocation *LocA, DILocation *LocB);
 
   /// Try to combine the vector of locations passed as input in a single one.
   /// This function applies getMergedLocation() repeatedly left-to-right.
   ///
   /// \p Locs: The locations to be merged.
-  static const DILocation *
-  getMergedLocations(ArrayRef<const DILocation *> Locs);
+  static DILocation *getMergedLocations(ArrayRef<DILocation *> Locs);
 
   /// Return the masked discriminator value for an input discrimnator value D
   /// (i.e. zero out the (B+1)-th and above bits for D (B is 0-base).
@@ -2072,6 +2076,14 @@ public:
   static unsigned
   getBaseDiscriminatorFromDiscriminator(unsigned D,
                                         bool IsFSDiscriminator = false) {
+    // Return the probe id instead of zero for a pseudo probe discriminator.
+    // This should help differenciate callsites with same line numbers to
+    // achieve a decent AutoFDO profile under -fpseudo-probe-for-profiling,
+    // where the original callsite dwarf discriminator is overwritten by
+    // callsite probe information.
+    if (isPseudoProbeDiscriminator(D))
+      return PseudoProbeDwarfDiscriminator::extractProbeIndex(D);
+
     if (IsFSDiscriminator)
       return getMaskedDiscriminator(D, getBaseDiscriminatorBits());
     return getUnsignedFromPrefixEncoding(D);
@@ -2308,6 +2320,12 @@ DILocation::cloneWithBaseDiscriminator(unsigned D) const {
 std::optional<const DILocation *>
 DILocation::cloneByMultiplyingDuplicationFactor(unsigned DF) const {
   assert(!EnableFSDiscriminator && "FSDiscriminator should not call this.");
+  // Do no interfere with pseudo probes. Pseudo probe doesn't need duplication
+  // factor support as samples collected on cloned probes will be aggregated.
+  // Also pseudo probe at a callsite uses the dwarf discriminator to store
+  // pseudo probe related information, such as the probe id.
+  if (isPseudoProbeDiscriminator(getDiscriminator()))
+    return this;
 
   DF *= getDuplicationFactor();
   if (DF <= 1)
@@ -2786,6 +2804,9 @@ public:
 
   /// Holds the characteristics of one fragment of a larger variable.
   struct FragmentInfo {
+    FragmentInfo() = default;
+    FragmentInfo(uint64_t SizeInBits, uint64_t OffsetInBits)
+        : SizeInBits(SizeInBits), OffsetInBits(OffsetInBits) {}
     uint64_t SizeInBits;
     uint64_t OffsetInBits;
     /// Return the index of the first bit of the fragment.
@@ -2793,6 +2814,16 @@ public:
     /// Return the index of the bit after the end of the fragment, e.g. for
     /// fragment offset=16 and size=32 return their sum, 48.
     uint64_t endInBits() const { return OffsetInBits + SizeInBits; }
+
+    /// Returns a zero-sized fragment if A and B don't intersect.
+    static DIExpression::FragmentInfo intersect(DIExpression::FragmentInfo A,
+                                                DIExpression::FragmentInfo B) {
+      uint64_t StartInBits = std::max(A.OffsetInBits, B.OffsetInBits);
+      uint64_t EndInBits = std::min(A.endInBits(), B.endInBits());
+      if (EndInBits <= StartInBits)
+        return {0, 0};
+      return DIExpression::FragmentInfo(EndInBits - StartInBits, StartInBits);
+    }
   };
 
   /// Retrieve the details of this fragment expression.
@@ -3817,6 +3848,18 @@ template <> struct DenseMapInfo<DebugVariable> {
   }
 };
 
+/// Identifies a unique instance of a whole variable (discards/ignores fragment
+/// information).
+class DebugVariableAggregate : public DebugVariable {
+public:
+  DebugVariableAggregate(const DbgVariableIntrinsic *DVI);
+  DebugVariableAggregate(const DebugVariable &V)
+      : DebugVariable(V.getVariable(), std::nullopt, V.getInlinedAt()) {}
+};
+
+template <>
+struct DenseMapInfo<DebugVariableAggregate>
+    : public DenseMapInfo<DebugVariable> {};
 } // end namespace llvm
 
 #undef DEFINE_MDNODE_GET_UNPACK_IMPL

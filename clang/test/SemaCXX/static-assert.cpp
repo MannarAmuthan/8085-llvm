@@ -29,13 +29,29 @@ template<typename T> struct S {
 S<char> s1; // expected-note {{in instantiation of template class 'S<char>' requested here}}
 S<int> s2;
 
-static_assert(false, L"\xFFFFFFFF"); // expected-error {{static assertion failed: L"\xFFFFFFFF"}}
-static_assert(false, u"\U000317FF"); // expected-error {{static assertion failed: u"\U000317FF"}}
+static_assert(false, L"\xFFFFFFFF"); // expected-warning {{encoding prefix 'L' on an unevaluated string literal has no effect and is incompatible with c++2c}} \
+                                     // expected-error {{invalid escape sequence '\xFFFFFFFF' in an unevaluated string literal}} \
+                                     // expected-error {{hex escape sequence out of range}}
+static_assert(false, u"\U000317FF"); // expected-warning {{encoding prefix 'u' on an unevaluated string literal has no effect and is incompatible with c++2c}} \
+                                     // expected-error {{static assertion failed}}
 
-static_assert(false, u8"Ω"); // expected-error {{static assertion failed: u8"\316\251"}}
-static_assert(false, L"\u1234"); // expected-error {{static assertion failed: L"\x1234"}}
-static_assert(false, L"\x1ff" "0\x123" "fx\xfffff" "goop"); // expected-error {{static assertion failed: L"\x1FF""0\x123""fx\xFFFFFgoop"}}
+static_assert(false, u8"Ω");     // expected-warning {{encoding prefix 'u8' on an unevaluated string literal has no effect and is incompatible with c++2c}} \
+                                 // expected-error {{static assertion failed: Ω}}
+static_assert(false, L"\u1234"); // expected-warning {{encoding prefix 'L' on an unevaluated string literal has no effect and is incompatible with c++2c}} \
+                                 // expected-error {{static assertion failed: ሴ}}
 
+static_assert(false, L"\x1ff"    // expected-warning {{encoding prefix 'L' on an unevaluated string literal has no effect and is incompatible with c++2c}} \
+                                 // expected-error {{hex escape sequence out of range}} \
+                                 // expected-error {{invalid escape sequence '\x1ff' in an unevaluated string literal}}
+                     "0\x123"    // expected-error {{invalid escape sequence '\x123' in an unevaluated string literal}}
+                     "fx\xfffff" // expected-error {{invalid escape sequence '\xfffff' in an unevaluated string literal}}
+                     "goop");
+
+static_assert(false, "\'\"\?\\\a\b\f\n\r\t\v"); // expected-error {{'"?\<U+0007><U+0008>}}
+static_assert(true, "\xFF"); // expected-error {{invalid escape sequence '\xFF' in an unevaluated string literal}}
+static_assert(true, "\123"); // expected-error {{invalid escape sequence '\123' in an unevaluated string literal}}
+static_assert(true, "\pOh no, a Pascal string!"); // expected-warning {{unknown escape sequence '\p'}} \
+                                                  // expected-error {{invalid escape sequence '\p' in an unevaluated string literal}}
 static_assert(false, R"(a
 \tb
 c
@@ -258,8 +274,14 @@ namespace Diagnostics {
   constexpr bool invert(bool b) {
     return !b;
   }
-  static_assert(invert(true) == invert(false), ""); // expected-error {{failed}} \
+
+  static_assert(invert(true) || invert(true), ""); // expected-error {{static assertion failed due to requirement 'invert(true) || invert(true)'}}
+  static_assert(invert(true) == invert(false), ""); // expected-error {{static assertion failed due to requirement 'invert(true) == invert(false)'}} \
                                                     // expected-note {{evaluates to 'false == true'}}
+  static_assert(true && false, ""); // expected-error {{static assertion failed due to requirement 'true && false'}}
+  static_assert(invert(true) || invert(true) || false, ""); // expected-error {{static assertion failed due to requirement 'invert(true) || invert(true) || false'}}
+  static_assert((true && invert(true)) || false, ""); // expected-error {{static assertion failed due to requirement '(true && invert(true)) || false'}}
+  static_assert(true && invert(false) && invert(true), ""); // expected-error {{static assertion failed due to requirement 'invert(true)'}}
 
   /// No notes here since we compare a bool expression with a bool literal.
   static_assert(invert(true) == true, ""); // expected-error {{failed}}
@@ -281,5 +303,28 @@ namespace Diagnostics {
   static_assert(CHECK_4(a) && A_IS_B, ""); // expected-error {{failed}} \
                                            // expected-note {{evaluates to '4 == 5'}}
 
+  static_assert(
+    false, // expected-error {{static assertion failed}}
+    ""
+  );
+
+  static_assert(
+    true && false, // expected-error {{static assertion failed due to requirement 'true && false'}}
+    ""
+  );
+
+  static_assert(
+    // with a comment here
+    true && false, // expected-error {{static assertion failed due to requirement 'true && false'}}
+    ""
+  );
+
+  static_assert(
+    // with a comment here
+    (true && // expected-error {{static assertion failed due to requirement '(true && false) || false'}}
+    false)
+    || false,
+    ""
+  );
 
 }

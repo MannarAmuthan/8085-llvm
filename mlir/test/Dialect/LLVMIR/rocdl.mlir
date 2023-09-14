@@ -262,9 +262,11 @@ llvm.func @rocdl.raw.buffer.i32(%rsrc : vector<4xi32>,
   // CHECK-LABEL: rocdl.raw.buffer.i32
   // CHECK: rocdl.raw.buffer.atomic.smax %{{.*}} %{{.*}} %{{.*}} %{{.*}} %{{.*}} : i32
   // CHECK: rocdl.raw.buffer.atomic.umin %{{.*}} %{{.*}} %{{.*}} %{{.*}} %{{.*}} : i32
+  // CHECK: %{{.*}} = rocdl.raw.buffer.atomic.cmpswap(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : i32, vector<4xi32>
 
   rocdl.raw.buffer.atomic.smax %vdata1, %rsrc, %offset, %soffset, %aux : i32
   rocdl.raw.buffer.atomic.umin %vdata1, %rsrc, %offset, %soffset, %aux : i32
+  %val = rocdl.raw.buffer.atomic.cmpswap(%vdata1, %vdata1, %rsrc, %offset, %soffset, %aux) : i32, vector<4xi32>
   llvm.return
 }
 
@@ -272,3 +274,12 @@ llvm.func @rocdl.raw.buffer.i32(%rsrc : vector<4xi32>,
 
 // expected-error@below {{attribute attached to unexpected op}}
 func.func private @expected_llvm_func() attributes { rocdl.kernel }
+
+// -----
+
+// Just check these don't emit errors.
+gpu.module @module_1 [#rocdl.target<O = 1, chip = "gfx900", abi = "500", link = ["my_device_lib.bc"], flags = {fast, daz, unsafe_math}>] {
+}
+
+gpu.module @module_2 [#rocdl.target<chip = "gfx900">, #rocdl.target<chip = "gfx90a">] {
+}

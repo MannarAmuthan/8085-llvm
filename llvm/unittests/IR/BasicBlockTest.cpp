@@ -101,7 +101,7 @@ TEST(BasicBlockTest, TestInstructionsWithoutDebug) {
   LLVMContext Ctx;
 
   Module *M = new Module("MyModule", Ctx);
-  Type *ArgTy1[] = {Type::getInt32PtrTy(Ctx)};
+  Type *ArgTy1[] = {PointerType::getUnqual(Ctx)};
   FunctionType *FT = FunctionType::get(Type::getVoidTy(Ctx), ArgTy1, false);
   Argument *V = new Argument(Type::getInt32Ty(Ctx));
   Function *F = Function::Create(FT, Function::ExternalLinkage, "", M);
@@ -539,5 +539,44 @@ TEST(BasicBlockTest, EraseRange) {
   BB0->erase(BB0->begin(), BB0->end());
   EXPECT_TRUE(BB0->empty());
 }
+
+TEST(BasicBlockTest, DiscardValueNames) {
+  const char *ModuleString = "declare void @f(i32 %dangling)";
+  SMDiagnostic Err;
+  LLVMContext Ctx;
+  { // Scope of M.
+    auto M = parseAssemblyString(ModuleString, Err, Ctx);
+    ASSERT_TRUE(M.get());
+    EXPECT_FALSE(Ctx.shouldDiscardValueNames());
+  }
+  { // Scope of M.
+    auto M = parseAssemblyString(ModuleString, Err, Ctx);
+    ASSERT_TRUE(M.get());
+    Ctx.setDiscardValueNames(true);
+  }
+}
+
+TEST(BasicBlockTest, DiscardValueNames2) {
+  SMDiagnostic Err;
+  LLVMContext Ctx;
+  Module M("Mod", Ctx);
+  auto FTy = FunctionType::get(Type::getVoidTy(M.getContext()),
+                               {Type::getInt32Ty(Ctx)}, /*isVarArg=*/false);
+  { // Scope of F.
+    Function *F = Function::Create(FTy, Function::ExternalLinkage, "f", &M);
+    F->getArg(0)->setName("dangling");
+    F->removeFromParent();
+    EXPECT_FALSE(Ctx.shouldDiscardValueNames());
+    delete F;
+  }
+  { // Scope of F.
+    Function *F = Function::Create(FTy, Function::ExternalLinkage, "f", &M);
+    F->getArg(0)->setName("dangling");
+    F->removeFromParent();
+    Ctx.setDiscardValueNames(true);
+    delete F;
+  }
+}
+
 } // End anonymous namespace.
 } // End llvm namespace.

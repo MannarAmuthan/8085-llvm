@@ -22,6 +22,11 @@ namespace fir {
 class FIROpsDialect;
 class KindMapping;
 using KindTy = unsigned;
+
+namespace detail {
+struct RecordTypeStorage;
+} // namespace detail
+
 } // namespace fir
 
 //===----------------------------------------------------------------------===//
@@ -173,7 +178,9 @@ inline bool isa_char_string(mlir::Type t) {
 
 /// Is `t` a box type for which it is not possible to deduce the box size?
 /// It is not possible to deduce the size of a box that describes an entity
-/// of unknown rank or type.
+/// of unknown rank.
+/// Unknown type are always considered to have the size of derived type box
+/// (since they may hold one), and are not considered to be unknown size.
 bool isa_unknown_size_box(mlir::Type t);
 
 /// Returns true iff `t` is a fir.char type and has an unknown length.
@@ -328,6 +335,9 @@ inline bool boxHasAddendum(fir::BaseBoxType boxTy) {
          fir::isUnlimitedPolymorphicType(boxTy);
 }
 
+/// Get the rank from a !fir.box type.
+unsigned getBoxRank(mlir::Type boxTy);
+
 /// Return the inner type of the given type.
 mlir::Type unwrapInnerType(mlir::Type ty);
 
@@ -356,6 +366,8 @@ bool hasAbstractResult(mlir::FunctionType ty);
 /// Convert llvm::Type::TypeID to mlir::Type
 mlir::Type fromRealTypeID(mlir::MLIRContext *context, llvm::Type::TypeID typeID,
                           fir::KindTy kind);
+
+int getTypeCode(mlir::Type ty, const KindMapping &kindMap);
 
 inline bool BaseBoxType::classof(mlir::Type type) {
   return type.isa<fir::BoxType, fir::ClassType>();
@@ -408,6 +420,13 @@ inline bool isBoxAddress(mlir::Type t) {
 inline bool isBoxAddressOrValue(mlir::Type t) {
   return fir::unwrapRefType(t).isa<fir::BaseBoxType>();
 }
+
+/// Return a string representation of `ty`.
+///
+/// fir.array<10x10xf32> -> prefix_10x10xf32
+/// fir.ref<i32> -> prefix_ref_i32
+std::string getTypeAsString(mlir::Type ty, const KindMapping &kindMap,
+                            llvm::StringRef prefix = "");
 
 } // namespace fir
 

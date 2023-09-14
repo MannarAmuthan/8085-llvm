@@ -702,7 +702,7 @@ public:
               [&](const Fortran::evaluate::characteristics::DummyDataObject
                       &dummy) {
                 const auto &entity = getDataObjectEntity(std::get<1>(pair));
-                if (dummy.CanBePassedViaImplicitInterface())
+                if (!isBindC && dummy.CanBePassedViaImplicitInterface())
                   handleImplicitDummy(&argCharacteristics, dummy, entity);
                 else
                   handleExplicitDummy(&argCharacteristics, dummy, entity,
@@ -788,10 +788,12 @@ private:
       }
     } else if (dynamicType.category() ==
                Fortran::common::TypeCategory::Derived) {
-      // Derived result need to be allocated by the caller and the result value
-      // must be saved. Derived type in implicit interface cannot have length
-      // parameters.
-      setSaveResult();
+      if (!dynamicType.GetDerivedTypeSpec().IsVectorType()) {
+        // Derived result need to be allocated by the caller and the result
+        // value must be saved. Derived type in implicit interface cannot have
+        // length parameters.
+        setSaveResult();
+      }
       mlir::Type mlirType = translateDynamicType(dynamicType);
       addFirResult(mlirType, FirPlaceHolder::resultEntityPosition,
                    Property::Value);
@@ -869,7 +871,8 @@ private:
 
   // Define when an explicit argument must be passed in a fir.box.
   bool dummyRequiresBox(
-      const Fortran::evaluate::characteristics::DummyDataObject &obj) {
+      const Fortran::evaluate::characteristics::DummyDataObject &obj,
+      bool isBindC) {
     using ShapeAttr = Fortran::evaluate::characteristics::TypeAndShape::Attr;
     using ShapeAttrs = Fortran::evaluate::characteristics::TypeAndShape::Attrs;
     constexpr ShapeAttrs shapeRequiringBox = {
@@ -878,7 +881,7 @@ private:
     if ((obj.type.attrs() & shapeRequiringBox).any())
       // Need to pass shape/coshape info in fir.box.
       return true;
-    if (obj.type.type().IsPolymorphic())
+    if (obj.type.type().IsPolymorphic() && !obj.type.type().IsAssumedType())
       // Need to pass dynamic type info in fir.box.
       return true;
     if (const Fortran::semantics::DerivedTypeSpec *derived =
@@ -886,6 +889,8 @@ private:
       if (const Fortran::semantics::Scope *scope = derived->scope())
         // Need to pass length type parameters in fir.box if any.
         return scope->IsDerivedTypeWithLengthParameter();
+    if (isBindC && obj.type.type().IsAssumedLengthCharacter())
+      return true; // Fortran 2018 18.3.6 point 2 (5)
     return false;
   }
 
@@ -965,20 +970,13 @@ private:
     mlir::Type boxType = fir::wrapInClassOrBoxType(
         type, obj.type.type().IsPolymorphic(), obj.type.type().IsAssumedType());
 
-    if (obj.type.type().IsAssumedType() && isBindC) {
-      mlir::Type voidPtrType = fir::ReferenceType::get(
-          mlir::NoneType::get(&interface.converter.getMLIRContext()));
-      addFirOperand(voidPtrType, nextPassedArgPosition(), Property::BaseAddress,
-                    attrs);
-      addPassedArg(PassEntityBy::BaseAddress, entity, characteristics);
-    } else if (obj.attrs.test(Attrs::Allocatable) ||
-               obj.attrs.test(Attrs::Pointer)) {
+    if (obj.attrs.test(Attrs::Allocatable) || obj.attrs.test(Attrs::Pointer)) {
       // Pass as fir.ref<fir.box> or fir.ref<fir.class>
       mlir::Type boxRefType = fir::ReferenceType::get(boxType);
       addFirOperand(boxRefType, nextPassedArgPosition(), Property::MutableBox,
                     attrs);
       addPassedArg(PassEntityBy::MutableBox, entity, characteristics);
-    } else if (dummyRequiresBox(obj)) {
+    } else if (dummyRequiresBox(obj, isBindC)) {
       // Pass as fir.box or fir.class
       if (isValueAttr)
         TODO(loc, "assumed shape dummy argument with VALUE attribute");
@@ -1182,6 +1180,20 @@ bool Fortran::lower::CallInterface<T>::PassedEntity::mayBeReadByCall() const {
     return true;
   return characteristics->GetIntent() != Fortran::common::Intent::Out;
 }
+
+template <typename T>
+bool Fortran::lower::CallInterface<T>::PassedEntity::testTKR(
+    Fortran::common::IgnoreTKR flag) const {
+  if (!characteristics)
+    return false;
+  const auto *dummy =
+      std::get_if<Fortran::evaluate::characteristics::DummyDataObject>(
+          &characteristics->u);
+  if (!dummy)
+    return false;
+  return dummy->ignoreTKR.test(flag);
+}
+
 template <typename T>
 bool Fortran::lower::CallInterface<T>::PassedEntity::isIntentOut() const {
   if (!characteristics)
@@ -1220,6 +1232,57 @@ bool Fortran::lower::CallInterface<T>::PassedEntity::hasValueAttribute() const {
   return dummy &&
          dummy->attrs.test(
              Fortran::evaluate::characteristics::DummyDataObject::Attr::Value);
+}
+
+template <typename T>
+bool Fortran::lower::CallInterface<T>::PassedEntity::hasAllocatableAttribute()
+    const {
+  if (!characteristics)
+    return false;
+  const auto *dummy =
+      std::get_if<Fortran::evaluate::characteristics::DummyDataObject>(
+          &characteristics->u);
+  using Attrs = Fortran::evaluate::characteristics::DummyDataObject::Attr;
+  return dummy && dummy->attrs.test(Attrs::Allocatable);
+}
+
+template <typename T>
+bool Fortran::lower::CallInterface<
+    T>::PassedEntity::mayRequireIntentoutFinalization() const {
+  // Conservatively assume that the finalization is needed.
+  if (!characteristics)
+    return true;
+
+  // No INTENT(OUT) dummy arguments do not require finalization on entry.
+  if (!isIntentOut())
+    return false;
+
+  const auto *dummy =
+      std::get_if<Fortran::evaluate::characteristics::DummyDataObject>(
+          &characteristics->u);
+  if (!dummy)
+    return true;
+
+  // POINTER/ALLOCATABLE dummy arguments do not require finalization.
+  using Attrs = Fortran::evaluate::characteristics::DummyDataObject::Attr;
+  if (dummy->attrs.test(Attrs::Allocatable) ||
+      dummy->attrs.test(Attrs::Pointer))
+    return false;
+
+  // Polymorphic and unlimited polymorphic INTENT(OUT) dummy arguments
+  // may need finalization.
+  const Fortran::evaluate::DynamicType &type = dummy->type.type();
+  if (type.IsPolymorphic() || type.IsUnlimitedPolymorphic())
+    return true;
+
+  // INTENT(OUT) dummy arguments of derived types require finalization,
+  // if their type has finalization.
+  const Fortran::semantics::DerivedTypeSpec *derived =
+      Fortran::evaluate::GetDerivedTypeSpec(type);
+  if (!derived)
+    return false;
+
+  return Fortran::semantics::IsFinalizable(*derived);
 }
 
 template <typename T>

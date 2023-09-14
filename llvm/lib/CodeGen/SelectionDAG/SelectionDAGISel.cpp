@@ -48,6 +48,7 @@
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachinePassRegistry.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/MachineValueType.h"
 #include "llvm/CodeGen/SchedulerRegistry.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
@@ -59,6 +60,7 @@
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/CodeGen/ValueTypes.h"
+#include "llvm/CodeGen/WinEHFuncInfo.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
@@ -91,7 +93,6 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/KnownBits.h"
-#include "llvm/Support/MachineValueType.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetIntrinsicInfo.h"
@@ -1292,6 +1293,43 @@ bool SelectionDAGISel::PrepareEHLandingPad() {
   return true;
 }
 
+// Mark and Report IPToState for each Block under IsEHa
+void SelectionDAGISel::reportIPToStateForBlocks(MachineFunction *MF) {
+  MachineModuleInfo &MMI = MF->getMMI();
+  llvm::WinEHFuncInfo *EHInfo = MF->getWinEHFuncInfo();
+  if (!EHInfo)
+    return;
+  for (auto MBBI = MF->begin(), E = MF->end(); MBBI != E; ++MBBI) {
+    MachineBasicBlock *MBB = &*MBBI;
+    const BasicBlock *BB = MBB->getBasicBlock();
+    int State = EHInfo->BlockToStateMap[BB];
+    if (BB->getFirstMayFaultInst()) {
+      // Report IP range only for blocks with Faulty inst
+      auto MBBb = MBB->getFirstNonPHI();
+      MachineInstr *MIb = &*MBBb;
+      if (MIb->isTerminator())
+        continue;
+
+      // Insert EH Labels
+      MCSymbol *BeginLabel = MMI.getContext().createTempSymbol();
+      MCSymbol *EndLabel = MMI.getContext().createTempSymbol();
+      EHInfo->addIPToStateRange(State, BeginLabel, EndLabel);
+      BuildMI(*MBB, MBBb, SDB->getCurDebugLoc(),
+              TII->get(TargetOpcode::EH_LABEL))
+          .addSym(BeginLabel);
+      auto MBBe = MBB->instr_end();
+      MachineInstr *MIe = &*(--MBBe);
+      // insert before (possible multiple) terminators
+      while (MIe->isTerminator())
+        MIe = &*(--MBBe);
+      ++MBBe;
+      BuildMI(*MBB, MBBe, SDB->getCurDebugLoc(),
+              TII->get(TargetOpcode::EH_LABEL))
+          .addSym(EndLabel);
+    }
+  }
+}
+
 /// isFoldedOrDeadInstruction - Return true if the specified instruction is
 /// side-effect free and is either dead or folded into a generated instruction.
 /// Return false if it needs to be emitted.
@@ -1304,9 +1342,44 @@ static bool isFoldedOrDeadInstruction(const Instruction *I,
          !FuncInfo.isExportedInst(I); // Exported instrs must be computed.
 }
 
-static void processDbgDeclare(FunctionLoweringInfo &FuncInfo,
+static bool processIfEntryValueDbgDeclare(FunctionLoweringInfo &FuncInfo,
+                                          const Value *Arg, DIExpression *Expr,
+                                          DILocalVariable *Var,
+                                          DebugLoc DbgLoc) {
+  if (!Expr->isEntryValue() || !isa<Argument>(Arg))
+    return false;
+
+  auto ArgIt = FuncInfo.ValueMap.find(Arg);
+  if (ArgIt == FuncInfo.ValueMap.end())
+    return false;
+  Register ArgVReg = ArgIt->getSecond();
+
+  // Find the corresponding livein physical register to this argument.
+  for (auto [PhysReg, VirtReg] : FuncInfo.RegInfo->liveins())
+    if (VirtReg == ArgVReg) {
+      // Append an op deref to account for the fact that this is a dbg_declare.
+      Expr = DIExpression::append(Expr, dwarf::DW_OP_deref);
+      FuncInfo.MF->setVariableDbgInfo(Var, Expr, PhysReg, DbgLoc);
+      LLVM_DEBUG(dbgs() << "processDbgDeclare: setVariableDbgInfo Var=" << *Var
+                        << ", Expr=" << *Expr << ",  MCRegister=" << PhysReg
+                        << ", DbgLoc=" << DbgLoc << "\n");
+      return true;
+    }
+  return false;
+}
+
+static bool processDbgDeclare(FunctionLoweringInfo &FuncInfo,
                               const Value *Address, DIExpression *Expr,
                               DILocalVariable *Var, DebugLoc DbgLoc) {
+  if (!Address) {
+    LLVM_DEBUG(dbgs() << "processDbgDeclares skipping " << *Var
+                      << " (bad address)\n");
+    return false;
+  }
+
+  if (processIfEntryValueDbgDeclare(FuncInfo, Address, Expr, Var, DbgLoc))
+    return true;
+
   MachineFunction *MF = FuncInfo.MF;
   const DataLayout &DL = MF->getDataLayout();
 
@@ -1330,7 +1403,7 @@ static void processDbgDeclare(FunctionLoweringInfo &FuncInfo,
     FI = FuncInfo.getArgumentFrameIndex(Arg);
 
   if (FI == std::numeric_limits<int>::max())
-    return;
+    return false;
 
   if (Offset.getBoolValue())
     Expr = DIExpression::prepend(Expr, DIExpression::ApplyOffset,
@@ -1340,24 +1413,17 @@ static void processDbgDeclare(FunctionLoweringInfo &FuncInfo,
                     << ", Expr=" << *Expr << ",  FI=" << FI
                     << ", DbgLoc=" << DbgLoc << "\n");
   MF->setVariableDbgInfo(Var, Expr, FI, DbgLoc);
+  return true;
 }
 
 /// Collect llvm.dbg.declare information. This is done after argument lowering
 /// in case the declarations refer to arguments.
 static void processDbgDeclares(FunctionLoweringInfo &FuncInfo) {
-  for (const BasicBlock &BB : *FuncInfo.Fn) {
-    for (const Instruction &I : BB) {
-      if (const DbgDeclareInst *DI = dyn_cast<DbgDeclareInst>(&I)) {
-        Value *Address = DI->getAddress();
-        if (!Address) {
-          LLVM_DEBUG(dbgs() << "processDbgDeclares skipping " << *DI
-                            << " (bad address)\n");
-          continue;
-        }
-        processDbgDeclare(FuncInfo, Address, DI->getExpression(),
-                          DI->getVariable(), DI->getDebugLoc());
-      }
-    }
+  for (const auto &I : instructions(*FuncInfo.Fn)) {
+    const auto *DI = dyn_cast<DbgDeclareInst>(&I);
+    if (DI && processDbgDeclare(FuncInfo, DI->getAddress(), DI->getExpression(),
+                                DI->getVariable(), DI->getDebugLoc()))
+      FuncInfo.PreprocessedDbgDeclares.insert(DI);
   }
 }
 
@@ -1411,7 +1477,7 @@ void SelectionDAGISel::SelectAllBasicBlocks(const Function &Fn) {
                                  Fn.getSubprogram(),
                                  &Fn.getEntryBlock());
       R << "FastISel didn't lower all arguments: "
-        << ore::NV("Prototype", Fn.getType());
+        << ore::NV("Prototype", Fn.getFunctionType());
       reportFastISelFailure(*MF, *ORE, R, EnableFastISelAbort > 1);
 
       // Use SelectionDAG argument lowering
@@ -1648,6 +1714,10 @@ void SelectionDAGISel::SelectAllBasicBlocks(const Function &Fn) {
     FuncInfo->PHINodesToUpdate.clear();
     ElidedArgCopyInstrs.clear();
   }
+
+  // AsynchEH: Report Block State under -AsynchEH
+  if (Fn.getParent()->getModuleFlag("eh-asynch"))
+    reportIPToStateForBlocks(MF);
 
   SP.copyToMachineFrameInfo(MF->getFrameInfo());
 
@@ -2006,41 +2076,43 @@ void SelectionDAGISel::SelectInlineAsmMemoryOperands(std::vector<SDValue> &Ops,
     --e;  // Don't process a glue operand if it is here.
 
   while (i != e) {
-    unsigned Flags = cast<ConstantSDNode>(InOps[i])->getZExtValue();
-    if (!InlineAsm::isMemKind(Flags) && !InlineAsm::isFuncKind(Flags)) {
+    InlineAsm::Flag Flags(cast<ConstantSDNode>(InOps[i])->getZExtValue());
+    if (!Flags.isMemKind() && !Flags.isFuncKind()) {
       // Just skip over this operand, copying the operands verbatim.
-      Ops.insert(Ops.end(), InOps.begin()+i,
-                 InOps.begin()+i+InlineAsm::getNumOperandRegisters(Flags) + 1);
-      i += InlineAsm::getNumOperandRegisters(Flags) + 1;
+      Ops.insert(Ops.end(), InOps.begin() + i,
+                 InOps.begin() + i + Flags.getNumOperandRegisters() + 1);
+      i += Flags.getNumOperandRegisters() + 1;
     } else {
-      assert(InlineAsm::getNumOperandRegisters(Flags) == 1 &&
+      assert(Flags.getNumOperandRegisters() == 1 &&
              "Memory operand with multiple values?");
 
       unsigned TiedToOperand;
-      if (InlineAsm::isUseOperandTiedToDef(Flags, TiedToOperand)) {
+      if (Flags.isUseOperandTiedToDef(TiedToOperand)) {
         // We need the constraint ID from the operand this is tied to.
         unsigned CurOp = InlineAsm::Op_FirstOperand;
-        Flags = cast<ConstantSDNode>(InOps[CurOp])->getZExtValue();
+        Flags =
+            InlineAsm::Flag(cast<ConstantSDNode>(InOps[CurOp])->getZExtValue());
         for (; TiedToOperand; --TiedToOperand) {
-          CurOp += InlineAsm::getNumOperandRegisters(Flags)+1;
-          Flags = cast<ConstantSDNode>(InOps[CurOp])->getZExtValue();
+          CurOp += Flags.getNumOperandRegisters() + 1;
+          Flags = InlineAsm::Flag(
+              cast<ConstantSDNode>(InOps[CurOp])->getZExtValue());
         }
       }
 
       // Otherwise, this is a memory operand.  Ask the target to select it.
       std::vector<SDValue> SelOps;
-      unsigned ConstraintID = InlineAsm::getMemoryConstraintID(Flags);
+      const InlineAsm::ConstraintCode ConstraintID =
+          Flags.getMemoryConstraintID();
       if (SelectInlineAsmMemoryOperand(InOps[i+1], ConstraintID, SelOps))
         report_fatal_error("Could not match memory address.  Inline asm"
                            " failure!");
 
       // Add this to the output node.
-      unsigned NewFlags =
-          InlineAsm::isMemKind(Flags)
-              ? InlineAsm::getFlagWord(InlineAsm::Kind_Mem, SelOps.size())
-              : InlineAsm::getFlagWord(InlineAsm::Kind_Func, SelOps.size());
-      NewFlags = InlineAsm::getFlagWordForMem(NewFlags, ConstraintID);
-      Ops.push_back(CurDAG->getTargetConstant(NewFlags, DL, MVT::i32));
+      Flags = InlineAsm::Flag(Flags.isMemKind() ? InlineAsm::Kind::Mem
+                                                : InlineAsm::Kind::Func,
+                              SelOps.size());
+      Flags.setMemConstraint(ConstraintID);
+      Ops.push_back(CurDAG->getTargetConstant(Flags, DL, MVT::i32));
       llvm::append_range(Ops, SelOps);
       i += 2;
     }
@@ -2119,7 +2191,7 @@ bool SelectionDAGISel::IsLegalToFold(SDValue N, SDNode *U, SDNode *Root,
                                      bool IgnoreChains) {
   if (OptLevel == CodeGenOpt::None) return false;
 
-  // If Root use can somehow reach N through a path that that doesn't contain
+  // If Root use can somehow reach N through a path that doesn't contain
   // U then folding N would create a cycle. e.g. In the following
   // diagram, Root can reach N through X. If N is folded into Root, then
   // X is both a predecessor and a successor of U.
@@ -2276,7 +2348,7 @@ void SelectionDAGISel::Select_STACKMAP(SDNode *N) {
 
   // Stash the chain and glue operands so we can move them to the end.
   SDValue Chain = *It++;
-  SDValue InFlag = *It++;
+  SDValue InGlue = *It++;
 
   // <id> operand.
   SDValue ID = *It++;
@@ -2293,7 +2365,7 @@ void SelectionDAGISel::Select_STACKMAP(SDNode *N) {
     pushStackMapLiveVariable(Ops, *It, DL);
 
   Ops.push_back(Chain);
-  Ops.push_back(InFlag);
+  Ops.push_back(InGlue);
 
   SDVTList NodeTys = CurDAG->getVTList(MVT::Other, MVT::Glue);
   CurDAG->SelectNodeTo(N, TargetOpcode::STACKMAP, NodeTys, Ops);
@@ -2365,6 +2437,13 @@ GetVBR(uint64_t Val, const unsigned char *MatcherTable, unsigned &Idx) {
   } while (NextBits & 128);
 
   return Val;
+}
+
+void SelectionDAGISel::Select_JUMP_TABLE_DEBUG_INFO(SDNode *N) {
+  SDLoc dl(N);
+  CurDAG->SelectNodeTo(N, TargetOpcode::JUMP_TABLE_DEBUG_INFO, MVT::Glue,
+                       CurDAG->getTargetConstant(N->getConstantOperandVal(1),
+                                                 dl, MVT::i64, true));
 }
 
 /// When a match is complete, this method updates uses of interior chain results
@@ -2571,8 +2650,11 @@ LLVM_ATTRIBUTE_ALWAYS_INLINE static bool CheckChildSame(
 /// CheckPatternPredicate - Implements OP_CheckPatternPredicate.
 LLVM_ATTRIBUTE_ALWAYS_INLINE static bool
 CheckPatternPredicate(const unsigned char *MatcherTable, unsigned &MatcherIndex,
-                      const SelectionDAGISel &SDISel) {
-  return SDISel.CheckPatternPredicate(MatcherTable[MatcherIndex++]);
+                      const SelectionDAGISel &SDISel, bool TwoBytePredNo) {
+  unsigned PredNo = MatcherTable[MatcherIndex++];
+  if (TwoBytePredNo)
+    PredNo |= MatcherTable[MatcherIndex++] << 8;
+  return SDISel.CheckPatternPredicate(PredNo);
 }
 
 /// CheckNodePredicate - Implements OP_CheckNodePredicate.
@@ -2720,7 +2802,10 @@ static unsigned IsPredicateKnownToFail(const unsigned char *Table,
                         Table[Index-1] - SelectionDAGISel::OPC_CheckChild0Same);
     return Index;
   case SelectionDAGISel::OPC_CheckPatternPredicate:
-    Result = !::CheckPatternPredicate(Table, Index, SDISel);
+  case SelectionDAGISel::OPC_CheckPatternPredicate2:
+    Result = !::CheckPatternPredicate(
+        Table, Index, SDISel,
+        Table[Index - 1] == SelectionDAGISel::OPC_CheckPatternPredicate2);
     return Index;
   case SelectionDAGISel::OPC_CheckPredicate:
     Result = !::CheckNodePredicate(Table, Index, SDISel, N.getNode());
@@ -2912,6 +2997,9 @@ void SelectionDAGISel::SelectCodeCommon(SDNode *NodeToMatch,
     return;
   case ISD::PATCHPOINT:
     Select_PATCHPOINT(NodeToMatch);
+    return;
+  case ISD::JUMP_TABLE_DEBUG_INFO:
+    Select_JUMP_TABLE_DEBUG_INFO(NodeToMatch);
     return;
   }
 
@@ -3130,7 +3218,10 @@ void SelectionDAGISel::SelectCodeCommon(SDNode *NodeToMatch,
       continue;
 
     case OPC_CheckPatternPredicate:
-      if (!::CheckPatternPredicate(MatcherTable, MatcherIndex, *this)) break;
+    case OPC_CheckPatternPredicate2:
+      if (!::CheckPatternPredicate(MatcherTable, MatcherIndex, *this,
+                                   Opcode == OPC_CheckPatternPredicate2))
+        break;
       continue;
     case OPC_CheckPredicate:
       if (!::CheckNodePredicate(MatcherTable, MatcherIndex, *this,

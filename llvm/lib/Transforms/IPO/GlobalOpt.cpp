@@ -53,8 +53,6 @@
 #include "llvm/IR/User.h"
 #include "llvm/IR/Value.h"
 #include "llvm/IR/ValueHandle.h"
-#include "llvm/InitializePasses.h"
-#include "llvm/Pass.h"
 #include "llvm/Support/AtomicOrdering.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
@@ -237,19 +235,8 @@ CleanupPointerRootUsers(GlobalVariable *GV,
           Dead.push_back(std::make_pair(I, MTI));
       }
     } else if (ConstantExpr *CE = dyn_cast<ConstantExpr>(U)) {
-      if (CE->use_empty()) {
-        CE->destroyConstant();
-        Changed = true;
-      } else if (isa<GEPOperator>(CE))
+      if (isa<GEPOperator>(CE))
         append_range(Worklist, CE->users());
-    } else if (Constant *C = dyn_cast<Constant>(U)) {
-      if (isSafeToDestroyConstant(C)) {
-        C->destroyConstant();
-        // This could have invalidated UI, start over from scratch.
-        Dead.clear();
-        CleanupPointerRootUsers(GV, GetTLI);
-        return true;
-      }
     }
   }
 
@@ -271,6 +258,7 @@ CleanupPointerRootUsers(GlobalVariable *GV,
     }
   }
 
+  GV->removeDeadConstantUsers();
   return Changed;
 }
 
@@ -342,6 +330,7 @@ static bool CleanupConstantGlobalUsers(GlobalVariable *GV,
 /// loads and stores with the given type.
 struct GlobalPart {
   Type *Ty;
+  Constant *Initializer = nullptr;
   bool IsLoaded = false;
   bool IsStored = false;
 };
@@ -384,15 +373,27 @@ static bool collectSRATypes(DenseMap<uint64_t, GlobalPart> &Parts,
       // TODO: We currently require that all accesses at a given offset must
       // use the same type. This could be relaxed.
       Type *Ty = getLoadStoreType(V);
-      auto It = Parts.try_emplace(Offset.getZExtValue(), GlobalPart{Ty}).first;
+      const auto &[It, Inserted] =
+          Parts.try_emplace(Offset.getZExtValue(), GlobalPart{Ty});
       if (Ty != It->second.Ty)
         return false;
 
+      if (Inserted) {
+        It->second.Initializer =
+            ConstantFoldLoadFromConst(GV->getInitializer(), Ty, Offset, DL);
+        if (!It->second.Initializer) {
+          LLVM_DEBUG(dbgs() << "Global SRA: Failed to evaluate initializer of "
+                            << *GV << " with type " << *Ty << " at offset "
+                            << Offset.getZExtValue());
+          return false;
+        }
+      }
+
       // Scalable types not currently supported.
-      if (isa<ScalableVectorType>(Ty))
+      if (Ty->isScalableTy())
         return false;
 
-      auto IsStored = [GV, &DL, &Offset](Value *V) {
+      auto IsStored = [](Value *V, Constant *Initializer) {
         auto *SI = dyn_cast<StoreInst>(V);
         if (!SI)
           return false;
@@ -402,15 +403,11 @@ static bool collectSRATypes(DenseMap<uint64_t, GlobalPart> &Parts,
           return true;
 
         // Don't consider stores that only write the initializer value.
-        if (Constant *Result = ConstantFoldLoadFromConst(
-                GV->getInitializer(), StoredConst->getType(), Offset, DL))
-          return Result != StoredConst;
-
-        return true;
+        return Initializer != StoredConst;
       };
 
       It->second.IsLoaded |= isa<LoadInst>(V);
-      It->second.IsStored |= IsStored(V);
+      It->second.IsStored |= IsStored(V, It->second.Initializer);
       continue;
     }
 
@@ -531,14 +528,16 @@ static GlobalVariable *SRAGlobal(GlobalVariable *GV, const DataLayout &DL) {
     return nullptr;
 
   // Sort by offset.
-  SmallVector<std::pair<uint64_t, Type *>, 16> TypesVector;
-  for (const auto &Pair : Parts)
-    TypesVector.push_back({Pair.first, Pair.second.Ty});
+  SmallVector<std::tuple<uint64_t, Type *, Constant *>, 16> TypesVector;
+  for (const auto &Pair : Parts) {
+    TypesVector.push_back(
+        {Pair.first, Pair.second.Ty, Pair.second.Initializer});
+  }
   sort(TypesVector, llvm::less_first());
 
   // Check that the types are non-overlapping.
   uint64_t Offset = 0;
-  for (const auto &[OffsetForTy, Ty] : TypesVector) {
+  for (const auto &[OffsetForTy, Ty, _] : TypesVector) {
     // Overlaps with previous type.
     if (OffsetForTy < Offset)
       return nullptr;
@@ -550,21 +549,6 @@ static GlobalVariable *SRAGlobal(GlobalVariable *GV, const DataLayout &DL) {
   if (Offset > DL.getTypeAllocSize(GV->getValueType()))
     return nullptr;
 
-  // Collect initializers for new globals.
-  Constant *OrigInit = GV->getInitializer();
-  DenseMap<uint64_t, Constant *> Initializers;
-  for (const auto &[OffsetForTy, Ty] : TypesVector) {
-    Constant *NewInit =
-        ConstantFoldLoadFromConst(OrigInit, Ty, APInt(64, OffsetForTy), DL);
-    if (!NewInit) {
-      LLVM_DEBUG(dbgs() << "Global SRA: Failed to evaluate initializer of "
-                        << *GV << " with type " << *Ty << " at offset "
-                        << OffsetForTy << "\n");
-      return nullptr;
-    }
-    Initializers.insert({OffsetForTy, NewInit});
-  }
-
   LLVM_DEBUG(dbgs() << "PERFORMING GLOBAL SRA ON: " << *GV << "\n");
 
   // Get the alignment of the global, either explicit or target-specific.
@@ -575,11 +559,11 @@ static GlobalVariable *SRAGlobal(GlobalVariable *GV, const DataLayout &DL) {
   // Create replacement globals.
   DenseMap<uint64_t, GlobalVariable *> NewGlobals;
   unsigned NameSuffix = 0;
-  for (auto &[OffsetForTy, Ty] : TypesVector) {
+  for (auto &[OffsetForTy, Ty, Initializer] : TypesVector) {
     GlobalVariable *NGV = new GlobalVariable(
         *GV->getParent(), Ty, false, GlobalVariable::InternalLinkage,
-        Initializers[OffsetForTy], GV->getName() + "." + Twine(NameSuffix++),
-        GV, GV->getThreadLocalMode(), GV->getAddressSpace());
+        Initializer, GV->getName() + "." + Twine(NameSuffix++), GV,
+        GV->getThreadLocalMode(), GV->getAddressSpace());
     NGV->copyAttributesFrom(GV);
     NewGlobals.insert({OffsetForTy, NGV});
 
@@ -679,8 +663,9 @@ static bool AllUsesOfValueWillTrapIfNull(const Value *V,
       if (II->getCalledOperand() != V) {
         return false;  // Not calling the ptr
       }
-    } else if (const BitCastInst *CI = dyn_cast<BitCastInst>(U)) {
-      if (!AllUsesOfValueWillTrapIfNull(CI, PHIs)) return false;
+    } else if (const AddrSpaceCastInst *CI = dyn_cast<AddrSpaceCastInst>(U)) {
+      if (!AllUsesOfValueWillTrapIfNull(CI, PHIs))
+        return false;
     } else if (const GetElementPtrInst *GEPI = dyn_cast<GetElementPtrInst>(U)) {
       if (!AllUsesOfValueWillTrapIfNull(GEPI, PHIs)) return false;
     } else if (const PHINode *PN = dyn_cast<PHINode>(U)) {
@@ -793,10 +778,9 @@ static bool OptimizeAwayTrappingUsesOfValue(Value *V, Constant *NewV) {
           UI = V->user_begin();
         }
       }
-    } else if (CastInst *CI = dyn_cast<CastInst>(I)) {
-      Changed |= OptimizeAwayTrappingUsesOfValue(CI,
-                                ConstantExpr::getCast(CI->getOpcode(),
-                                                      NewV, CI->getType()));
+    } else if (AddrSpaceCastInst *CI = dyn_cast<AddrSpaceCastInst>(I)) {
+      Changed |= OptimizeAwayTrappingUsesOfValue(
+          CI, ConstantExpr::getAddrSpaceCast(NewV, CI->getType()));
       if (CI->use_empty()) {
         Changed = true;
         CI->eraseFromParent();
@@ -861,7 +845,8 @@ static bool OptimizeAwayTrappingUsesOfLoads(
       assert((isa<PHINode>(GlobalUser) || isa<SelectInst>(GlobalUser) ||
               isa<ConstantExpr>(GlobalUser) || isa<CmpInst>(GlobalUser) ||
               isa<BitCastInst>(GlobalUser) ||
-              isa<GetElementPtrInst>(GlobalUser)) &&
+              isa<GetElementPtrInst>(GlobalUser) ||
+              isa<AddrSpaceCastInst>(GlobalUser)) &&
              "Only expect load and stores!");
     }
   }
@@ -945,25 +930,7 @@ OptimizeGlobalAddressOfAllocation(GlobalVariable *GV, CallInst *CI,
   }
 
   // Update users of the allocation to use the new global instead.
-  BitCastInst *TheBC = nullptr;
-  while (!CI->use_empty()) {
-    Instruction *User = cast<Instruction>(CI->user_back());
-    if (BitCastInst *BCI = dyn_cast<BitCastInst>(User)) {
-      if (BCI->getType() == NewGV->getType()) {
-        BCI->replaceAllUsesWith(NewGV);
-        BCI->eraseFromParent();
-      } else {
-        BCI->setOperand(0, NewGV);
-      }
-    } else {
-      if (!TheBC)
-        TheBC = new BitCastInst(NewGV, CI->getType(), "newgv", CI);
-      User->replaceUsesOfWith(CI, TheBC);
-    }
-  }
-
-  SmallSetVector<Constant *, 1> RepValues;
-  RepValues.insert(NewGV);
+  CI->replaceAllUsesWith(NewGV);
 
   // If there is a comparison against null, we will insert a global bool to
   // keep track of whether the global was initialized yet or not.
@@ -995,9 +962,7 @@ OptimizeGlobalAddressOfAllocation(GlobalVariable *GV, CallInst *CI,
       Use &LoadUse = *LI->use_begin();
       ICmpInst *ICI = dyn_cast<ICmpInst>(LoadUse.getUser());
       if (!ICI) {
-        auto *CE = ConstantExpr::getBitCast(NewGV, LI->getType());
-        RepValues.insert(CE);
-        LoadUse.set(CE);
+        LoadUse.set(NewGV);
         continue;
       }
 
@@ -1043,8 +1008,7 @@ OptimizeGlobalAddressOfAllocation(GlobalVariable *GV, CallInst *CI,
   // To further other optimizations, loop over all users of NewGV and try to
   // constant prop them.  This will promote GEP instructions with constant
   // indices into GEP constant-exprs, which will allow global-opt to hack on it.
-  for (auto *CE : RepValues)
-    ConstantPropUsersOf(CE, DL, TLI);
+  ConstantPropUsersOf(NewGV, DL, TLI);
 
   return NewGV;
 }
@@ -1161,9 +1125,6 @@ optimizeOnceStoredGlobal(GlobalVariable *GV, Value *StoredOnceVal,
           nullptr /* F */,
           GV->getInitializer()->getType()->getPointerAddressSpace())) {
     if (Constant *SOVC = dyn_cast<Constant>(StoredOnceVal)) {
-      if (GV->getInitializer()->getType() != SOVC->getType())
-        SOVC = ConstantExpr::getBitCast(SOVC, GV->getInitializer()->getType());
-
       // Optimize away any trapping uses of the loaded value.
       if (OptimizeAwayTrappingUsesOfLoads(GV, SOVC, DL, GetTLI))
         return true;
@@ -1492,7 +1453,7 @@ processInternalGlobal(GlobalVariable *GV, const GlobalStatus &GS,
   if (!GS.HasMultipleAccessingFunctions &&
       GS.AccessingFunction &&
       GV->getValueType()->isSingleValueType() &&
-      GV->getType()->getAddressSpace() == 0 &&
+      GV->getType()->getAddressSpace() == DL.getAllocaAddrSpace() &&
       !GV->isExternallyInitialized() &&
       GS.AccessingFunction->doesNotRecurse() &&
       isPointerValueDeadOnEntryToFunction(GS.AccessingFunction, GV,
@@ -1602,7 +1563,7 @@ processInternalGlobal(GlobalVariable *GV, const GlobalStatus &GS,
             GV->getAddressSpace());
         NGV->takeName(GV);
         NGV->copyAttributesFrom(GV);
-        GV->replaceAllUsesWith(ConstantExpr::getBitCast(NGV, GV->getType()));
+        GV->replaceAllUsesWith(NGV);
         GV->eraseFromParent();
         GV = NGV;
       }
@@ -1891,12 +1852,9 @@ static void RemovePreallocated(Function *F) {
     CB->eraseFromParent();
 
     Builder.SetInsertPoint(PreallocatedSetup);
-    auto *StackSave =
-        Builder.CreateCall(Intrinsic::getDeclaration(M, Intrinsic::stacksave));
-
+    auto *StackSave = Builder.CreateStackSave();
     Builder.SetInsertPoint(NewCB->getNextNonDebugInstruction());
-    Builder.CreateCall(Intrinsic::getDeclaration(M, Intrinsic::stackrestore),
-                       StackSave);
+    Builder.CreateStackRestore(StackSave);
 
     // Replace @llvm.call.preallocated.arg() with alloca.
     // Cannot modify users() while iterating over it, so make a copy.
@@ -1923,10 +1881,8 @@ static void RemovePreallocated(Function *F) {
         Builder.SetInsertPoint(InsertBefore);
         auto *Alloca =
             Builder.CreateAlloca(ArgType, AddressSpace, nullptr, "paarg");
-        auto *BitCast = Builder.CreateBitCast(
-            Alloca, Type::getInt8PtrTy(M->getContext()), UseCall->getName());
-        ArgAllocas[AllocArgIndex] = BitCast;
-        AllocaReplacement = BitCast;
+        ArgAllocas[AllocArgIndex] = Alloca;
+        AllocaReplacement = Alloca;
       }
 
       UseCall->replaceAllUsesWith(AllocaReplacement);
@@ -2129,18 +2085,24 @@ static void setUsedInitializer(GlobalVariable &V,
     return;
   }
 
+  // Get address space of pointers in the array of pointers.
+  const Type *UsedArrayType = V.getValueType();
+  const auto *VAT = cast<ArrayType>(UsedArrayType);
+  const auto *VEPT = cast<PointerType>(VAT->getArrayElementType());
+
   // Type of pointer to the array of pointers.
-  PointerType *Int8PtrTy = Type::getInt8PtrTy(V.getContext(), 0);
+  PointerType *PtrTy =
+      PointerType::get(V.getContext(), VEPT->getAddressSpace());
 
   SmallVector<Constant *, 8> UsedArray;
   for (GlobalValue *GV : Init) {
-    Constant *Cast
-      = ConstantExpr::getPointerBitCastOrAddrSpaceCast(GV, Int8PtrTy);
+    Constant *Cast = ConstantExpr::getPointerBitCastOrAddrSpaceCast(GV, PtrTy);
     UsedArray.push_back(Cast);
   }
+
   // Sort to get deterministic order.
   array_pod_sort(UsedArray.begin(), UsedArray.end(), compareNames);
-  ArrayType *ATy = ArrayType::get(Int8PtrTy, UsedArray.size());
+  ArrayType *ATy = ArrayType::get(PtrTy, UsedArray.size());
 
   Module *M = V.getParent();
   V.removeFromParent();
@@ -2228,22 +2190,11 @@ static bool hasUseOtherThanLLVMUsed(GlobalAlias &GA, const LLVMUsed &U) {
   return !U.usedCount(&GA) && !U.compilerUsedCount(&GA);
 }
 
-static bool hasMoreThanOneUseOtherThanLLVMUsed(GlobalValue &V,
-                                               const LLVMUsed &U) {
-  unsigned N = 2;
-  assert((!U.usedCount(&V) || !U.compilerUsedCount(&V)) &&
-         "We should have removed the duplicated "
-         "element from llvm.compiler.used");
-  if (U.usedCount(&V) || U.compilerUsedCount(&V))
-    ++N;
-  return V.hasNUsesOrMore(N);
-}
-
-static bool mayHaveOtherReferences(GlobalAlias &GA, const LLVMUsed &U) {
-  if (!GA.hasLocalLinkage())
+static bool mayHaveOtherReferences(GlobalValue &GV, const LLVMUsed &U) {
+  if (!GV.hasLocalLinkage())
     return true;
 
-  return U.usedCount(&GA) || U.compilerUsedCount(&GA);
+  return U.usedCount(&GV) || U.compilerUsedCount(&GV);
 }
 
 static bool hasUsesToReplace(GlobalAlias &GA, const LLVMUsed &U,
@@ -2257,21 +2208,16 @@ static bool hasUsesToReplace(GlobalAlias &GA, const LLVMUsed &U,
   if (!mayHaveOtherReferences(GA, U))
     return Ret;
 
-  // If the aliasee has internal linkage, give it the name and linkage
-  // of the alias, and delete the alias.  This turns:
+  // If the aliasee has internal linkage and no other references (e.g.,
+  // @llvm.used, @llvm.compiler.used), give it the name and linkage of the
+  // alias, and delete the alias. This turns:
   //   define internal ... @f(...)
   //   @a = alias ... @f
   // into:
   //   define ... @a(...)
   Constant *Aliasee = GA.getAliasee();
   GlobalValue *Target = cast<GlobalValue>(Aliasee->stripPointerCasts());
-  if (!Target->hasLocalLinkage())
-    return Ret;
-
-  // Do not perform the transform if multiple aliases potentially target the
-  // aliasee. This check also ensures that it is safe to replace the section
-  // and other attributes of the aliasee with those of the alias.
-  if (hasMoreThanOneUseOtherThanLLVMUsed(*Target, U))
+  if (mayHaveOtherReferences(*Target, U))
     return Ret;
 
   RenameTarget = true;
@@ -2326,7 +2272,7 @@ OptimizeGlobalAliases(Module &M,
     if (!hasUsesToReplace(J, Used, RenameTarget))
       continue;
 
-    J.replaceAllUsesWith(ConstantExpr::getBitCast(Aliasee, J.getType()));
+    J.replaceAllUsesWith(Aliasee);
     ++NumAliasesResolved;
     Changed = true;
 

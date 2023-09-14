@@ -11,7 +11,7 @@
 ! RUN: | FileCheck %s -check-prefix=CHECK-ARMV9
 
 ! Negative test. ARM cpu with x86 target.
-! RUN: %flang --target=x86_64-linux-gnu -mcpu=cortex-a57 -c %s -### 2>&1 \
+! RUN: not %flang --target=x86_64-linux-gnu -mcpu=cortex-a57 -c %s -### 2>&1 \
 ! RUN: | FileCheck %s -check-prefix=CHECK-NO-A57
 
 ! RUN: %flang --target=x86_64-linux-gnu -march=skylake -c %s -### 2>&1 \
@@ -23,6 +23,11 @@
 ! RUN: %flang --target=riscv64-linux-gnu -c %s -### 2>&1 \
 ! RUN: | FileCheck %s -check-prefix=CHECK-RV64
 
+! RUN: %flang --target=amdgcn-amd-amdhsa -mcpu=gfx908 -c %s -### 2>&1 \
+! RUN: | FileCheck %s -check-prefix=CHECK-AMDGPU
+
+! RUN: %flang --target=r600-unknown-unknown -mcpu=cayman -c %s -### 2>&1 \
+! RUN: | FileCheck %s -check-prefix=CHECK-AMDGPU-R600
 
 ! CHECK-A57: "-fc1" "-triple" "aarch64-unknown-linux-gnu"
 ! CHECK-A57-SAME: "-target-cpu" "cortex-a57" "-target-feature" "+v8a" "-target-feature" "+aes" "-target-feature" "+crc" "-target-feature" "+fp-armv8" "-target-feature" "+sha2" "-target-feature" "+neon"
@@ -46,3 +51,9 @@
 
 ! CHECK-RV64: "-fc1" "-triple" "riscv64-unknown-linux-gnu"
 ! CHECK-RV64-SAME: "-target-cpu" "generic-rv64" "-target-feature" "+m" "-target-feature" "+a" "-target-feature" "+f" "-target-feature" "+d" "-target-feature" "+c"
+
+! CHECK-AMDGPU: "-fc1" "-triple" "amdgcn-amd-amdhsa"
+! CHECK-AMDGPU-SAME: "-target-cpu" "gfx908"
+
+! CHECK-AMDGPU-R600: "-fc1" "-triple" "r600-unknown-unknown"
+! CHECK-AMDGPU-R600-SAME: "-target-cpu" "cayman"

@@ -22,9 +22,9 @@ class small_pointer {
 template <class T>
 class small_iter_allocator {
 public:
-  using value_type = T;
-  using pointer = small_pointer<T>;
-  using size_type = std::int16_t;
+  using value_type      = T;
+  using pointer         = small_pointer<T>;
+  using size_type       = std::int16_t;
   using difference_type = std::int16_t;
 
   small_iter_allocator() TEST_NOEXCEPT {}
@@ -131,5 +131,5 @@ static_assert(sizeof(small_string<char32_t>) == 12, "");
 #  endif
 
 #else
-#  error "size_t has an unexpected size"
+#  error "std::size_t has an unexpected size"
 #endif

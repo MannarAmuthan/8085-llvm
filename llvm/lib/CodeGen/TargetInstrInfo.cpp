@@ -440,8 +440,9 @@ MachineInstr &TargetInstrInfo::duplicate(MachineBasicBlock &MBB,
 // If the COPY instruction in MI can be folded to a stack operation, return
 // the register class to use.
 static const TargetRegisterClass *canFoldCopy(const MachineInstr &MI,
+                                              const TargetInstrInfo &TII,
                                               unsigned FoldIdx) {
-  assert(MI.isCopy() && "MI must be a COPY instruction");
+  assert(TII.isCopyInstr(MI) && "MI must be a COPY instruction");
   if (MI.getNumOperands() != 2)
     return nullptr;
   assert(FoldIdx<2 && "FoldIdx refers no nonexistent operand");
@@ -630,10 +631,10 @@ MachineInstr *TargetInstrInfo::foldMemoryOperand(MachineInstr &MI,
   }
 
   // Straight COPY may fold as load/store.
-  if (!MI.isCopy() || Ops.size() != 1)
+  if (!isCopyInstr(MI) || Ops.size() != 1)
     return nullptr;
 
-  const TargetRegisterClass *RC = canFoldCopy(MI, Ops[0]);
+  const TargetRegisterClass *RC = canFoldCopy(MI, *this, Ops[0]);
   if (!RC)
     return nullptr;
 
@@ -694,6 +695,60 @@ MachineInstr *TargetInstrInfo::foldMemoryOperand(MachineInstr &MI,
     }
   }
   return NewMI;
+}
+
+/// transferImplicitOperands - MI is a pseudo-instruction, and the lowered
+/// replacement instructions immediately precede it.  Copy any implicit
+/// operands from MI to the replacement instruction.
+static void transferImplicitOperands(MachineInstr *MI,
+                                     const TargetRegisterInfo *TRI) {
+  MachineBasicBlock::iterator CopyMI = MI;
+  --CopyMI;
+
+  Register DstReg = MI->getOperand(0).getReg();
+  for (const MachineOperand &MO : MI->implicit_operands()) {
+    CopyMI->addOperand(MO);
+
+    // Be conservative about preserving kills when subregister defs are
+    // involved. If there was implicit kill of a super-register overlapping the
+    // copy result, we would kill the subregisters previous copies defined.
+
+    if (MO.isKill() && TRI->regsOverlap(DstReg, MO.getReg()))
+      CopyMI->getOperand(CopyMI->getNumOperands() - 1).setIsKill(false);
+  }
+}
+
+void TargetInstrInfo::lowerCopy(MachineInstr *MI,
+                                const TargetRegisterInfo *TRI) const {
+  if (MI->allDefsAreDead()) {
+    MI->setDesc(get(TargetOpcode::KILL));
+    return;
+  }
+
+  MachineOperand &DstMO = MI->getOperand(0);
+  MachineOperand &SrcMO = MI->getOperand(1);
+
+  bool IdentityCopy = (SrcMO.getReg() == DstMO.getReg());
+  if (IdentityCopy || SrcMO.isUndef()) {
+    // No need to insert an identity copy instruction, but replace with a KILL
+    // if liveness is changed.
+    if (SrcMO.isUndef() || MI->getNumOperands() > 2) {
+      // We must make sure the super-register gets killed. Replace the
+      // instruction with KILL.
+      MI->setDesc(get(TargetOpcode::KILL));
+      return;
+    }
+    // Vanilla identity copy.
+    MI->eraseFromParent();
+    return;
+  }
+
+  copyPhysReg(*MI->getParent(), MI, MI->getDebugLoc(), DstMO.getReg(),
+              SrcMO.getReg(), SrcMO.isKill());
+
+  if (MI->getNumOperands() > 2)
+    transferImplicitOperands(MI, TRI);
+  MI->eraseFromParent();
 }
 
 bool TargetInstrInfo::hasReassociableOperands(
@@ -1063,7 +1118,7 @@ MachineTraceStrategy TargetInstrInfo::getMachineCombinerTraceStrategy() const {
   return MachineTraceStrategy::TS_MinInstrCount;
 }
 
-bool TargetInstrInfo::isReallyTriviallyReMaterializableGeneric(
+bool TargetInstrInfo::isReallyTriviallyReMaterializable(
     const MachineInstr &MI) const {
   const MachineFunction &MF = *MI.getMF();
   const MachineRegisterInfo &MRI = MF.getRegInfo();
@@ -1318,6 +1373,26 @@ bool TargetInstrInfo::hasLowDefLatency(const TargetSchedModel &SchedModel,
   return (DefCycle != -1 && DefCycle <= 1);
 }
 
+bool TargetInstrInfo::isFunctionSafeToSplit(const MachineFunction &MF) const {
+  // TODO: We don't split functions where a section attribute has been set
+  // since the split part may not be placed in a contiguous region. It may also
+  // be more beneficial to augment the linker to ensure contiguous layout of
+  // split functions within the same section as specified by the attribute.
+  if (MF.getFunction().hasSection() ||
+      MF.getFunction().hasFnAttribute("implicit-section-name"))
+    return false;
+
+  // We don't want to proceed further for cold functions
+  // or functions of unknown hotness. Lukewarm functions have no prefix.
+  std::optional<StringRef> SectionPrefix = MF.getFunction().getSectionPrefix();
+  if (SectionPrefix &&
+      (*SectionPrefix == "unlikely" || *SectionPrefix == "unknown")) {
+    return false;
+  }
+
+  return true;
+}
+
 std::optional<ParamLoadedValue>
 TargetInstrInfo::describeLoadedValue(const MachineInstr &MI,
                                      Register Reg) const {
@@ -1343,11 +1418,7 @@ TargetInstrInfo::describeLoadedValue(const MachineInstr &MI,
     if (Reg == DestReg)
       return ParamLoadedValue(*DestSrc->Source, Expr);
 
-    // Cases where super- or sub-registers needs to be described should
-    // be handled by the target's hook implementation.
-    assert(!TRI->isSuperOrSubRegisterEq(Reg, DestReg) &&
-           "TargetInstrInfo::describeLoadedValue can't describe super- or "
-           "sub-regs for copy instructions");
+    // If the target's hook couldn't describe this copy, give up.
     return std::nullopt;
   } else if (auto RegImm = isAddImmediate(MI, Reg)) {
     Register SrcReg = RegImm->Reg;
@@ -1397,6 +1468,22 @@ TargetInstrInfo::describeLoadedValue(const MachineInstr &MI,
   }
 
   return std::nullopt;
+}
+
+// Get the call frame size just before MI.
+unsigned TargetInstrInfo::getCallFrameSizeAt(MachineInstr &MI) const {
+  // Search backwards from MI for the most recent call frame instruction.
+  MachineBasicBlock *MBB = MI.getParent();
+  for (auto &AdjI : reverse(make_range(MBB->instr_begin(), MI.getIterator()))) {
+    if (AdjI.getOpcode() == getCallFrameSetupOpcode())
+      return getFrameTotalSize(AdjI);
+    if (AdjI.getOpcode() == getCallFrameDestroyOpcode())
+      return 0;
+  }
+
+  // If none was found, use the call frame size from the start of the basic
+  // block.
+  return MBB->getCallFrameSize();
 }
 
 /// Both DefMI and UseMI must be valid.  By default, call directly to the
@@ -1523,25 +1610,24 @@ std::string TargetInstrInfo::createMIROperandComment(
   assert(Op.isImm() && "Expected flag operand to be an immediate");
   // Pretty print the inline asm operand descriptor.
   unsigned Flag = Op.getImm();
-  unsigned Kind = InlineAsm::getKind(Flag);
-  OS << InlineAsm::getKindName(Kind);
+  const InlineAsm::Flag F(Flag);
+  OS << F.getKindName();
 
-  unsigned RCID = 0;
-  if (!InlineAsm::isImmKind(Flag) && !InlineAsm::isMemKind(Flag) &&
-      InlineAsm::hasRegClassConstraint(Flag, RCID)) {
+  unsigned RCID;
+  if (!F.isImmKind() && !F.isMemKind() && F.hasRegClassConstraint(RCID)) {
     if (TRI) {
       OS << ':' << TRI->getRegClassName(TRI->getRegClass(RCID));
     } else
       OS << ":RC" << RCID;
   }
 
-  if (InlineAsm::isMemKind(Flag)) {
-    unsigned MCID = InlineAsm::getMemoryConstraintID(Flag);
+  if (F.isMemKind()) {
+    InlineAsm::ConstraintCode MCID = F.getMemoryConstraintID();
     OS << ":" << InlineAsm::getMemConstraintName(MCID);
   }
 
-  unsigned TiedTo = 0;
-  if (InlineAsm::isUseOperandTiedToDef(Flag, TiedTo))
+  unsigned TiedTo;
+  if (F.isUseOperandTiedToDef(TiedTo))
     OS << " tiedto:$" << TiedTo;
 
   return OS.str();
@@ -1579,10 +1665,6 @@ outliner::InstrType TargetInstrInfo::getOutliningType(
     // Just go right to the target implementation.
     return getOutliningTypeImpl(MIT, Flags);
 
-  // Don't allow instructions that don't materialize to impact analysis.
-  if (MI.isMetaInstruction())
-    return outliner::InstrType::Invisible;
-
   // Be conservative about inline assembly.
   if (MI.isInlineAsm())
     return outliner::InstrType::Illegal;
@@ -1590,6 +1672,21 @@ outliner::InstrType TargetInstrInfo::getOutliningType(
   // Labels generally can't safely be outlined.
   if (MI.isLabel())
     return outliner::InstrType::Illegal;
+
+  // Don't let debug instructions impact analysis.
+  if (MI.isDebugInstr())
+    return outliner::InstrType::Invisible;
+
+  // Some other special cases.
+  switch (MI.getOpcode()) {
+    case TargetOpcode::IMPLICIT_DEF:
+    case TargetOpcode::KILL:
+    case TargetOpcode::LIFETIME_START:
+    case TargetOpcode::LIFETIME_END:
+      return outliner::InstrType::Invisible;
+    default:
+      break;
+  }
 
   // Is this a terminator for a basic block?
   if (MI.isTerminator()) {
@@ -1640,10 +1737,25 @@ bool TargetInstrInfo::isMBBSafeToOutlineFrom(MachineBasicBlock &MBB,
   // Some instrumentations create special TargetOpcode at the start which
   // expands to special code sequences which must be present.
   auto First = MBB.getFirstNonDebugInstr();
-  if (First != MBB.end() &&
-      (First->getOpcode() == TargetOpcode::FENTRY_CALL ||
-       First->getOpcode() == TargetOpcode::PATCHABLE_FUNCTION_ENTER))
+  if (First == MBB.end())
+    return true;
+
+  if (First->getOpcode() == TargetOpcode::FENTRY_CALL ||
+      First->getOpcode() == TargetOpcode::PATCHABLE_FUNCTION_ENTER)
     return false;
 
+  // Some instrumentations create special pseudo-instructions at or just before
+  // the end that must be present.
+  auto Last = MBB.getLastNonDebugInstr();
+  if (Last->getOpcode() == TargetOpcode::PATCHABLE_RET ||
+      Last->getOpcode() == TargetOpcode::PATCHABLE_TAIL_CALL)
+    return false;
+
+  if (Last != First && Last->isReturn()) {
+    --Last;
+    if (Last->getOpcode() == TargetOpcode::PATCHABLE_FUNCTION_EXIT ||
+        Last->getOpcode() == TargetOpcode::PATCHABLE_TAIL_CALL)
+      return false;
+  }
   return true;
 }

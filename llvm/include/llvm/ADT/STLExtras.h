@@ -17,6 +17,7 @@
 #ifndef LLVM_ADT_STLEXTRAS_H
 #define LLVM_ADT_STLEXTRAS_H
 
+#include "llvm/ADT/ADL.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/STLForwardCompat.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
@@ -45,74 +46,6 @@
 #endif
 
 namespace llvm {
-
-// Only used by compiler if both template types are the same.  Useful when
-// using SFINAE to test for the existence of member functions.
-template <typename T, T> struct SameType;
-
-namespace adl_detail {
-
-using std::begin;
-
-template <typename RangeT>
-constexpr auto begin_impl(RangeT &&range)
-    -> decltype(begin(std::forward<RangeT>(range))) {
-  return begin(std::forward<RangeT>(range));
-}
-
-using std::end;
-
-template <typename RangeT>
-constexpr auto end_impl(RangeT &&range)
-    -> decltype(end(std::forward<RangeT>(range))) {
-  return end(std::forward<RangeT>(range));
-}
-
-using std::swap;
-
-template <typename T>
-constexpr void swap_impl(T &&lhs,
-                         T &&rhs) noexcept(noexcept(swap(std::declval<T>(),
-                                                         std::declval<T>()))) {
-  swap(std::forward<T>(lhs), std::forward<T>(rhs));
-}
-
-} // end namespace adl_detail
-
-/// Returns the begin iterator to \p range using `std::begin` and
-/// function found through Argument-Dependent Lookup (ADL).
-template <typename RangeT>
-constexpr auto adl_begin(RangeT &&range)
-    -> decltype(adl_detail::begin_impl(std::forward<RangeT>(range))) {
-  return adl_detail::begin_impl(std::forward<RangeT>(range));
-}
-
-/// Returns the end iterator to \p range using `std::end` and
-/// functions found through Argument-Dependent Lookup (ADL).
-template <typename RangeT>
-constexpr auto adl_end(RangeT &&range)
-    -> decltype(adl_detail::end_impl(std::forward<RangeT>(range))) {
-  return adl_detail::end_impl(std::forward<RangeT>(range));
-}
-
-/// Swaps \p lhs with \p rhs using `std::swap` and functions found through
-/// Argument-Dependent Lookup (ADL).
-template <typename T>
-constexpr void adl_swap(T &&lhs, T &&rhs) noexcept(
-    noexcept(adl_detail::swap_impl(std::declval<T>(), std::declval<T>()))) {
-  adl_detail::swap_impl(std::forward<T>(lhs), std::forward<T>(rhs));
-}
-
-namespace detail {
-
-template <typename RangeT>
-using IterOfRange = decltype(adl_begin(std::declval<RangeT &>()));
-
-template <typename RangeT>
-using ValueOfRange =
-    std::remove_reference_t<decltype(*adl_begin(std::declval<RangeT &>()))>;
-
-} // end namespace detail
 
 //===----------------------------------------------------------------------===//
 //     Extra additions to <type_traits>
@@ -443,7 +376,8 @@ inline mapped_iterator<ItTy, FuncTy> map_iterator(ItTy I, FuncTy F) {
 
 template <class ContainerTy, class FuncTy>
 auto map_range(ContainerTy &&C, FuncTy F) {
-  return make_range(map_iterator(C.begin(), F), map_iterator(C.end(), F));
+  return make_range(map_iterator(std::begin(C), F),
+                    map_iterator(std::end(C), F));
 }
 
 /// A base type of mapped iterator, that is useful for building derived
@@ -745,6 +679,8 @@ bool any_of(R &&range, UnaryPredicate P);
 
 template <typename T> bool all_equal(std::initializer_list<T> Values);
 
+template <typename R> constexpr size_t range_size(R &&Range);
+
 namespace detail {
 
 using std::declval;
@@ -936,9 +872,7 @@ detail::zippy<detail::zip_shortest, T, U, Args...> zip(T &&t, U &&u,
 template <typename T, typename U, typename... Args>
 detail::zippy<detail::zip_first, T, U, Args...> zip_equal(T &&t, U &&u,
                                                           Args &&...args) {
-  assert(all_equal({std::distance(adl_begin(t), adl_end(t)),
-                    std::distance(adl_begin(u), adl_end(u)),
-                    std::distance(adl_begin(args), adl_end(args))...}) &&
+  assert(all_equal({range_size(t), range_size(u), range_size(args)...}) &&
          "Iteratees do not have equal length");
   return detail::zippy<detail::zip_first, T, U, Args...>(
       std::forward<T>(t), std::forward<U>(u), std::forward<Args>(args)...);
@@ -951,9 +885,7 @@ detail::zippy<detail::zip_first, T, U, Args...> zip_equal(T &&t, U &&u,
 template <typename T, typename U, typename... Args>
 detail::zippy<detail::zip_first, T, U, Args...> zip_first(T &&t, U &&u,
                                                           Args &&...args) {
-  assert(std::distance(adl_begin(t), adl_end(t)) <=
-             std::min({std::distance(adl_begin(u), adl_end(u)),
-                       std::distance(adl_begin(args), adl_end(args))...}) &&
+  assert(range_size(t) <= std::min({range_size(u), range_size(args)...}) &&
          "First iteratee is not the shortest");
 
   return detail::zippy<detail::zip_first, T, U, Args...>(
@@ -1552,16 +1484,6 @@ struct on_first {
 template <int N> struct rank : rank<N - 1> {};
 template <> struct rank<0> {};
 
-/// traits class for checking whether type T is one of any of the given
-/// types in the variadic list.
-template <typename T, typename... Ts>
-using is_one_of = std::disjunction<std::is_same<T, Ts>...>;
-
-/// traits class for checking whether type T is a base class for all
-///  the given types in the variadic list.
-template <typename T, typename... Ts>
-using are_base_of = std::conjunction<std::is_base_of<T, Ts>...>;
-
 namespace detail {
 template <typename... Ts> struct Visitor;
 
@@ -1769,6 +1691,29 @@ auto size(R &&Range,
   return std::distance(Range.begin(), Range.end());
 }
 
+namespace detail {
+template <typename Range>
+using check_has_free_function_size =
+    decltype(adl_size(std::declval<Range &>()));
+
+template <typename Range>
+static constexpr bool HasFreeFunctionSize =
+    is_detected<check_has_free_function_size, Range>::value;
+} // namespace detail
+
+/// Returns the size of the \p Range, i.e., the number of elements. This
+/// implementation takes inspiration from `std::ranges::size` from C++20 and
+/// delegates the size check to `adl_size` or `std::distance`, in this order of
+/// preference. Unlike `llvm::size`, this function does *not* guarantee O(1)
+/// running time, and is intended to be used in generic code that does not know
+/// the exact range type.
+template <typename R> constexpr size_t range_size(R &&Range) {
+  if constexpr (detail::HasFreeFunctionSize<R>)
+    return adl_size(Range);
+  else
+    return static_cast<size_t>(std::distance(adl_begin(Range), adl_end(Range)));
+}
+
 /// Provide wrappers to std::for_each which take ranges instead of having to
 /// pass begin/end explicitly.
 template <typename R, typename UnaryFunction>
@@ -1837,7 +1782,7 @@ OutputIt copy_if(R &&Range, OutputIt Out, UnaryPredicate P) {
 template <typename T, typename R, typename Predicate>
 T *find_singleton(R &&Range, Predicate P, bool AllowRepeats = false) {
   T *RC = nullptr;
-  for (auto *A : Range) {
+  for (auto &&A : Range) {
     if (T *PRC = P(A, AllowRepeats)) {
       if (RC) {
         if (!AllowRepeats || PRC != RC)
@@ -2274,14 +2219,20 @@ template <typename... Refs> struct enumerator_result<std::size_t, Refs...> {
       return Storage;
   }
 
-  /// Returns the value at index `I`. This includes the index.
-  template <std::size_t I>
+  /// Returns the value at index `I`. This case covers the index.
+  template <std::size_t I, typename = std::enable_if_t<I == 0>>
+  friend std::size_t get(const enumerator_result &Result) {
+    return Result.Idx;
+  }
+
+  /// Returns the value at index `I`. This case covers references to the
+  /// iteratees.
+  template <std::size_t I, typename = std::enable_if_t<I != 0>>
   friend decltype(auto) get(const enumerator_result &Result) {
-    static_assert(I < NumValues, "Index out of bounds");
-    if constexpr (I == 0)
-      return Result.Idx;
-    else
-      return std::get<I - 1>(Result.Storage);
+    // Note: This is a separate function from the other `get`, instead of an
+    // `if constexpr` case, to work around an MSVC 19.31.31XXX compiler
+    // (Visual Studio 2022 17.1) return type deduction bug.
+    return std::get<I - 1>(Result.Storage);
   }
 
   template <typename... Ts>
@@ -2385,10 +2336,14 @@ struct index_stream {
 ///
 template <typename FirstRange, typename... RestRanges>
 auto enumerate(FirstRange &&First, RestRanges &&...Rest) {
-  assert((sizeof...(Rest) == 0 ||
-          all_equal({std::distance(adl_begin(First), adl_end(First)),
-                     std::distance(adl_begin(Rest), adl_end(Rest))...})) &&
-         "Ranges have different length");
+  if constexpr (sizeof...(Rest) != 0) {
+#ifndef NDEBUG
+    // Note: Create an array instead of an initializer list to work around an
+    // Apple clang 14 compiler bug.
+    size_t sizes[] = {range_size(First), range_size(Rest)...};
+    assert(all_equal(sizes) && "Ranges have different length");
+#endif
+  }
   using enumerator = detail::zippy<detail::zip_enumerator, detail::index_stream,
                                    FirstRange, RestRanges...>;
   return enumerator(detail::index_stream{}, std::forward<FirstRange>(First),
@@ -2520,6 +2475,16 @@ bool hasNItemsOrLess(ContainerTy &&C, unsigned N) {
 /// not been implemented.
 template <class Ptr> auto to_address(const Ptr &P) { return P.operator->(); }
 template <class T> constexpr T *to_address(T *P) { return P; }
+
+// Detect incomplete types, relying on the fact that their size is unknown.
+namespace detail {
+template <typename T> using has_sizeof = decltype(sizeof(T));
+} // namespace detail
+
+/// Detects when type `T` is incomplete. This is true for forward declarations
+/// and false for types with a full definition.
+template <typename T>
+constexpr bool is_incomplete_v = !is_detected<detail::has_sizeof, T>::value;
 
 } // end namespace llvm
 

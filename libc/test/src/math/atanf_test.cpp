@@ -28,23 +28,23 @@ DECLARE_SPECIAL_CONSTANTS(float)
 TEST(LlvmLibcAtanfTest, SpecialNumbers) {
   libc_errno = 0;
   __llvm_libc::fputil::clear_except(FE_ALL_EXCEPT);
-  EXPECT_FP_EQ(aNaN, __llvm_libc::atanf(aNaN));
+  EXPECT_FP_EQ_ALL_ROUNDING(aNaN, __llvm_libc::atanf(aNaN));
   EXPECT_FP_EXCEPTION(0);
   EXPECT_MATH_ERRNO(0);
 
   __llvm_libc::fputil::clear_except(FE_ALL_EXCEPT);
-  EXPECT_FP_EQ(0.0f, __llvm_libc::atanf(0.0f));
+  EXPECT_FP_EQ_ALL_ROUNDING(0.0f, __llvm_libc::atanf(0.0f));
   EXPECT_FP_EXCEPTION(0);
   EXPECT_MATH_ERRNO(0);
 
   __llvm_libc::fputil::clear_except(FE_ALL_EXCEPT);
-  EXPECT_FP_EQ(-0.0f, __llvm_libc::atanf(-0.0f));
+  EXPECT_FP_EQ_ALL_ROUNDING(-0.0f, __llvm_libc::atanf(-0.0f));
   EXPECT_FP_EXCEPTION(0);
   EXPECT_MATH_ERRNO(0);
 }
 
 TEST(LlvmLibcAtanfTest, InFloatRange) {
-  constexpr uint32_t COUNT = 1000000;
+  constexpr uint32_t COUNT = 100'000;
   const uint32_t STEP = FPBits(inf).uintval() / COUNT;
   for (uint32_t i = 0, v = 0; i <= COUNT; ++i, v += STEP) {
     float x = float(FPBits(v));

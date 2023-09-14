@@ -734,8 +734,11 @@ AArch64LoadStoreOpt::mergeNarrowZeroStores(MachineBasicBlock::iterator I,
     NextI = next_nodbg(NextI, E);
 
   unsigned Opc = I->getOpcode();
+  unsigned MergeMIOpc = MergeMI->getOpcode();
   bool IsScaled = !TII->hasUnscaledLdStOffset(Opc);
-  int OffsetStride = IsScaled ? 1 : TII->getMemScale(*I);
+  bool IsMergedMIScaled = !TII->hasUnscaledLdStOffset(MergeMIOpc);
+  int OffsetStride = IsScaled ? TII->getMemScale(*I) : 1;
+  int MergeMIOffsetStride = IsMergedMIScaled ? TII->getMemScale(*MergeMI) : 1;
 
   bool MergeForward = Flags.getMergeForward();
   // Insert our new paired instruction after whichever of the paired
@@ -748,18 +751,27 @@ AArch64LoadStoreOpt::mergeNarrowZeroStores(MachineBasicBlock::iterator I,
                    : AArch64InstrInfo::getLdStBaseOp(*I);
 
   // Which register is Rt and which is Rt2 depends on the offset order.
-  MachineInstr *RtMI;
-  if (AArch64InstrInfo::getLdStOffsetOp(*I).getImm() ==
-      AArch64InstrInfo::getLdStOffsetOp(*MergeMI).getImm() + OffsetStride)
-    RtMI = &*MergeMI;
+  int64_t IOffsetInBytes =
+      AArch64InstrInfo::getLdStOffsetOp(*I).getImm() * OffsetStride;
+  int64_t MIOffsetInBytes =
+      AArch64InstrInfo::getLdStOffsetOp(*MergeMI).getImm() *
+      MergeMIOffsetStride;
+  // Select final offset based on the offset order.
+  int64_t OffsetImm;
+  if (IOffsetInBytes > MIOffsetInBytes)
+    OffsetImm = MIOffsetInBytes;
   else
-    RtMI = &*I;
+    OffsetImm = IOffsetInBytes;
 
-  int OffsetImm = AArch64InstrInfo::getLdStOffsetOp(*RtMI).getImm();
-  // Change the scaled offset from small to large type.
-  if (IsScaled) {
-    assert(((OffsetImm & 1) == 0) && "Unexpected offset to merge");
-    OffsetImm /= 2;
+  int NewOpcode = getMatchingWideOpcode(Opc);
+  bool FinalIsScaled = !TII->hasUnscaledLdStOffset(NewOpcode);
+
+  // Adjust final offset if the result opcode is a scaled store.
+  if (FinalIsScaled) {
+    int NewOffsetStride = FinalIsScaled ? TII->getMemScale(NewOpcode) : 1;
+    assert(((OffsetImm % NewOffsetStride) == 0) &&
+           "Offset should be a multiple of the store memory scale");
+    OffsetImm = OffsetImm / NewOffsetStride;
   }
 
   // Construct the new instruction.
@@ -2124,6 +2136,14 @@ bool AArch64LoadStoreOpt::tryToPairLdStInst(MachineBasicBlock::iterator &MBBI) {
   if (!TII->isCandidateToMergeOrPair(MI))
     return false;
 
+  // If disable-ldp feature is opted, do not emit ldp.
+  if (MI.mayLoad() && Subtarget->hasDisableLdp())
+    return false;
+
+  // If disable-stp feature is opted, do not emit stp.
+  if (MI.mayStore() && Subtarget->hasDisableStp())
+    return false;
+
   // Early exit if the offset is not possible to match. (6 bits of positive
   // range, plus allow an extra one in case we find a later insn that matches
   // with Offset-1)
@@ -2147,6 +2167,31 @@ bool AArch64LoadStoreOpt::tryToPairLdStInst(MachineBasicBlock::iterator &MBBI) {
     // Keeping the iterator straight is a pain, so we let the merge routine tell
     // us what the next instruction is after it's done mucking about.
     auto Prev = std::prev(MBBI);
+
+    // Fetch the memoperand of the load/store that is a candidate for
+    // combination.
+    MachineMemOperand *MemOp =
+        MI.memoperands_empty() ? nullptr : MI.memoperands().front();
+
+    // Get the needed alignments to check them if
+    // ldp-aligned-only/stp-aligned-only features are opted.
+    uint64_t MemAlignment = MemOp ? MemOp->getAlign().value() : -1;
+    uint64_t TypeAlignment = MemOp ? Align(MemOp->getSize()).value() : -1;
+
+    // If a load arrives and ldp-aligned-only feature is opted, check that the
+    // alignment of the source pointer is at least double the alignment of the
+    // type.
+    if (MI.mayLoad() && Subtarget->hasLdpAlignedOnly() && MemOp &&
+        MemAlignment < 2 * TypeAlignment)
+      return false;
+
+    // If a store arrives and stp-aligned-only feature is opted, check that the
+    // alignment of the source pointer is at least double the alignment of the
+    // type.
+    if (MI.mayStore() && Subtarget->hasStpAlignedOnly() && MemOp &&
+        MemAlignment < 2 * TypeAlignment)
+      return false;
+
     MBBI = mergePairedInsns(MBBI, Paired, Flags);
     // Collect liveness info for instructions between Prev and the new position
     // MBBI.

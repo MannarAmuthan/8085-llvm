@@ -56,7 +56,11 @@
 // CHECK-INVALID-ARG-SAME:        rules greater or equal to -1
 
 typedef long long rsize_t;
+typedef __typeof(sizeof(int)) size_t;
+typedef signed long long ssize_t;
+typedef __WCHAR_TYPE__ wchar_t;
 void clang_analyzer_isTainted_char(char);
+void clang_analyzer_isTainted_wchar(wchar_t);
 void clang_analyzer_isTainted_charp(char*);
 void clang_analyzer_isTainted_int(int);
 
@@ -75,6 +79,17 @@ extern FILE *stdin;
 #define bool _Bool
 #define NULL (void*)0
 
+wchar_t *fgetws(wchar_t *ws, int n, FILE *stream);
+wchar_t *wmemset(wchar_t *wcs, wchar_t wc, unsigned long n);
+wchar_t *wmemcpy(wchar_t *dest, const wchar_t *src, size_t n);
+wchar_t *wmemmove(wchar_t *dest, const wchar_t *src, size_t n);
+size_t wcslen(const wchar_t *s);
+wchar_t *wcscpy(wchar_t * dest, const wchar_t * src);
+wchar_t *wcsncpy(wchar_t *dest, const wchar_t *src, size_t n);
+wchar_t *wcscat(wchar_t *dest, const wchar_t *src);
+wchar_t *wcsncat(wchar_t *dest,const wchar_t *src, size_t n);
+int swprintf(wchar_t *wcs, size_t maxlen, const wchar_t *format, ...);
+
 char *getenv(const char *name);
 
 FILE *fopen(const char *name, const char *mode);
@@ -83,8 +98,6 @@ int fscanf(FILE *restrict stream, const char *restrict format, ...);
 int sprintf(char *str, const char *format, ...);
 void setproctitle(const char *fmt, ...);
 void setproctitle_init(int argc, char *argv[], char *envp[]);
-typedef __typeof(sizeof(int)) size_t;
-typedef signed long long ssize_t;
 
 // Define string functions. Use builtin for some of them. They all default to
 // the processing in the taint checker.
@@ -156,6 +169,28 @@ void bufferGetchar(int x) {
   Buffer[m] = 1;  //expected-warning {{Out of bound memory access (index is tainted)}}
 }
 
+extern const unsigned short int **__ctype_b_loc (void);
+enum { _ISdigit = 2048 };
+# define isdigit(c) ((*__ctype_b_loc ())[(int) (c)] & (unsigned short int) _ISdigit)
+
+int isdigitImplFalsePositive(void) {
+  // If this code no longer produces a bug report, then consider removing the
+  // special case that disables buffer overflow reports coming from the isXXXXX
+  // macros in ctypes.h.
+  int c = getchar();
+  return ((*__ctype_b_loc ())[(int) (c)] & (unsigned short int) _ISdigit);
+  //expected-warning@-1 {{Out of bound memory access (index is tainted)}}
+}
+
+int isdigitSuppressed(void) {
+  // Same code as above, but reports are suppressed based on macro name:
+  int c = getchar();
+  return isdigit(c); //no-warning
+}
+
+// Some later tests use isdigit as a function, so we need to undef it:
+#undef isdigit
+
 void testUncontrolledFormatString(char **p) {
   char s[80];
   fscanf(stdin, "%s", s);
@@ -207,6 +242,7 @@ void testTaintSystemCall2(void) {
   char addr[128];
   scanf("%s", addr);
   __builtin_snprintf(buffern, 10, "/bin/mail %s < /tmp/email", addr);
+  // expected-warning@-1 {{'snprintf' will always be truncated; specified size is 10, but format string expands to at least 24}}
   system(buffern); // expected-warning {{Untrusted data is passed to a system call}}
 }
 
@@ -337,6 +373,25 @@ void testTaintedVLASize(void) {
   int vla[x]; // expected-warning{{Declared variable-length array (VLA) has tainted size}}
 }
 
+int testTaintedAllocaMem() {
+  char x;
+  void * p;
+  scanf("%c", &x);
+  p = __builtin_alloca(1);
+  __builtin_memcpy(p, &x, 1);
+  return 5 / *(char*)p; // expected-warning {{Division by a tainted value, possibly zero}}
+}
+
+int testTaintedMallocMem() {
+  char x;
+  void * p;
+  scanf("%c", &x);
+  p = malloc(1);
+  __builtin_memcpy(p, &x, 1);
+  return 5 / *(char*)p; // expected-warning {{Division by a tainted value, possibly zero}}
+}
+
+
 // This computation used to take a very long time.
 #define longcmp(a,b,c) { \
   a -= c;  a ^= c;  c += b; b -= a;  b ^= (a<<6) | (a >> (32-b));  a += c; c -= b;  c ^= b;  b += a; \
@@ -386,6 +441,24 @@ int testSprintf_propagates_taint(char *buf, char *msg) {
   scanf("%s", msg);
   int x = sprintf(buf, "%s", msg); // propagate taint!
   return 1 / x;                    // expected-warning {{Division by a tainted value, possibly zero}}
+}
+
+void test_wchar_apis_propagate(const char *path) {
+  FILE *f = fopen(path, "r");
+  clang_analyzer_isTainted_charp((char*)f);  // expected-warning {{YES}}
+  wchar_t wbuf[10];
+  fgetws(wbuf, sizeof(wbuf)/sizeof(*wbuf), f);
+  clang_analyzer_isTainted_wchar(*wbuf); // expected-warning {{YES}}
+  int n = wcslen(wbuf);
+  clang_analyzer_isTainted_int(n); // expected-warning {{YES}}
+
+  wchar_t dst[100] = L"ABC";
+  clang_analyzer_isTainted_wchar(*dst); // expected-warning {{NO}}
+  wcsncat(dst, wbuf, sizeof(wbuf)/sizeof(*wbuf));
+  clang_analyzer_isTainted_wchar(*dst); // expected-warning {{YES}}
+
+  int m = wcslen(dst);
+  clang_analyzer_isTainted_int(m); // expected-warning {{YES}}
 }
 
 int scanf_s(const char *format, ...);
@@ -502,6 +575,10 @@ void testFread(const char *fname, int *buffer, size_t size, size_t count) {
 }
 
 ssize_t recv(int sockfd, void *buf, size_t len, int flags);
+int accept(int fd, struct sockaddr *addr, socklen_t *addrlen);
+int bind(int fd, const struct sockaddr *addr, socklen_t addrlen);
+int listen(int fd, int backlog);
+
 void testRecv(int *buf, size_t len, int flags) {
   int fd;
   scanf("%d", &fd); // fake a tainted a file descriptor
@@ -598,7 +675,6 @@ void testRawmemchr(int c) {
   clang_analyzer_isTainted_charp(result); // expected-warning {{YES}}
 }
 
-typedef char wchar_t;
 int mbtowc(wchar_t *pwc, const char *s, size_t n);
 void testMbtowc(wchar_t *pwc, size_t n) {
   char buf[10];
@@ -611,8 +687,7 @@ void testMbtowc(wchar_t *pwc, size_t n) {
 
 int wctomb(char *s, wchar_t wc);
 void testWctomb(char *buf) {
-  wchar_t wc;
-  scanf("%c", &wc);
+  wchar_t wc = getchar();
 
   int result = wctomb(buf, wc);
   clang_analyzer_isTainted_char(*buf); // expected-warning {{YES}}
@@ -621,8 +696,7 @@ void testWctomb(char *buf) {
 
 int wcwidth(wchar_t c);
 void testWcwidth() {
-  wchar_t wc;
-  scanf("%c", &wc);
+  wchar_t wc = getchar();
 
   int width = wcwidth(wc);
   clang_analyzer_isTainted_int(width); // expected-warning {{YES}}
@@ -988,7 +1062,8 @@ void mySource2(int*);
 void myScanf(const char*, ...);
 int myPropagator(int, int*);
 int mySnprintf(char*, size_t, const char*, ...);
-bool isOutOfRange(const int*);
+bool isOutOfRange(const int*); // const filter function
+void sanitizeCmd(char*); // non-const filter function
 void mySink(int, int, int);
 
 void testConfigurationSources1(void) {
@@ -1022,6 +1097,19 @@ void testConfigurationFilter(void) {
   Buffer[x] = 1; // no-warning
 }
 
+void testConfigurationFilterNonConst(void) {
+  char buffer[1000];
+  myScanf("%s", buffer); // makes buffer tainted
+  system(buffer); // expected-warning {{Untrusted data is passed to a system call}}
+}
+
+void testConfigurationFilterNonConst2(void) {
+  char buffer[1000];
+  myScanf("%s", buffer); // makes buffer tainted
+  sanitizeCmd(buffer); // removes taintedness
+  system(buffer); // no-warning
+}
+
 void testConfigurationSinks(void) {
   int x = mySource1();
   mySink(x, 1, 2);
@@ -1050,4 +1138,11 @@ void testProctitle2(char *real_argv[]) {
   char *argv[] = {app, "--foobar"};
   setproctitle_init(1, argv, 0);         // expected-warning {{Untrusted data is passed to a user-defined sink}}
   setproctitle_init(1, real_argv, argv); // expected-warning {{Untrusted data is passed to a user-defined sink}}
+}
+
+void testAcceptPropagates() {
+  int listenSocket = socket(2, 1, 6);
+  clang_analyzer_isTainted_int(listenSocket); // expected-warning {{YES}}
+  int acceptSocket = accept(listenSocket, 0, 0);
+  clang_analyzer_isTainted_int(acceptSocket); // expected-warning {{YES}}
 }

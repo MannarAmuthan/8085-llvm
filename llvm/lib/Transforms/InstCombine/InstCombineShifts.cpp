@@ -709,13 +709,13 @@ static Value *getShiftedValue(Value *V, unsigned NumBits, bool isLeftShift,
   case Instruction::Mul: {
     assert(!isLeftShift && "Unexpected shift direction!");
     auto *Neg = BinaryOperator::CreateNeg(I->getOperand(0));
-    IC.InsertNewInstWith(Neg, *I);
+    IC.InsertNewInstWith(Neg, I->getIterator());
     unsigned TypeWidth = I->getType()->getScalarSizeInBits();
     APInt Mask = APInt::getLowBitsSet(TypeWidth, TypeWidth - NumBits);
     auto *And = BinaryOperator::CreateAnd(Neg,
                                           ConstantInt::get(I->getType(), Mask));
     And->takeName(I);
-    return IC.InsertNewInstWith(And, *I);
+    return IC.InsertNewInstWith(And, I->getIterator());
   }
   }
 }
@@ -919,8 +919,10 @@ Instruction *InstCombinerImpl::foldLShrOverflowBit(BinaryOperator &I) {
   // Replace the uses of the original add with a zext of the
   // NarrowAdd's result. Note that all users at this stage are known to
   // be ShAmt-sized truncs, or the lshr itself.
-  if (!Add->hasOneUse())
+  if (!Add->hasOneUse()) {
     replaceInstUsesWith(*AddInst, Builder.CreateZExt(NarrowAdd, Ty));
+    eraseInstFromFunction(*AddInst);
+  }
 
   // Replace the LShr with a zext of the overflow check.
   return new ZExtInst(Overflow, Ty);

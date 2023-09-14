@@ -1,13 +1,13 @@
 // RUN: %check_clang_tidy -std=c++11 %s cppcoreguidelines-rvalue-reference-param-not-moved %t -- \
-// RUN: -config="{CheckOptions: [{key: cppcoreguidelines-rvalue-reference-param-not-moved.AllowPartialMove, value: true},{key: cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreUnnamedParams, value: true},{key: cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreNonDeducedTemplateTypes, value: true}]}" -- -fno-delayed-template-parsing
+// RUN: -config="{CheckOptions: {cppcoreguidelines-rvalue-reference-param-not-moved.AllowPartialMove: true, cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreUnnamedParams: true, cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreNonDeducedTemplateTypes: true}}" -- -fno-delayed-template-parsing
 // RUN: %check_clang_tidy -check-suffix=,CXX14 -std=c++14 %s cppcoreguidelines-rvalue-reference-param-not-moved %t -- \
-// RUN: -config="{CheckOptions: [{key: cppcoreguidelines-rvalue-reference-param-not-moved.AllowPartialMove, value: true},{key: cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreUnnamedParams, value: true},{key: cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreNonDeducedTemplateTypes, value: true}]}" -- -fno-delayed-template-parsing
+// RUN: -config="{CheckOptions: {cppcoreguidelines-rvalue-reference-param-not-moved.AllowPartialMove: true, cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreUnnamedParams: true, cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreNonDeducedTemplateTypes: true}}" -- -fno-delayed-template-parsing
 // RUN: %check_clang_tidy -check-suffix=,NOSUBEXPR -std=c++11 %s cppcoreguidelines-rvalue-reference-param-not-moved %t -- \
-// RUN: -config="{CheckOptions: [{key: cppcoreguidelines-rvalue-reference-param-not-moved.AllowPartialMove, value: false},{key: cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreUnnamedParams, value: true},{key: cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreNonDeducedTemplateTypes, value: true}]}" -- -fno-delayed-template-parsing
+// RUN: -config="{CheckOptions: {cppcoreguidelines-rvalue-reference-param-not-moved.AllowPartialMove: false, cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreUnnamedParams: true, cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreNonDeducedTemplateTypes: true}}" -- -fno-delayed-template-parsing
 // RUN: %check_clang_tidy -check-suffix=,UNNAMED -std=c++11 %s cppcoreguidelines-rvalue-reference-param-not-moved %t -- \
-// RUN: -config="{CheckOptions: [{key: cppcoreguidelines-rvalue-reference-param-not-moved.AllowPartialMove, value: true},{key: cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreUnnamedParams, value: false},{key: cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreNonDeducedTemplateTypes, value: true}]}" -- -fno-delayed-template-parsing
+// RUN: -config="{CheckOptions: {cppcoreguidelines-rvalue-reference-param-not-moved.AllowPartialMove: true, cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreUnnamedParams: false, cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreNonDeducedTemplateTypes: true}}" -- -fno-delayed-template-parsing
 // RUN: %check_clang_tidy -check-suffix=,NONDEDUCED -std=c++11 %s cppcoreguidelines-rvalue-reference-param-not-moved %t -- \
-// RUN: -config="{CheckOptions: [{key: cppcoreguidelines-rvalue-reference-param-not-moved.AllowPartialMove, value: true},{key: cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreUnnamedParams, value: true},{key: cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreNonDeducedTemplateTypes, value: false}]}" -- -fno-delayed-template-parsing
+// RUN: -config="{CheckOptions: {cppcoreguidelines-rvalue-reference-param-not-moved.AllowPartialMove: true, cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreUnnamedParams: true, cppcoreguidelines-rvalue-reference-param-not-moved.IgnoreNonDeducedTemplateTypes: false}}" -- -fno-delayed-template-parsing
 
 // NOLINTBEGIN
 namespace std {
@@ -154,6 +154,13 @@ void moves_parameter(Obj&& o) {
 
 void moves_parameter_extra_parens(Obj&& o) {
   Obj moved = std::move((o));
+}
+
+void does_not_move_in_evaluated(Obj&& o) {
+  // CHECK-MESSAGES: :[[@LINE-1]]:39: warning: rvalue reference parameter 'o' is never moved from inside the function body [cppcoreguidelines-rvalue-reference-param-not-moved]
+  using result_t = decltype(std::move(o));
+  unsigned size = sizeof(std::move(o));
+  Obj moved = o;
 }
 
 template <typename T1, typename T2>

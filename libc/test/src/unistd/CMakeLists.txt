@@ -1,4 +1,4 @@
-add_libc_testsuite(libc_unistd_unittests)
+add_custom_target(libc_unistd_unittests)
 
 add_subdirectory(testdata)
 
@@ -226,6 +226,16 @@ add_libc_unittest(
 )
 
 add_libc_unittest(
+  swab_test
+  SUITE
+    libc_unistd_unittests
+  SRCS
+    swab_test.cpp
+  DEPENDS
+    libc.src.unistd.swab
+)
+
+add_libc_unittest(
   readlink_test
   SUITE
     libc_unistd_unittests
@@ -420,8 +430,9 @@ add_libc_unittest(
     libc.src.unistd.sysconf
 )
 
-add_libc_unittest(
+add_libc_test(
   getopt_test
+  HERMETIC_TEST_ONLY # Uses libc's own stderr
   SUITE
     libc_unistd_unittests
   SRCS

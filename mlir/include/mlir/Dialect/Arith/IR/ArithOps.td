@@ -46,12 +46,6 @@ class Arith_BinaryOp<string mnemonic, list<Trait> traits = []> :
   let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($result)";
 }
 
-// Base class for ternary arithmetic operations.
-class Arith_TernaryOp<string mnemonic, list<Trait> traits = []> :
-    Arith_ArithOp<mnemonic, traits # [Pure]> {
-  let assemblyFormat = "$a `,` $b `,` $c attr-dict `:` type($result)";
-}
-
 // Base class for integer binary operations.
 class Arith_IntBinaryOp<string mnemonic, list<Trait> traits = []> :
     Arith_BinaryOp<mnemonic, traits #
@@ -178,15 +172,15 @@ def Arith_ConstantOp : Op<Arith_Dialect, "constant",
   // splitting the Standard dialect.
   let results = (outs /*SignlessIntegerOrFloatLike*/AnyType:$result);
 
-  let builders = [
-    OpBuilder<(ins "Attribute":$value, "Type":$type),
-    [{ build($_builder, $_state, type, value); }]>,
-  ];
-
   let extraClassDeclaration = [{
     /// Whether the constant op can be constructed with a particular value and
     /// type.
     static bool isBuildableWith(Attribute value, Type type);
+
+    /// Build the constant op with `value` and `type` if possible, otherwise
+    /// returns null.
+    static ConstantOp materialize(OpBuilder &builder, Attribute value,
+                                  Type type, Location loc);
   }];
 
   let hasFolder = 1;
@@ -291,6 +285,7 @@ def Arith_SubIOp : Arith_TotalIntBinaryOp<"subi"> {
 def Arith_MulIOp : Arith_TotalIntBinaryOp<"muli", [Commutative]> {
   let summary = "integer multiplication operation";
   let hasFolder = 1;
+  let hasCanonicalizer = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -837,16 +832,16 @@ def Arith_SubFOp : Arith_FloatBinaryOp<"subf"> {
 }
 
 //===----------------------------------------------------------------------===//
-// MaxFOp
+// MaximumFOp
 //===----------------------------------------------------------------------===//
 
-def Arith_MaxFOp : Arith_FloatBinaryOp<"maxf", [Commutative]> {
+def Arith_MaximumFOp : Arith_FloatBinaryOp<"maximumf", [Commutative]> {
   let summary = "floating-point maximum operation";
   let description = [{
     Syntax:
 
     ```
-    operation ::= ssa-id `=` `arith.maxf` ssa-use `,` ssa-use `:` type
+    operation ::= ssa-id `=` `arith.maximumf` ssa-use `,` ssa-use `:` type
     ```
 
     Returns the maximum of the two arguments, treating -0.0 as less than +0.0.
@@ -856,7 +851,7 @@ def Arith_MaxFOp : Arith_FloatBinaryOp<"maxf", [Commutative]> {
 
     ```mlir
     // Scalar floating-point maximum.
-    %a = arith.maxf %b, %c : f64
+    %a = arith.maximumf %b, %c : f64
     ```
   }];
   let hasFolder = 1;
@@ -881,16 +876,16 @@ def Arith_MaxUIOp : Arith_TotalIntBinaryOp<"maxui", [Commutative]> {
 }
 
 //===----------------------------------------------------------------------===//
-// MinFOp
+// MinimumFOp
 //===----------------------------------------------------------------------===//
 
-def Arith_MinFOp : Arith_FloatBinaryOp<"minf", [Commutative]> {
+def Arith_MinimumFOp : Arith_FloatBinaryOp<"minimumf", [Commutative]> {
   let summary = "floating-point minimum operation";
   let description = [{
     Syntax:
 
     ```
-    operation ::= ssa-id `=` `arith.minf` ssa-use `,` ssa-use `:` type
+    operation ::= ssa-id `=` `arith.minimumf` ssa-use `,` ssa-use `:` type
     ```
 
     Returns the minimum of the two arguments, treating -0.0 as less than +0.0.
@@ -900,7 +895,7 @@ def Arith_MinFOp : Arith_FloatBinaryOp<"minf", [Commutative]> {
 
     ```mlir
     // Scalar floating-point minimum.
-    %a = arith.minf %b, %c : f64
+    %a = arith.minimumf %b, %c : f64
     ```
   }];
   let hasFolder = 1;
@@ -1366,6 +1361,7 @@ def Arith_CmpFOp : Arith_CompareOp<"cmpf"> {
 
 def SelectOp : Arith_Op<"select", [Pure,
     AllTypesMatch<["true_value", "false_value", "result"]>,
+    ScalarConditionOrMatchingShape<["condition", "result"]>,
     DeclareOpInterfaceMethods<InferIntRangeInterface>,
   ] # ElementwiseMappable.traits> {
   let summary = "select operation";

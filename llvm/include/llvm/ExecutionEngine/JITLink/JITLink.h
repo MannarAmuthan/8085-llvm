@@ -15,9 +15,12 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ExecutionEngine/JITLink/JITLinkMemoryManager.h"
 #include "llvm/ExecutionEngine/JITSymbol.h"
+#include "llvm/ExecutionEngine/Orc/Shared/ExecutorAddress.h"
+#include "llvm/ExecutionEngine/Orc/Shared/ExecutorSymbolDef.h"
 #include "llvm/ExecutionEngine/Orc/Shared/MemoryFlags.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/BinaryStreamReader.h"
@@ -27,6 +30,7 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/TargetParser/SubtargetFeature.h"
 #include "llvm/TargetParser/Triple.h"
 #include <optional>
 
@@ -352,13 +356,13 @@ private:
 };
 
 // Align an address to conform with block alignment requirements.
-inline uint64_t alignToBlock(uint64_t Addr, Block &B) {
+inline uint64_t alignToBlock(uint64_t Addr, const Block &B) {
   uint64_t Delta = (B.getAlignmentOffset() - Addr) % B.getAlignment();
   return Addr + Delta;
 }
 
 // Align a orc::ExecutorAddr to conform with block alignment requirements.
-inline orc::ExecutorAddr alignToBlock(orc::ExecutorAddr Addr, Block &B) {
+inline orc::ExecutorAddr alignToBlock(orc::ExecutorAddr Addr, const Block &B) {
   return orc::ExecutorAddr(alignToBlock(Addr.getValue(), B));
 }
 
@@ -367,12 +371,14 @@ inline orc::ExecutorAddr alignToBlock(orc::ExecutorAddr Addr, Block &B) {
 // must end with a zero, and contain no zeros before the end.
 bool isCStringBlock(Block &B);
 
-/// Describes symbol linkage. This can be used to make resolve definition
-/// clashes.
+/// Describes symbol linkage. This can be used to resolve definition clashes.
 enum class Linkage : uint8_t {
   Strong,
   Weak,
 };
+
+/// Holds target-specific properties for a symbol.
+using TargetFlagsType = uint8_t;
 
 /// For errors and debugging output.
 const char *getLinkageName(Linkage L);
@@ -418,6 +424,7 @@ private:
     setScope(S);
     setLive(IsLive);
     setCallable(IsCallable);
+    setTargetFlags(TargetFlagsType{});
   }
 
   static Symbol &constructExternal(BumpPtrAllocator &Allocator,
@@ -558,6 +565,11 @@ public:
   /// Returns the offset for this symbol within the underlying addressable.
   orc::ExecutorAddrDiff getOffset() const { return Offset; }
 
+  void setOffset(orc::ExecutorAddrDiff NewOffset) {
+    assert(NewOffset < getBlock().getSize() && "Offset out of range");
+    Offset = NewOffset;
+  }
+
   /// Returns the address of this symbol.
   orc::ExecutorAddr getAddress() const { return Base->getAddress() + Offset; }
 
@@ -611,6 +623,15 @@ public:
     this->S = static_cast<uint8_t>(S);
   }
 
+  /// Get the target flags of this Symbol.
+  TargetFlagsType getTargetFlags() const { return TargetFlags; }
+
+  /// Set the target flags for this Symbol.
+  void setTargetFlags(TargetFlagsType Flags) {
+    assert(Flags <= 1 && "Add more bits to store more than single flag");
+    TargetFlags = Flags;
+  }
+
   /// Returns true if this is a weakly referenced external symbol.
   /// This method may only be called on external symbols.
   bool isWeaklyReferenced() const {
@@ -645,22 +666,18 @@ private:
 
   void setBlock(Block &B) { Base = &B; }
 
-  void setOffset(orc::ExecutorAddrDiff NewOffset) {
-    assert(NewOffset <= MaxOffset && "Offset out of range");
-    Offset = NewOffset;
-  }
-
   static constexpr uint64_t MaxOffset = (1ULL << 59) - 1;
 
   // FIXME: A char* or SymbolStringPtr may pack better.
   StringRef Name;
   Addressable *Base = nullptr;
-  uint64_t Offset : 58;
+  uint64_t Offset : 57;
   uint64_t L : 1;
   uint64_t S : 2;
   uint64_t IsLive : 1;
   uint64_t IsCallable : 1;
   uint64_t WeakRef : 1;
+  uint64_t TargetFlags : 1;
   size_t Size = 0;
 };
 
@@ -712,6 +729,9 @@ public:
 
   /// Returns the ordinal for this section.
   SectionOrdinal getOrdinal() const { return SecOrdinal; }
+
+  /// Returns true if this section is empty (contains no blocks or symbols).
+  bool empty() const { return Blocks.empty(); }
 
   /// Returns an iterator over the blocks defined in this section.
   iterator_range<block_iterator> blocks() {
@@ -827,7 +847,8 @@ private:
 class LinkGraph {
 private:
   using SectionMap = DenseMap<StringRef, std::unique_ptr<Section>>;
-  using ExternalSymbolSet = DenseSet<Symbol *>;
+  using ExternalSymbolMap = StringMap<Symbol *>;
+  using AbsoluteSymbolSet = DenseSet<Symbol *>;
   using BlockSet = DenseSet<Block *>;
 
   template <typename... ArgTs>
@@ -879,6 +900,12 @@ private:
     return S.symbols();
   }
 
+  struct GetExternalSymbolMapEntryValue {
+    Symbol *operator()(ExternalSymbolMap::value_type &KV) const {
+      return KV.second;
+    }
+  };
+
   struct GetSectionMapEntryValue {
     Section &operator()(SectionMap::value_type &KV) const { return *KV.second; }
   };
@@ -890,7 +917,10 @@ private:
   };
 
 public:
-  using external_symbol_iterator = ExternalSymbolSet::iterator;
+  using external_symbol_iterator =
+      mapped_iterator<ExternalSymbolMap::iterator,
+                      GetExternalSymbolMapEntryValue>;
+  using absolute_symbol_iterator = AbsoluteSymbolSet::iterator;
 
   using section_iterator =
       mapped_iterator<SectionMap::iterator, GetSectionMapEntryValue>;
@@ -964,11 +994,18 @@ public:
 
   using GetEdgeKindNameFunction = const char *(*)(Edge::Kind);
 
+  LinkGraph(std::string Name, const Triple &TT, SubtargetFeatures Features,
+            unsigned PointerSize, support::endianness Endianness,
+            GetEdgeKindNameFunction GetEdgeKindName)
+      : Name(std::move(Name)), TT(TT), Features(std::move(Features)),
+        PointerSize(PointerSize), Endianness(Endianness),
+        GetEdgeKindName(std::move(GetEdgeKindName)) {}
+
   LinkGraph(std::string Name, const Triple &TT, unsigned PointerSize,
             support::endianness Endianness,
             GetEdgeKindNameFunction GetEdgeKindName)
-      : Name(std::move(Name)), TT(TT), PointerSize(PointerSize),
-        Endianness(Endianness), GetEdgeKindName(std::move(GetEdgeKindName)) {}
+      : LinkGraph(std::move(Name), TT, SubtargetFeatures(), PointerSize,
+                  Endianness, GetEdgeKindName) {}
 
   LinkGraph(const LinkGraph &) = delete;
   LinkGraph &operator=(const LinkGraph &) = delete;
@@ -981,6 +1018,9 @@ public:
 
   /// Returns the target triple for this Graph.
   const Triple &getTargetTriple() const { return TT; }
+
+  /// Return the subtarget features for this Graph.
+  const SubtargetFeatures &getFeatures() const { return Features; }
 
   /// Returns the pointer size for use in this graph.
   unsigned getPointerSize() const { return PointerSize; }
@@ -1082,7 +1122,7 @@ public:
                                    orc::ExecutorAddr Address,
                                    uint64_t Alignment, uint64_t AlignmentOffset,
                                    bool ZeroInitialize = true) {
-    auto Content = allocateContent(ContentSize);
+    auto Content = allocateBuffer(ContentSize);
     if (ZeroInitialize)
       memset(Content.data(), 0, Content.size());
     return createBlock(Parent, Content, Address, Alignment, AlignmentOffset);
@@ -1160,15 +1200,11 @@ public:
   /// of 0.
   Symbol &addExternalSymbol(StringRef Name, orc::ExecutorAddrDiff Size,
                             bool IsWeaklyReferenced) {
-    assert(llvm::count_if(ExternalSymbols,
-                          [&](const Symbol *Sym) {
-                            return Sym->getName() == Name;
-                          }) == 0 &&
-           "Duplicate external symbol");
+    assert(!ExternalSymbols.contains(Name) && "Duplicate external symbol");
     auto &Sym = Symbol::constructExternal(
         Allocator, createAddressable(orc::ExecutorAddr(), false), Name, Size,
         Linkage::Strong, IsWeaklyReferenced);
-    ExternalSymbols.insert(&Sym);
+    ExternalSymbols.insert({Sym.getName(), &Sym});
     return Sym;
   }
 
@@ -1249,10 +1285,14 @@ public:
   }
 
   iterator_range<external_symbol_iterator> external_symbols() {
-    return make_range(ExternalSymbols.begin(), ExternalSymbols.end());
+    return make_range(
+        external_symbol_iterator(ExternalSymbols.begin(),
+                                 GetExternalSymbolMapEntryValue()),
+        external_symbol_iterator(ExternalSymbols.end(),
+                                 GetExternalSymbolMapEntryValue()));
   }
 
-  iterator_range<external_symbol_iterator> absolute_symbols() {
+  iterator_range<absolute_symbol_iterator> absolute_symbols() {
     return make_range(AbsoluteSymbols.begin(), AbsoluteSymbols.end());
   }
 
@@ -1288,7 +1328,7 @@ public:
       Sec.removeSymbol(Sym);
       Sym.makeExternal(createAddressable(orc::ExecutorAddr(), false));
     }
-    ExternalSymbols.insert(&Sym);
+    ExternalSymbols.insert({Sym.getName(), &Sym});
   }
 
   /// Make the given symbol an absolute with the given address (must not already
@@ -1302,10 +1342,10 @@ public:
   void makeAbsolute(Symbol &Sym, orc::ExecutorAddr Address) {
     assert(!Sym.isAbsolute() && "Symbol is already absolute");
     if (Sym.isExternal()) {
-      assert(ExternalSymbols.count(&Sym) &&
+      assert(ExternalSymbols.contains(Sym.getName()) &&
              "Sym is not in the absolute symbols set");
       assert(Sym.getOffset() == 0 && "External is not at offset 0");
-      ExternalSymbols.erase(&Sym);
+      ExternalSymbols.erase(Sym.getName());
       auto &A = Sym.getAddressable();
       A.setAbsolute(true);
       A.setAddress(Address);
@@ -1330,9 +1370,9 @@ public:
              "Symbol is not in the absolutes set");
       AbsoluteSymbols.erase(&Sym);
     } else {
-      assert(ExternalSymbols.count(&Sym) &&
+      assert(ExternalSymbols.contains(Sym.getName()) &&
              "Symbol is not in the externals set");
-      ExternalSymbols.erase(&Sym);
+      ExternalSymbols.erase(Sym.getName());
     }
     Addressable &OldBase = *Sym.Base;
     Sym.setBlock(Content);
@@ -1417,10 +1457,11 @@ public:
   void removeExternalSymbol(Symbol &Sym) {
     assert(!Sym.isDefined() && !Sym.isAbsolute() &&
            "Sym is not an external symbol");
-    assert(ExternalSymbols.count(&Sym) && "Symbol is not in the externals set");
-    ExternalSymbols.erase(&Sym);
+    assert(ExternalSymbols.contains(Sym.getName()) &&
+           "Symbol is not in the externals set");
+    ExternalSymbols.erase(Sym.getName());
     Addressable &Base = *Sym.Base;
-    assert(llvm::none_of(ExternalSymbols,
+    assert(llvm::none_of(external_symbols(),
                          [&](Symbol *AS) { return AS->Base == &Base; }) &&
            "Base addressable still in use");
     destroySymbol(Sym);
@@ -1435,7 +1476,7 @@ public:
            "Symbol is not in the absolute symbols set");
     AbsoluteSymbols.erase(&Sym);
     Addressable &Base = *Sym.Base;
-    assert(llvm::none_of(ExternalSymbols,
+    assert(llvm::none_of(external_symbols(),
                          [&](Symbol *AS) { return AS->Base == &Base; }) &&
            "Base addressable still in use");
     destroySymbol(Sym);
@@ -1487,12 +1528,13 @@ private:
 
   std::string Name;
   Triple TT;
+  SubtargetFeatures Features;
   unsigned PointerSize;
   support::endianness Endianness;
   GetEdgeKindNameFunction GetEdgeKindName = nullptr;
   DenseMap<StringRef, std::unique_ptr<Section>> Sections;
-  ExternalSymbolSet ExternalSymbols;
-  ExternalSymbolSet AbsoluteSymbols;
+  ExternalSymbolMap ExternalSymbols;
+  AbsoluteSymbolSet AbsoluteSymbols;
   orc::shared::AllocActions AAs;
 };
 
@@ -1713,7 +1755,7 @@ enum class SymbolLookupFlags { RequiredSymbol, WeaklyReferencedSymbol };
 raw_ostream &operator<<(raw_ostream &OS, const SymbolLookupFlags &LF);
 
 /// A map of symbol names to resolved addresses.
-using AsyncLookupResult = DenseMap<StringRef, JITEvaluatedSymbol>;
+using AsyncLookupResult = DenseMap<StringRef, orc::ExecutorSymbolDef>;
 
 /// A function object to call with a resolved symbol map (See AsyncLookupResult)
 /// or an error if resolution failed.
@@ -1818,6 +1860,30 @@ Error makeTargetOutOfRangeError(const LinkGraph &G, const Block &B,
 
 Error makeAlignmentError(llvm::orc::ExecutorAddr Loc, uint64_t Value, int N,
                          const Edge &E);
+
+/// Creates a new pointer block in the given section and returns an
+/// Anonymous symobl pointing to it.
+///
+/// The pointer block will have the following default values:
+///   alignment: PointerSize
+///   alignment-offset: 0
+///   address: highest allowable
+using AnonymousPointerCreator = unique_function<Expected<Symbol &>(
+    LinkGraph &G, Section &PointerSection, Symbol *InitialTarget,
+    uint64_t InitialAddend)>;
+
+/// Get target-specific AnonymousPointerCreator
+AnonymousPointerCreator getAnonymousPointerCreator(const Triple &TT);
+
+/// Create a jump stub that jumps via the pointer at the given symbol and
+/// an anonymous symbol pointing to it. Return the anonymous symbol.
+///
+/// The stub block will be created by createPointerJumpStubBlock.
+using PointerJumpStubCreator = unique_function<Expected<Symbol &>(
+    LinkGraph &G, Section &StubSection, Symbol &PointerSymbol)>;
+
+/// Get target-specific PointerJumpStubCreator
+PointerJumpStubCreator getPointerJumpStubCreator(const Triple &TT);
 
 /// Base case for edge-visitors where the visitor-list is empty.
 inline void visitEdge(LinkGraph &G, Block *B, Edge &E) {}

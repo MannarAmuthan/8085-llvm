@@ -27,6 +27,7 @@ def Sint64 : Type;
 def Uint64 : Type;
 def Float : Type;
 def Ptr : Type;
+def FnPtr : Type;
 
 //===----------------------------------------------------------------------===//
 // Types transferred to the interpreter.
@@ -50,6 +51,9 @@ def ArgRecordField : ArgType { let Name = "const Record::Field *"; }
 def ArgFltSemantics : ArgType { let Name = "const llvm::fltSemantics *"; }
 def ArgRoundingMode : ArgType { let Name = "llvm::RoundingMode"; }
 def ArgLETD: ArgType { let Name = "const LifetimeExtendedTemporaryDecl *"; }
+def ArgCastKind : ArgType { let Name = "CastKind"; }
+def ArgCallExpr : ArgType { let Name = "const CallExpr *"; }
+def ArgOffsetOfExpr : ArgType { let Name = "const OffsetOfExpr *"; }
 
 //===----------------------------------------------------------------------===//
 // Classes of types instructions operate on.
@@ -77,7 +81,7 @@ def AluTypeClass : TypeClass {
 }
 
 def PtrTypeClass : TypeClass {
-  let Types = [Ptr];
+  let Types = [Ptr, FnPtr];
 }
 
 def BoolTypeClass : TypeClass {
@@ -93,7 +97,7 @@ def AllTypeClass : TypeClass {
 }
 
 def ComparableTypeClass : TypeClass {
-  let Types = !listconcat(AluTypeClass.Types, [Ptr], [Float]);
+  let Types = !listconcat(AluTypeClass.Types, [Ptr], [Float], [FnPtr]);
 }
 
 class SingletonTypeClass<Type Ty> : TypeClass {
@@ -178,13 +182,27 @@ def NoRet : Opcode {}
 def Call : Opcode {
   let Args = [ArgFunction];
   let Types = [];
-  let ChangesPC = 1;
+}
+
+def CallVirt : Opcode {
+  let Args = [ArgFunction];
+  let Types = [];
 }
 
 def CallBI : Opcode {
-  let Args = [ArgFunction];
+  let Args = [ArgFunction, ArgCallExpr];
   let Types = [];
-  let ChangesPC = 1;
+}
+
+def CallPtr : Opcode {
+  let Args = [];
+  let Types = [];
+}
+
+def OffsetOf : Opcode {
+  let Types = [IntegerTypeClass];
+  let Args = [ArgOffsetOfExpr];
+  let HasGroup = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -228,6 +246,7 @@ def Zero : Opcode {
 // [] -> [Pointer]
 def Null : Opcode {
   let Types = [PtrTypeClass];
+  let HasGroup = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -278,6 +297,10 @@ def GetPtrBase : Opcode {
 // [Pointer] -> [Pointer]
 def GetPtrBasePop : Opcode {
   // Offset of field, which is a base.
+  let Args = [ArgUint32];
+}
+
+def GetPtrDerivedPop : Opcode {
   let Args = [ArgUint32];
 }
 
@@ -340,6 +363,12 @@ def InitGlobal : AccessOpcode;
 // [Value] -> []
 def InitGlobalTemp : AccessOpcode {
   let Args = [ArgUint32, ArgLETD];
+}
+// [Pointer] -> [Pointer]
+def InitGlobalTempComp : Opcode {
+  let Args = [ArgLETD];
+  let Types = [];
+  let HasGroup = 0;
 }
 // [Value] -> []
 def SetGlobal : AccessOpcode;
@@ -448,6 +477,14 @@ def DecPtr : Opcode {
 }
 
 //===----------------------------------------------------------------------===//
+// Function pointers.
+//===----------------------------------------------------------------------===//
+def GetFnPtr : Opcode {
+  let Args = [ArgFunction];
+}
+
+
+//===----------------------------------------------------------------------===//
 // Binary operators.
 //===----------------------------------------------------------------------===//
 
@@ -486,10 +523,17 @@ def Inv: Opcode {
   let HasGroup = 1;
 }
 
+// Increment and decrement.
 def Inc: IntegerOpcode;
 def IncPop : IntegerOpcode;
 def Dec: IntegerOpcode;
 def DecPop: IntegerOpcode;
+
+// Float increment and decrement.
+def Incf: FloatOpcode;
+def IncfPop : FloatOpcode;
+def Decf: FloatOpcode;
+def DecfPop : FloatOpcode;
 
 // [Real] -> [Real]
 def Neg: Opcode {
@@ -539,6 +583,12 @@ def CastFloatingIntegral : Opcode {
   let HasGroup = 1;
 }
 
+def CastPointerIntegral : Opcode {
+  let Types = [AluTypeClass];
+  let Args = [];
+  let HasGroup = 1;
+}
+
 //===----------------------------------------------------------------------===//
 // Comparison opcodes.
 //===----------------------------------------------------------------------===//
@@ -575,4 +625,10 @@ def Pop : Opcode {
 def Dup : Opcode {
   let Types = [AllTypeClass];
   let HasGroup = 1;
+}
+
+// [] -> []
+def Invalid : Opcode {}
+def InvalidCast : Opcode {
+  let Args = [ArgCastKind];
 }

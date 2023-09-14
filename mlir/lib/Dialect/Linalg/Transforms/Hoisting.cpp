@@ -52,6 +52,39 @@ void mlir::linalg::hoistRedundantVectorTransfersOnTensor(func::FuncOp func) {
   });
 }
 
+static bool noAliasingUseInLoop(vector::TransferReadOp transferRead,
+                                LoopLikeOpInterface loop) {
+  Value source = transferRead.getSource();
+  // Skip subview and collapse_shape Ops
+  while (auto subView = source.getDefiningOp<memref::SubViewOp>())
+    source = subView.getSource();
+  while (auto collapsed = source.getDefiningOp<memref::CollapseShapeOp>())
+    source = collapsed->getOperand(0);
+  llvm::SmallVector<Operation *, 32> users(source.getUsers().begin(),
+                                           source.getUsers().end());
+  llvm::SmallDenseSet<Operation *, 32> processed;
+  while (!users.empty()) {
+    Operation *user = users.pop_back_val();
+    // If the user has already been processed skip.
+    if (!processed.insert(user).second)
+      continue;
+    if (auto subView = dyn_cast<memref::SubViewOp>(user)) {
+      users.append(subView->getUsers().begin(), subView->getUsers().end());
+      continue;
+    }
+    if (auto collapsed = dyn_cast<memref::CollapseShapeOp>(user)) {
+      users.append(collapsed->getUsers().begin(), collapsed->getUsers().end());
+      continue;
+    }
+    if (isMemoryEffectFree(user) || isa<vector::TransferReadOp>(user))
+      continue;
+    if (!loop->isAncestor(user))
+      continue;
+    return false;
+  }
+  return true;
+}
+
 void mlir::linalg::hoistRedundantVectorTransfers(func::FuncOp func) {
   bool changed = true;
   while (changed) {
@@ -62,7 +95,7 @@ void mlir::linalg::hoistRedundantVectorTransfers(func::FuncOp func) {
         [&](LoopLikeOpInterface loopLike) { moveLoopInvariantCode(loopLike); });
 
     func.walk([&](vector::TransferReadOp transferRead) {
-      if (!transferRead.getShapedType().isa<MemRefType>())
+      if (!isa<MemRefType>(transferRead.getShapedType()))
         return WalkResult::advance();
 
       LLVM_DEBUG(DBGS() << "Candidate for hoisting: "
@@ -70,7 +103,7 @@ void mlir::linalg::hoistRedundantVectorTransfers(func::FuncOp func) {
       auto loop = dyn_cast<LoopLikeOpInterface>(transferRead->getParentOp());
       LLVM_DEBUG(DBGS() << "Parent op: " << *transferRead->getParentOp()
                         << "\n");
-      if (!isa_and_nonnull<scf::ForOp, AffineForOp>(loop))
+      if (!isa_and_nonnull<scf::ForOp, affine::AffineForOp>(loop))
         return WalkResult::advance();
 
       LLVM_DEBUG(DBGS() << "Candidate read: " << *transferRead.getOperation()
@@ -95,20 +128,28 @@ void mlir::linalg::hoistRedundantVectorTransfers(func::FuncOp func) {
         if (!loop.isDefinedOutsideOfLoop(operand))
           return WalkResult::advance();
 
-      // Only hoist transfer_read / transfer_write pairs for now.
-      if (!transferWrite)
+      // Only hoist transfer_read / transfer_write pairs and singleton
+      // transfer_reads for now.
+      if (!transferWrite) {
+        // Make sure there are no other accesses to the memref before
+        // hoisting transfer_read.
+        if (noAliasingUseInLoop(transferRead, loop))
+          loop.moveOutOfLoop(transferRead);
         return WalkResult::advance();
+      }
 
       LLVM_DEBUG(DBGS() << "Candidate: " << *transferWrite.getOperation()
                         << "\n");
 
       // Approximate aliasing by checking that:
-      //   1. indices are the same,
+      //   1. indices, vector type and permutation map are the same (i.e., the
+      //      transfer_read/transfer_write ops are matching),
       //   2. no other operations in the loop access the same memref except
       //      for transfer_read/transfer_write accessing statically disjoint
       //      slices.
-      if (transferRead.getIndices() != transferWrite.getIndices() &&
-          transferRead.getVectorType() == transferWrite.getVectorType())
+      if (transferRead.getIndices() != transferWrite.getIndices() ||
+          transferRead.getVectorType() != transferWrite.getVectorType() ||
+          transferRead.getPermutationMap() != transferWrite.getPermutationMap())
         return WalkResult::advance();
 
       // TODO: may want to memoize this information for performance but it
@@ -170,7 +211,7 @@ void mlir::linalg::hoistRedundantVectorTransfers(func::FuncOp func) {
             // the walk.
             return WalkResult::interrupt();
           })
-          .Case<AffineForOp>([&](AffineForOp affineForOp) {
+          .Case<affine::AffineForOp>([&](affine::AffineForOp affineForOp) {
             auto newForOp = replaceForOpWithNewYields(
                 b, affineForOp, transferRead.getVector(),
                 SmallVector<Value>{transferWrite.getVector()},

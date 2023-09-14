@@ -19,11 +19,12 @@ namespace __llvm_libc {
 
 LLVM_LIBC_FUNCTION(int, symlink, (const char *path1, const char *path2)) {
 #ifdef SYS_symlink
-  long ret = __llvm_libc::syscall_impl(SYS_symlink, path1, path2);
+  int ret = __llvm_libc::syscall_impl<int>(SYS_symlink, path1, path2);
 #elif defined(SYS_symlinkat)
-  long ret = __llvm_libc::syscall_impl(SYS_symlinkat, path1, AT_FDCWD, path2);
+  int ret =
+      __llvm_libc::syscall_impl<int>(SYS_symlinkat, path1, AT_FDCWD, path2);
 #else
-#error "SYS_symlink or SYS_symlinkat not available."
+#error "symlink or symlinkat syscalls not available."
 #endif
   if (ret < 0) {
     libc_errno = -ret;

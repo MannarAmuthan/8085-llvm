@@ -46,7 +46,7 @@ set(ASAN_STATIC_SOURCES
   asan_rtl_static.cpp
   )
 
-if (NOT WIN32 AND NOT APPLE)
+if (ASAN_SUPPORTED_ARCH STREQUAL "x86_64" AND NOT WIN32 AND NOT APPLE)
   list(APPEND ASAN_STATIC_SOURCES
     asan_rtl_x86_64.S
   )
@@ -216,6 +216,7 @@ else()
     RTSanitizerCommonLibc
     RTSanitizerCommonCoverage
     RTSanitizerCommonSymbolizer
+    RTSanitizerCommonSymbolizerInternal
     RTLSanCommon
     RTUbsan)
 

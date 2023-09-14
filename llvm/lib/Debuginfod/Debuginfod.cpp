@@ -47,7 +47,9 @@ namespace llvm {
 
 using llvm::object::BuildIDRef;
 
-static std::string uniqueKey(llvm::StringRef S) { return utostr(xxHash64(S)); }
+static std::string uniqueKey(llvm::StringRef S) {
+  return utostr(xxh3_64bits(S));
+}
 
 // Returns a binary BuildID as a normalized hex string.
 // Uses lowercase for compatibility with common debuginfod servers.
@@ -412,11 +414,11 @@ Error DebuginfodCollection::findBinaries(StringRef Path) {
         if (!Object)
           continue;
 
-        std::optional<BuildIDRef> ID = getBuildID(Object);
-        if (!ID)
+        BuildIDRef ID = getBuildID(Object);
+        if (ID.empty())
           continue;
 
-        std::string IDString = buildIDToString(*ID);
+        std::string IDString = buildIDToString(ID);
         if (Object->hasDebugInfo()) {
           std::lock_guard<sys::RWMutex> DebugBinariesGuard(DebugBinariesMutex);
           (void)DebugBinaries.try_emplace(IDString, std::move(FilePath));

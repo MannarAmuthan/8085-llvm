@@ -28,13 +28,13 @@
 
 namespace std { // purposefully not using versioning namespace
 
-class _LIBCPP_EXCEPTION_ABI nested_exception {
+class _LIBCPP_EXPORTED_FROM_ABI nested_exception {
   exception_ptr __ptr_;
 
 public:
   nested_exception() _NOEXCEPT;
-  //     nested_exception(const nested_exception&) noexcept = default;
-  //     nested_exception& operator=(const nested_exception&) noexcept = default;
+  _LIBCPP_HIDE_FROM_ABI nested_exception(const nested_exception&) _NOEXCEPT            = default;
+  _LIBCPP_HIDE_FROM_ABI nested_exception& operator=(const nested_exception&) _NOEXCEPT = default;
   virtual ~nested_exception() _NOEXCEPT;
 
   // access functions
@@ -67,7 +67,7 @@ struct __throw_with_nested<_Tp, _Up, false> {
 template <class _Tp>
 _LIBCPP_NORETURN _LIBCPP_HIDE_FROM_ABI void throw_with_nested(_Tp&& __t) {
 #ifndef _LIBCPP_HAS_NO_EXCEPTIONS
-  typedef typename decay<_Tp>::type _Up;
+  using _Up = __decay_t<_Tp>;
   static_assert(is_copy_constructible<_Up>::value, "type thrown must be CopyConstructible");
   __throw_with_nested<_Tp,
                       _Up,

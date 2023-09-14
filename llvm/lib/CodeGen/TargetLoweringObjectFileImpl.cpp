@@ -614,21 +614,21 @@ static unsigned getEntrySizeForKind(SectionKind Kind) {
 
 /// Return the section prefix name used by options FunctionsSections and
 /// DataSections.
-static StringRef getSectionPrefixForGlobal(SectionKind Kind) {
+static StringRef getSectionPrefixForGlobal(SectionKind Kind, bool IsLarge) {
   if (Kind.isText())
     return ".text";
   if (Kind.isReadOnly())
-    return ".rodata";
+    return IsLarge ? ".lrodata" : ".rodata";
   if (Kind.isBSS())
-    return ".bss";
+    return IsLarge ? ".lbss" : ".bss";
   if (Kind.isThreadData())
     return ".tdata";
   if (Kind.isThreadBSS())
     return ".tbss";
   if (Kind.isData())
-    return ".data";
+    return IsLarge ? ".ldata" : ".data";
   if (Kind.isReadOnlyWithRel())
-    return ".data.rel.ro";
+    return IsLarge ? ".ldata.rel.ro" : ".data.rel.ro";
   llvm_unreachable("Unknown section kind");
 }
 
@@ -650,7 +650,10 @@ getELFSectionNameForGlobal(const GlobalObject *GO, SectionKind Kind,
     Name = ".rodata.cst";
     Name += utostr(EntrySize);
   } else {
-    Name = getSectionPrefixForGlobal(Kind);
+    bool IsLarge = false;
+    if (isa<GlobalVariable>(GO))
+      IsLarge = TM.isLargeData();
+    Name = getSectionPrefixForGlobal(Kind, IsLarge);
   }
 
   bool HasPrefix = false;
@@ -851,6 +854,12 @@ static MCSectionELF *selectELFSectionForGlobal(
     Flags |= ELF::SHF_GROUP;
     Group = C->getName();
     IsComdat = C->getSelectionKind() == Comdat::Any;
+  }
+  if (isa<GlobalVariable>(GO)) {
+    if (TM.isLargeData()) {
+      assert(TM.getTargetTriple().getArch() == Triple::x86_64);
+      Flags |= ELF::SHF_X86_64_LARGE;
+    }
   }
 
   // Get the section entry size based on the kind.
@@ -1202,7 +1211,12 @@ void TargetLoweringObjectFileMachO::Initialize(MCContext &Ctx,
 
 MCSection *TargetLoweringObjectFileMachO::getStaticDtorSection(
     unsigned Priority, const MCSymbol *KeySym) const {
-  report_fatal_error("@llvm.global_dtors should have been lowered already");
+  return StaticDtorSection;
+  // In userspace, we lower global destructors via atexit(), but kernel/kext
+  // environments do not provide this function so we still need to support the
+  // legacy way here.
+  // See the -disable-atexit-based-global-dtor-lowering CodeGen flag for more
+  // context.
 }
 
 void TargetLoweringObjectFileMachO::emitModuleMetadata(MCStreamer &Streamer,
@@ -1404,6 +1418,11 @@ MCSection *TargetLoweringObjectFileMachO::getSectionForConstant(
   if (Kind.isMergeableConst16())
     return SixteenByteConstantSection;
   return ReadOnlySection;  // .const
+}
+
+MCSection *TargetLoweringObjectFileMachO::getSectionForCommandLines() const {
+  return getContext().getMachOSection("__TEXT", "__command_line", 0,
+                                      SectionKind::getReadOnly());
 }
 
 const MCExpr *TargetLoweringObjectFileMachO::getTTypeGlobalReference(
@@ -2160,7 +2179,7 @@ static MCSectionWasm *selectWasmSectionForGlobal(
   }
 
   bool UniqueSectionNames = TM.getUniqueSectionNames();
-  SmallString<128> Name = getSectionPrefixForGlobal(Kind);
+  SmallString<128> Name = getSectionPrefixForGlobal(Kind, /*IsLarge=*/false);
 
   if (const auto *F = dyn_cast<Function>(GO)) {
     const auto &OptionalPrefix = F->getSectionPrefix();
@@ -2343,8 +2362,11 @@ MCSection *TargetLoweringObjectFileXCOFF::getExplicitSectionGlobal(
   XCOFF::StorageMappingClass MappingClass;
   if (Kind.isText())
     MappingClass = XCOFF::XMC_PR;
-  else if (Kind.isData() || Kind.isReadOnlyWithRel() || Kind.isBSS())
+  else if (Kind.isData() || Kind.isBSS())
     MappingClass = XCOFF::XMC_RW;
+  else if (Kind.isReadOnlyWithRel())
+    MappingClass =
+        TM.Options.XCOFFReadOnlyPointers ? XCOFF::XMC_RO : XCOFF::XMC_RW;
   else if (Kind.isReadOnly())
     MappingClass = XCOFF::XMC_RO;
   else
@@ -2404,23 +2426,6 @@ MCSection *TargetLoweringObjectFileXCOFF::SelectSectionForGlobal(
         Name, Kind, XCOFF::CsectProperties(SMC, XCOFF::XTY_CM));
   }
 
-  if (Kind.isMergeableCString()) {
-    Align Alignment = GO->getParent()->getDataLayout().getPreferredAlign(
-        cast<GlobalVariable>(GO));
-
-    unsigned EntrySize = getEntrySizeForKind(Kind);
-    std::string SizeSpec = ".rodata.str" + utostr(EntrySize) + ".";
-    SmallString<128> Name;
-    Name = SizeSpec + utostr(Alignment.value());
-
-    if (TM.getDataSections())
-      getNameWithPrefix(Name, GO, TM);
-
-    return getContext().getXCOFFSection(
-        Name, Kind, XCOFF::CsectProperties(XCOFF::XMC_RO, XCOFF::XTY_SD),
-        /* MultiSymbolsAllowed*/ !TM.getDataSections());
-  }
-
   if (Kind.isText()) {
     if (TM.getFunctionSections()) {
       return cast<MCSymbolXCOFF>(getFunctionEntryPointSymbol(GO, TM))
@@ -2429,9 +2434,18 @@ MCSection *TargetLoweringObjectFileXCOFF::SelectSectionForGlobal(
     return TextSection;
   }
 
-  // TODO: We may put Kind.isReadOnlyWithRel() under option control, because
-  // user may want to have read-only data with relocations placed into a
-  // read-only section by the compiler.
+  if (TM.Options.XCOFFReadOnlyPointers && Kind.isReadOnlyWithRel()) {
+    if (!TM.getDataSections())
+      report_fatal_error(
+          "ReadOnlyPointers is supported only if data sections is turned on");
+
+    SmallString<128> Name;
+    getNameWithPrefix(Name, GO, TM);
+    return getContext().getXCOFFSection(
+        Name, SectionKind::getReadOnly(),
+        XCOFF::CsectProperties(XCOFF::XMC_RO, XCOFF::XTY_SD));
+  }
+
   // For BSS kind, zero initialized data must be emitted to the .data section
   // because external linkage control sections that get mapped to the .bss
   // section will be linked as tentative defintions, which is only appropriate
@@ -2597,12 +2611,12 @@ MCSymbol *TargetLoweringObjectFileXCOFF::getFunctionEntryPointSymbol(
   // function entry point csect instead. And for function delcarations, the
   // undefined symbols gets treated as csect with XTY_ER property.
   if (((TM.getFunctionSections() && !Func->hasSection()) ||
-       Func->isDeclaration()) &&
+       Func->isDeclarationForLinker()) &&
       isa<Function>(Func)) {
     return getContext()
         .getXCOFFSection(
             NameStr, SectionKind::getText(),
-            XCOFF::CsectProperties(XCOFF::XMC_PR, Func->isDeclaration()
+            XCOFF::CsectProperties(XCOFF::XMC_PR, Func->isDeclarationForLinker()
                                                       ? XCOFF::XTY_ER
                                                       : XCOFF::XTY_SD))
         ->getQualNameSymbol();

@@ -34,7 +34,7 @@ constexpr bool test_ctor() {
   return true;
 }
 
-template <size_t Extent>
+template <std::size_t Extent>
 constexpr void test_constructibility() {
   static_assert(std::is_constructible_v<std::span<int, Extent>, int*, int*>);
   static_assert(!std::is_constructible_v<std::span<int, Extent>, const int*, const int*>);
@@ -114,7 +114,7 @@ public:
   friend difference_type operator-(throw_operator_minus, throw_operator_minus) { throw 42; };
 
   friend bool operator==(const throw_operator_minus& x, const throw_operator_minus& y) { return x.it_ == y.it_; }
-  friend bool operator<=>(const throw_operator_minus& x, const throw_operator_minus& y) { return x.it_ <=> y.it_; }
+  friend auto operator<=>(const throw_operator_minus& x, const throw_operator_minus& y) { return x.it_ <=> y.it_; }
 };
 
 template <class It>

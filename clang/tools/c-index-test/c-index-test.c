@@ -3,6 +3,7 @@
 #include "clang-c/BuildSystem.h"
 #include "clang-c/CXCompilationDatabase.h"
 #include "clang-c/CXErrorCode.h"
+#include "clang-c/CXSourceLocation.h"
 #include "clang-c/CXString.h"
 #include "clang-c/Documentation.h"
 #include "clang-c/Index.h"
@@ -230,8 +231,15 @@ void free_remapped_files(struct CXUnsavedFile *unsaved_files,
                          int num_unsaved_files) {
   int i;
   for (i = 0; i != num_unsaved_files; ++i) {
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-qual"
+#endif
     free((char *)unsaved_files[i].Filename);
     free((char *)unsaved_files[i].Contents);
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
   }
   free(unsaved_files);
 }
@@ -3758,7 +3766,14 @@ index_startedTranslationUnit(CXClientData client_data, void *reserved) {
   printCheck(index_data);
 
   printf("[startedTranslationUnit]\n");
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-qual"
+#endif
   return (CXIdxClientContainer)"TU";
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
 }
 
 static void index_indexDeclaration(CXClientData client_data,
@@ -4881,6 +4896,22 @@ dispose_index:
   return result;
 }
 
+static void inspect_single_symbol_sgf_cursor(CXCursor Cursor) {
+  CXSourceLocation CursorLoc;
+  CXString SGFData;
+  const char *SGF;
+  unsigned line, column;
+  CursorLoc = clang_getCursorLocation(Cursor);
+  clang_getSpellingLocation(CursorLoc, 0, &line, &column, 0);
+
+  SGFData = clang_getSymbolGraphForCursor(Cursor);
+  SGF = clang_getCString(SGFData);
+  if (SGF)
+    printf("%d:%d: %s\n", line, column, SGF);
+
+  clang_disposeString(SGFData);
+}
+
 /******************************************************************************/
 /* Command line processing.                                                   */
 /******************************************************************************/
@@ -4940,6 +4971,7 @@ static void print_usage(void) {
     "       c-index-test -print-usr-file <file>\n");
   fprintf(stderr,
           "       c-index-test -single-symbol-sgfs <symbol filter> {<args>*}\n"
+          "       c-index-test -single-symbol-sgf-at=<site> {<args>*}\n"
           "       c-index-test -single-symbol-sgf-for=<usr> {<args>}*\n");
   fprintf(stderr,
     "       c-index-test -write-pch <file> <compiler arguments>\n"
@@ -5076,6 +5108,9 @@ int cindextest_main(int argc, const char **argv) {
   else if (argc > 3 && strcmp(argv[1], "-single-symbol-sgfs") == 0)
     return perform_test_load_source(argc - 3, argv + 3, argv[2],
                                     PrintSingleSymbolSGFs, NULL);
+  else if (argc > 2 && strstr(argv[1], "-single-symbol-sgf-at=") == argv[1])
+    return inspect_cursor_at(
+        argc, argv, "-single-symbol-sgf-at=", inspect_single_symbol_sgf_cursor);
   else if (argc > 2 && strstr(argv[1], "-single-symbol-sgf-for=") == argv[1])
     return perform_test_single_symbol_sgf(argv[1], argc - 2, argv + 2);
 

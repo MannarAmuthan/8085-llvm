@@ -18,6 +18,7 @@
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineMemOperand.h"
+#include "llvm/CodeGen/MachineValueType.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/CodeGen/TargetLowering.h"
@@ -28,7 +29,6 @@
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Type.h"
-#include "llvm/Support/MachineValueType.h"
 #include <optional>
 #include <utility>
 
@@ -77,10 +77,6 @@ namespace llvm {
     /// unsigned integers with round toward zero.
     FCTIDUZ,
     FCTIWUZ,
-
-    /// Floating-point-to-integer conversion instructions
-    FP_TO_UINT_IN_VSR,
-    FP_TO_SINT_IN_VSR,
 
     /// VEXTS, ByteWidth - takes an input in VSFRC and produces an output in
     /// VSFRC that is sign-extended from ByteWidth to a 64-byte integer.
@@ -210,8 +206,8 @@ namespace llvm {
     BCTRL_RM,
     BCTRL_LOAD_TOC_RM,
 
-    /// Return with a flag operand, matched by 'blr'
-    RET_FLAG,
+    /// Return with a glue operand, matched by 'blr'
+    RET_GLUE,
 
     /// R32 = MFOCRF(CRREG, INFLAG) - Represents the MFOCRF instruction.
     /// This copies the bits corresponding to the specified CRREG into the
@@ -336,11 +332,11 @@ namespace llvm {
     /// finds the offset of "sym" relative to the thread pointer.
     LD_GOT_TPREL_L,
 
-    /// G8RC = ADD_TLS G8RReg, Symbol - Used by the initial-exec TLS
-    /// model, produces an ADD instruction that adds the contents of
-    /// G8RReg to the thread pointer.  Symbol contains a relocation
-    /// sym\@tls which is to be replaced by the thread pointer and
-    /// identifies to the linker that the instruction is part of a
+    /// G8RC = ADD_TLS G8RReg, Symbol - Can be used by the initial-exec
+    /// and local-exec TLS models, produces an ADD instruction that adds
+    /// the contents of G8RReg to the thread pointer.  Symbol contains a
+    /// relocation sym\@tls which is to be replaced by the thread pointer
+    /// and identifies to the linker that the instruction is part of a
     /// TLS sequence.
     ADD_TLS,
 
@@ -359,6 +355,11 @@ namespace llvm {
     /// model, produces a call to __tls_get_addr(sym\@tlsgd).  Hidden by
     /// ADDIS_TLSGD_L_ADDR until after register assignment.
     GET_TLS_ADDR,
+
+    /// %x3 = GET_TPOINTER - Used for the local- and initial-exec TLS model on
+    /// 32-bit AIX, produces a call to .__get_tpointer to retrieve the thread
+    /// pointer. At the end of the call, the thread pointer is found in R3.
+    GET_TPOINTER,
 
     /// G8RC = ADDI_TLSGD_L_ADDR G8RReg, Symbol, Symbol - Op that
     /// combines ADDI_TLSGD_L and GET_TLS_ADDR until expansion following
@@ -790,6 +791,11 @@ namespace llvm {
       return true;
     }
 
+    bool
+    shallExtractConstSplatVectorElementToStore(Type *VectorTy,
+                                               unsigned ElemSizeInBits,
+                                               unsigned &Index) const override;
+
     bool isCtlzFast() const override {
       return true;
     }
@@ -974,16 +980,16 @@ namespace llvm {
                                       std::vector<SDValue> &Ops,
                                       SelectionDAG &DAG) const override;
 
-    unsigned
+    InlineAsm::ConstraintCode
     getInlineAsmMemConstraint(StringRef ConstraintCode) const override {
       if (ConstraintCode == "es")
-        return InlineAsm::Constraint_es;
+        return InlineAsm::ConstraintCode::es;
       else if (ConstraintCode == "Q")
-        return InlineAsm::Constraint_Q;
+        return InlineAsm::ConstraintCode::Q;
       else if (ConstraintCode == "Z")
-        return InlineAsm::Constraint_Z;
+        return InlineAsm::ConstraintCode::Z;
       else if (ConstraintCode == "Zy")
-        return InlineAsm::Constraint_Zy;
+        return InlineAsm::ConstraintCode::Zy;
       return TargetLowering::getInlineAsmMemConstraint(ConstraintCode);
     }
 
@@ -1293,6 +1299,7 @@ namespace llvm {
     SDValue LowerINTRINSIC_VOID(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerBSWAP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerATOMIC_CMP_SWAP(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerIS_FPCLASS(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerToLibCall(const char *LibCallName, SDValue Op,
                            SelectionDAG &DAG) const;
     SDValue lowerLibCallBasedOnType(const char *LibCallFloatName,
@@ -1322,7 +1329,7 @@ namespace llvm {
     SDValue LowerVectorLoad(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerVectorStore(SDValue Op, SelectionDAG &DAG) const;
 
-    SDValue LowerCallResult(SDValue Chain, SDValue InFlag,
+    SDValue LowerCallResult(SDValue Chain, SDValue InGlue,
                             CallingConv::ID CallConv, bool isVarArg,
                             const SmallVectorImpl<ISD::InputArg> &Ins,
                             const SDLoc &dl, SelectionDAG &DAG,
@@ -1330,7 +1337,7 @@ namespace llvm {
 
     SDValue FinishCall(CallFlags CFlags, const SDLoc &dl, SelectionDAG &DAG,
                        SmallVector<std::pair<unsigned, SDValue>, 8> &RegsToPass,
-                       SDValue InFlag, SDValue Chain, SDValue CallSeqStart,
+                       SDValue InGlue, SDValue Chain, SDValue CallSeqStart,
                        SDValue &Callee, int SPDiff, unsigned NumBytes,
                        const SmallVectorImpl<ISD::InputArg> &Ins,
                        SmallVectorImpl<SDValue> &InVals,

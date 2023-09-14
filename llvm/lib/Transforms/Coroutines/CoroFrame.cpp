@@ -63,7 +63,7 @@ public:
     llvm::sort(V);
   }
 
-  size_t blockToIndex(BasicBlock *BB) const {
+  size_t blockToIndex(BasicBlock const *BB) const {
     auto *I = llvm::lower_bound(V, BB);
     assert(I != V.end() && *I == BB && "BasicBlockNumberng: Unknown block");
     return I - V.begin();
@@ -89,7 +89,7 @@ public:
 //             crosses a suspend point.
 //
 namespace {
-struct SuspendCrossingInfo {
+class SuspendCrossingInfo {
   BlockToIndexMapping Mapping;
 
   struct BlockData {
@@ -98,18 +98,27 @@ struct SuspendCrossingInfo {
     bool Suspend = false;
     bool End = false;
     bool KillLoop = false;
+    bool Changed = false;
   };
   SmallVector<BlockData, SmallVectorThreshold> Block;
 
-  iterator_range<succ_iterator> successors(BlockData const &BD) const {
+  iterator_range<pred_iterator> predecessors(BlockData const &BD) const {
     BasicBlock *BB = Mapping.indexToBlock(&BD - &Block[0]);
-    return llvm::successors(BB);
+    return llvm::predecessors(BB);
   }
 
   BlockData &getBlockData(BasicBlock *BB) {
     return Block[Mapping.blockToIndex(BB)];
   }
 
+  /// Compute the BlockData for the current function in one iteration.
+  /// Initialize - Whether this is the first iteration, we can optimize
+  /// the initial case a little bit by manual loop switch.
+  /// Returns whether the BlockData changes in this iteration.
+  template <bool Initialize = false>
+  bool computeBlockData(const ReversePostOrderTraversal<Function *> &RPOT);
+
+public:
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
   void dump() const;
   void dump(StringRef Label, BitVector const &BV) const;
@@ -215,6 +224,71 @@ LLVM_DUMP_METHOD void SuspendCrossingInfo::dump() const {
 }
 #endif
 
+template <bool Initialize>
+bool SuspendCrossingInfo::computeBlockData(
+    const ReversePostOrderTraversal<Function *> &RPOT) {
+  bool Changed = false;
+
+  for (const BasicBlock *BB : RPOT) {
+    auto BBNo = Mapping.blockToIndex(BB);
+    auto &B = Block[BBNo];
+
+    // We don't need to count the predecessors when initialization.
+    if constexpr (!Initialize)
+      // If all the predecessors of the current Block don't change,
+      // the BlockData for the current block must not change too.
+      if (all_of(predecessors(B), [this](BasicBlock *BB) {
+            return !Block[Mapping.blockToIndex(BB)].Changed;
+          })) {
+        B.Changed = false;
+        continue;
+      }
+
+    // Saved Consumes and Kills bitsets so that it is easy to see
+    // if anything changed after propagation.
+    auto SavedConsumes = B.Consumes;
+    auto SavedKills = B.Kills;
+
+    for (BasicBlock *PI : predecessors(B)) {
+      auto PrevNo = Mapping.blockToIndex(PI);
+      auto &P = Block[PrevNo];
+
+      // Propagate Kills and Consumes from predecessors into B.
+      B.Consumes |= P.Consumes;
+      B.Kills |= P.Kills;
+
+      // If block P is a suspend block, it should propagate kills into block
+      // B for every block P consumes.
+      if (P.Suspend)
+        B.Kills |= P.Consumes;
+    }
+
+    if (B.Suspend) {
+      // If block B is a suspend block, it should kill all of the blocks it
+      // consumes.
+      B.Kills |= B.Consumes;
+    } else if (B.End) {
+      // If block B is an end block, it should not propagate kills as the
+      // blocks following coro.end() are reached during initial invocation
+      // of the coroutine while all the data are still available on the
+      // stack or in the registers.
+      B.Kills.reset();
+    } else {
+      // This is reached when B block it not Suspend nor coro.end and it
+      // need to make sure that it is not in the kill set.
+      B.KillLoop |= B.Kills[BBNo];
+      B.Kills.reset(BBNo);
+    }
+
+    if constexpr (!Initialize) {
+      B.Changed = (B.Kills != SavedKills) || (B.Consumes != SavedConsumes);
+      Changed |= B.Changed;
+    }
+  }
+
+  return Changed;
+}
+
 SuspendCrossingInfo::SuspendCrossingInfo(Function &F, coro::Shape &Shape)
     : Mapping(F) {
   const size_t N = Mapping.size();
@@ -226,6 +300,7 @@ SuspendCrossingInfo::SuspendCrossingInfo(Function &F, coro::Shape &Shape)
     B.Consumes.resize(N);
     B.Kills.resize(N);
     B.Consumes.set(I);
+    B.Changed = true;
   }
 
   // Mark all CoroEnd Blocks. We do not propagate Kills beyond coro.ends as
@@ -250,71 +325,13 @@ SuspendCrossingInfo::SuspendCrossingInfo(Function &F, coro::Shape &Shape)
       markSuspendBlock(Save);
   }
 
-  // Iterate propagating consumes and kills until they stop changing.
-  int Iteration = 0;
-  (void)Iteration;
+  // It is considered to be faster to use RPO traversal for forward-edges
+  // dataflow analysis.
+  ReversePostOrderTraversal<Function *> RPOT(&F);
+  computeBlockData</*Initialize=*/true>(RPOT);
+  while (computeBlockData</*Initialize*/ false>(RPOT))
+    ;
 
-  bool Changed;
-  do {
-    LLVM_DEBUG(dbgs() << "iteration " << ++Iteration);
-    LLVM_DEBUG(dbgs() << "==============\n");
-
-    Changed = false;
-    for (size_t I = 0; I < N; ++I) {
-      auto &B = Block[I];
-      for (BasicBlock *SI : successors(B)) {
-
-        auto SuccNo = Mapping.blockToIndex(SI);
-
-        // Saved Consumes and Kills bitsets so that it is easy to see
-        // if anything changed after propagation.
-        auto &S = Block[SuccNo];
-        auto SavedConsumes = S.Consumes;
-        auto SavedKills = S.Kills;
-
-        // Propagate Kills and Consumes from block B into its successor S.
-        S.Consumes |= B.Consumes;
-        S.Kills |= B.Kills;
-
-        // If block B is a suspend block, it should propagate kills into the
-        // its successor for every block B consumes.
-        if (B.Suspend) {
-          S.Kills |= B.Consumes;
-        }
-        if (S.Suspend) {
-          // If block S is a suspend block, it should kill all of the blocks it
-          // consumes.
-          S.Kills |= S.Consumes;
-        } else if (S.End) {
-          // If block S is an end block, it should not propagate kills as the
-          // blocks following coro.end() are reached during initial invocation
-          // of the coroutine while all the data are still available on the
-          // stack or in the registers.
-          S.Kills.reset();
-        } else {
-          // This is reached when S block it not Suspend nor coro.end and it
-          // need to make sure that it is not in the kill set.
-          S.KillLoop |= S.Kills[SuccNo];
-          S.Kills.reset(SuccNo);
-        }
-
-        // See if anything changed.
-        Changed |= (S.Kills != SavedKills) || (S.Consumes != SavedConsumes);
-
-        if (S.Kills != SavedKills) {
-          LLVM_DEBUG(dbgs() << "\nblock " << I << " follower " << SI->getName()
-                            << "\n");
-          LLVM_DEBUG(dump("S.Kills", S.Kills));
-          LLVM_DEBUG(dump("SavedKills", SavedKills));
-        }
-        if (S.Consumes != SavedConsumes) {
-          LLVM_DEBUG(dbgs() << "\nblock " << I << " follower " << SI << "\n");
-          LLVM_DEBUG(dump("S.Consume", S.Consumes));
-          LLVM_DEBUG(dump("SavedCons", SavedConsumes));
-        }
-      }
-    }
-  } while (Changed);
   LLVM_DEBUG(dump());
 }
 
@@ -975,18 +992,8 @@ static StringRef solveTypeName(Type *Ty) {
     return "__floating_type_";
   }
 
-  if (auto *PtrTy = dyn_cast<PointerType>(Ty)) {
-    if (PtrTy->isOpaque())
-      return "PointerType";
-    Type *PointeeTy = PtrTy->getNonOpaquePointerElementType();
-    auto Name = solveTypeName(PointeeTy);
-    if (Name == "UnknownType")
-      return "PointerType";
-    SmallString<16> Buffer;
-    Twine(Name + "_Ptr").toStringRef(Buffer);
-    auto *MDName = MDString::get(Ty->getContext(), Buffer.str());
-    return MDName->getString();
-  }
+  if (Ty->isPointerTy())
+    return "PointerType";
 
   if (Ty->isStructTy()) {
     if (!cast<StructType>(Ty)->hasName())
@@ -1709,11 +1716,12 @@ static void createFramePtr(coro::Shape &Shape) {
 static void insertSpills(const FrameDataInfo &FrameData, coro::Shape &Shape) {
   auto *CB = Shape.CoroBegin;
   LLVMContext &C = CB->getContext();
+  Function *F = CB->getFunction();
   IRBuilder<> Builder(C);
   StructType *FrameTy = Shape.FrameTy;
   Value *FramePtr = Shape.FramePtr;
-  DominatorTree DT(*CB->getFunction());
-  SmallDenseMap<llvm::Value *, llvm::AllocaInst *, 4> DbgPtrAllocaCache;
+  DominatorTree DT(*F);
+  SmallDenseMap<Argument *, AllocaInst *, 4> ArgToAllocaMap;
 
   // Create a GEP with the given index into the coroutine frame for the original
   // value Orig. Appends an extra 0 index for array-allocas, preserving the
@@ -1769,13 +1777,13 @@ static void insertSpills(const FrameDataInfo &FrameData, coro::Shape &Shape) {
     auto SpillAlignment = Align(FrameData.getAlign(Def));
     // Create a store instruction storing the value into the
     // coroutine frame.
-    Instruction *InsertPt = nullptr;
+    BasicBlock::iterator InsertPt;
     Type *ByValTy = nullptr;
     if (auto *Arg = dyn_cast<Argument>(Def)) {
       // For arguments, we will place the store instruction right after
       // the coroutine frame pointer instruction, i.e. bitcast of
       // coro.begin from i8* to %f.frame*.
-      InsertPt = Shape.getInsertPtAfterFramePtr();
+      InsertPt = Shape.getInsertPtAfterFramePtr()->getIterator();
 
       // If we're spilling an Argument, make sure we clear 'nocapture'
       // from the coroutine function.
@@ -1786,35 +1794,35 @@ static void insertSpills(const FrameDataInfo &FrameData, coro::Shape &Shape) {
     } else if (auto *CSI = dyn_cast<AnyCoroSuspendInst>(Def)) {
       // Don't spill immediately after a suspend; splitting assumes
       // that the suspend will be followed by a branch.
-      InsertPt = CSI->getParent()->getSingleSuccessor()->getFirstNonPHI();
+      InsertPt = CSI->getParent()->getSingleSuccessor()->getFirstNonPHIIt();
     } else {
       auto *I = cast<Instruction>(Def);
       if (!DT.dominates(CB, I)) {
         // If it is not dominated by CoroBegin, then spill should be
         // inserted immediately after CoroFrame is computed.
-        InsertPt = Shape.getInsertPtAfterFramePtr();
+        InsertPt = Shape.getInsertPtAfterFramePtr()->getIterator();
       } else if (auto *II = dyn_cast<InvokeInst>(I)) {
         // If we are spilling the result of the invoke instruction, split
         // the normal edge and insert the spill in the new block.
         auto *NewBB = SplitEdge(II->getParent(), II->getNormalDest());
-        InsertPt = NewBB->getTerminator();
+        InsertPt = NewBB->getTerminator()->getIterator();
       } else if (isa<PHINode>(I)) {
         // Skip the PHINodes and EH pads instructions.
         BasicBlock *DefBlock = I->getParent();
         if (auto *CSI = dyn_cast<CatchSwitchInst>(DefBlock->getTerminator()))
-          InsertPt = splitBeforeCatchSwitch(CSI);
+          InsertPt = splitBeforeCatchSwitch(CSI)->getIterator();
         else
-          InsertPt = &*DefBlock->getFirstInsertionPt();
+          InsertPt = DefBlock->getFirstInsertionPt();
       } else {
         assert(!I->isTerminator() && "unexpected terminator");
         // For all other values, the spill is placed immediately after
         // the definition.
-        InsertPt = I->getNextNode();
+        InsertPt = I->getNextNode()->getIterator();
       }
     }
 
     auto Index = FrameData.getFieldIndex(Def);
-    Builder.SetInsertPoint(InsertPt);
+    Builder.SetInsertPoint(InsertPt->getParent(), InsertPt);
     auto *G = Builder.CreateConstInBoundsGEP2_32(
         FrameTy, FramePtr, 0, Index, Def->getName() + Twine(".spill.addr"));
     if (ByValTy) {
@@ -1834,7 +1842,8 @@ static void insertSpills(const FrameDataInfo &FrameData, coro::Shape &Shape) {
       // reference provided with the frame GEP.
       if (CurrentBlock != U->getParent()) {
         CurrentBlock = U->getParent();
-        Builder.SetInsertPoint(&*CurrentBlock->getFirstInsertionPt());
+        Builder.SetInsertPoint(CurrentBlock,
+                               CurrentBlock->getFirstInsertionPt());
 
         auto *GEP = GetFramePointer(E.first);
         GEP->setName(E.first->getName() + Twine(".reload.addr"));
@@ -1846,6 +1855,23 @@ static void insertSpills(const FrameDataInfo &FrameData, coro::Shape &Shape) {
               SpillAlignment, E.first->getName() + Twine(".reload"));
 
         TinyPtrVector<DbgDeclareInst *> DIs = FindDbgDeclareUses(Def);
+        // Try best to find dbg.declare. If the spill is a temp, there may not
+        // be a direct dbg.declare. Walk up the load chain to find one from an
+        // alias.
+        if (F->getSubprogram()) {
+          auto *CurDef = Def;
+          while (DIs.empty() && isa<LoadInst>(CurDef)) {
+            auto *LdInst = cast<LoadInst>(CurDef);
+            // Only consider ptr to ptr same type load.
+            if (LdInst->getPointerOperandType() != LdInst->getType())
+              break;
+            CurDef = LdInst->getPointerOperand();
+            if (!isa<AllocaInst, LoadInst>(CurDef))
+              break;
+            DIs = FindDbgDeclareUses(CurDef);
+          }
+        }
+
         for (DbgDeclareInst *DDI : DIs) {
           bool AllowUnresolved = false;
           // This dbg.declare is preserved for all coro-split function
@@ -1857,7 +1883,8 @@ static void insertSpills(const FrameDataInfo &FrameData, coro::Shape &Shape) {
                              &*Builder.GetInsertPoint());
           // This dbg.declare is for the main function entry point.  It
           // will be deleted in all coro-split functions.
-          coro::salvageDebugInfo(DbgPtrAllocaCache, DDI, Shape.OptimizeFrame);
+          coro::salvageDebugInfo(ArgToAllocaMap, DDI, Shape.OptimizeFrame,
+                                 false /*UseEntryValue*/);
         }
       }
 
@@ -1890,7 +1917,7 @@ static void insertSpills(const FrameDataInfo &FrameData, coro::Shape &Shape) {
   if (Shape.ABI == coro::ABI::Retcon || Shape.ABI == coro::ABI::RetconOnce ||
       Shape.ABI == coro::ABI::Async) {
     // If we found any allocas, replace all of their remaining uses with Geps.
-    Builder.SetInsertPoint(&SpillBlock->front());
+    Builder.SetInsertPoint(SpillBlock, SpillBlock->begin());
     for (const auto &P : FrameData.Allocas) {
       AllocaInst *Alloca = P.Alloca;
       auto *G = GetFramePointer(Alloca);
@@ -1909,7 +1936,8 @@ static void insertSpills(const FrameDataInfo &FrameData, coro::Shape &Shape) {
   // dbg.declares and dbg.values with the reload from the frame.
   // Note: We cannot replace the alloca with GEP instructions indiscriminately,
   // as some of the uses may not be dominated by CoroBegin.
-  Builder.SetInsertPoint(&Shape.AllocaSpillBlock->front());
+  Builder.SetInsertPoint(Shape.AllocaSpillBlock,
+                         Shape.AllocaSpillBlock->begin());
   SmallVector<Instruction *, 4> UsersToUpdate;
   for (const auto &A : FrameData.Allocas) {
     AllocaInst *Alloca = A.Alloca;
@@ -1930,11 +1958,13 @@ static void insertSpills(const FrameDataInfo &FrameData, coro::Shape &Shape) {
       DVI->replaceUsesOfWith(Alloca, G);
 
     for (Instruction *I : UsersToUpdate) {
-      // It is meaningless to remain the lifetime intrinsics refer for the
+      // It is meaningless to retain the lifetime intrinsics refer for the
       // member of coroutine frames and the meaningless lifetime intrinsics
       // are possible to block further optimizations.
-      if (I->isLifetimeStartOrEnd())
+      if (I->isLifetimeStartOrEnd()) {
+        I->eraseFromParent();
         continue;
+      }
 
       I->replaceUsesOfWith(Alloca, G);
     }
@@ -2023,8 +2053,8 @@ static void movePHIValuesToInsertedBlock(BasicBlock *SuccBB,
     int Index = PN->getBasicBlockIndex(InsertedBB);
     Value *V = PN->getIncomingValue(Index);
     PHINode *InputV = PHINode::Create(
-        V->getType(), 1, V->getName() + Twine(".") + SuccBB->getName(),
-        &InsertedBB->front());
+        V->getType(), 1, V->getName() + Twine(".") + SuccBB->getName());
+    InputV->insertBefore(InsertedBB->begin());
     InputV->addIncoming(V, PredBB);
     PN->setIncomingValue(Index, InputV);
     PN = dyn_cast<PHINode>(PN->getNextNode());
@@ -2170,7 +2200,8 @@ static void rewritePHIs(BasicBlock &BB) {
     // ehAwareSplitEdge will clone the LandingPad in all the edge blocks.
     // We replace the original landing pad with a PHINode that will collect the
     // results from all of them.
-    ReplPHI = PHINode::Create(LandingPad->getType(), 1, "", LandingPad);
+    ReplPHI = PHINode::Create(LandingPad->getType(), 1, "");
+    ReplPHI->insertBefore(LandingPad->getIterator());
     ReplPHI->takeName(LandingPad);
     LandingPad->replaceAllUsesWith(ReplPHI);
     // We will erase the original landing pad at the end of this function after
@@ -2405,15 +2436,13 @@ static bool localAllocaNeedsStackSave(CoroAllocaAllocInst *AI) {
 static void lowerLocalAllocas(ArrayRef<CoroAllocaAllocInst*> LocalAllocas,
                               SmallVectorImpl<Instruction*> &DeadInsts) {
   for (auto *AI : LocalAllocas) {
-    auto M = AI->getModule();
     IRBuilder<> Builder(AI);
 
     // Save the stack depth.  Try to avoid doing this if the stackrestore
     // is going to immediately precede a return or something.
     Value *StackSave = nullptr;
     if (localAllocaNeedsStackSave(AI))
-      StackSave = Builder.CreateCall(
-                            Intrinsic::getDeclaration(M, Intrinsic::stacksave));
+      StackSave = Builder.CreateStackSave();
 
     // Allocate memory.
     auto Alloca = Builder.CreateAlloca(Builder.getInt8Ty(), AI->getSize());
@@ -2431,9 +2460,7 @@ static void lowerLocalAllocas(ArrayRef<CoroAllocaAllocInst*> LocalAllocas,
         auto FI = cast<CoroAllocaFreeInst>(U);
         if (StackSave) {
           Builder.SetInsertPoint(FI);
-          Builder.CreateCall(
-                    Intrinsic::getDeclaration(M, Intrinsic::stackrestore),
-                             StackSave);
+          Builder.CreateStackRestore(StackSave);
         }
       }
       DeadInsts.push_back(cast<Instruction>(U));
@@ -2566,10 +2593,7 @@ static void eliminateSwiftErrorArgument(Function &F, Argument &Arg,
   IRBuilder<> Builder(F.getEntryBlock().getFirstNonPHIOrDbg());
 
   auto ArgTy = cast<PointerType>(Arg.getType());
-  // swifterror arguments are required to have pointer-to-pointer type,
-  // so create a pointer-typed alloca with opaque pointers.
-  auto ValueTy = ArgTy->isOpaque() ? PointerType::getUnqual(F.getContext())
-                                   : ArgTy->getNonOpaquePointerElementType();
+  auto ValueTy = PointerType::getUnqual(F.getContext());
 
   // Reduce to the alloca case:
 
@@ -2797,8 +2821,8 @@ static void collectFrameAlloca(AllocaInst *AI, coro::Shape &Shape,
 }
 
 void coro::salvageDebugInfo(
-    SmallDenseMap<llvm::Value *, llvm::AllocaInst *, 4> &DbgPtrAllocaCache,
-    DbgVariableIntrinsic *DVI, bool OptimizeFrame) {
+    SmallDenseMap<Argument *, AllocaInst *, 4> &ArgToAllocaMap,
+    DbgVariableIntrinsic *DVI, bool OptimizeFrame, bool UseEntryValue) {
   Function *F = DVI->getFunction();
   IRBuilder<> Builder(F->getContext());
   auto InsertPt = F->getEntryBlock().getFirstInsertionPt();
@@ -2814,7 +2838,7 @@ void coro::salvageDebugInfo(
 
   while (auto *Inst = dyn_cast_or_null<Instruction>(Storage)) {
     if (auto *LdInst = dyn_cast<LoadInst>(Inst)) {
-      Storage = LdInst->getOperand(0);
+      Storage = LdInst->getPointerOperand();
       // FIXME: This is a heuristic that works around the fact that
       // LLVM IR debug intrinsics cannot yet distinguish between
       // memory and value locations: Because a dbg.declare(alloca) is
@@ -2824,7 +2848,7 @@ void coro::salvageDebugInfo(
       if (!SkipOutermostLoad)
         Expr = DIExpression::prepend(Expr, DIExpression::DerefBefore);
     } else if (auto *StInst = dyn_cast<StoreInst>(Inst)) {
-      Storage = StInst->getOperand(0);
+      Storage = StInst->getValueOperand();
     } else {
       SmallVector<uint64_t, 16> Ops;
       SmallVector<Value *, 0> AdditionalValues;
@@ -2844,31 +2868,40 @@ void coro::salvageDebugInfo(
   if (!Storage)
     return;
 
-  // Store a pointer to the coroutine frame object in an alloca so it
-  // is available throughout the function when producing unoptimized
-  // code. Extending the lifetime this way is correct because the
-  // variable has been declared by a dbg.declare intrinsic.
-  //
-  // Avoid to create the alloca would be eliminated by optimization
-  // passes and the corresponding dbg.declares would be invalid.
-  if (!OptimizeFrame)
-    if (auto *Arg = dyn_cast<llvm::Argument>(Storage)) {
-      auto &Cached = DbgPtrAllocaCache[Storage];
-      if (!Cached) {
-        Cached = Builder.CreateAlloca(Storage->getType(), 0, nullptr,
-                                      Arg->getName() + ".debug");
-        Builder.CreateStore(Storage, Cached);
-      }
-      Storage = Cached;
-      // FIXME: LLVM lacks nuanced semantics to differentiate between
-      // memory and direct locations at the IR level. The backend will
-      // turn a dbg.declare(alloca, ..., DIExpression()) into a memory
-      // location. Thus, if there are deref and offset operations in the
-      // expression, we need to add a DW_OP_deref at the *start* of the
-      // expression to first load the contents of the alloca before
-      // adjusting it with the expression.
-      Expr = DIExpression::prepend(Expr, DIExpression::DerefBefore);
+  auto *StorageAsArg = dyn_cast<Argument>(Storage);
+  const bool IsSwiftAsyncArg =
+      StorageAsArg && StorageAsArg->hasAttribute(Attribute::SwiftAsync);
+
+  // Swift async arguments are described by an entry value of the ABI-defined
+  // register containing the coroutine context.
+  // For the EntryPoint funclet, don't use EntryValues. This funclet can be
+  // inlined, which would remove the guarantee that this intrinsic targets an
+  // Argument.
+  if (IsSwiftAsyncArg && UseEntryValue && !Expr->isEntryValue())
+    Expr = DIExpression::prepend(Expr, DIExpression::EntryValue);
+
+  // If the coroutine frame is an Argument, store it in an alloca to improve
+  // its availability (e.g. registers may be clobbered).
+  // Avoid this if optimizations are enabled (they would remove the alloca) or
+  // if the value is guaranteed to be available through other means (e.g. swift
+  // ABI guarantees).
+  if (StorageAsArg && !OptimizeFrame && !IsSwiftAsyncArg) {
+    auto &Cached = ArgToAllocaMap[StorageAsArg];
+    if (!Cached) {
+      Cached = Builder.CreateAlloca(Storage->getType(), 0, nullptr,
+                                    Storage->getName() + ".debug");
+      Builder.CreateStore(Storage, Cached);
     }
+    Storage = Cached;
+    // FIXME: LLVM lacks nuanced semantics to differentiate between
+    // memory and direct locations at the IR level. The backend will
+    // turn a dbg.declare(alloca, ..., DIExpression()) into a memory
+    // location. Thus, if there are deref and offset operations in the
+    // expression, we need to add a DW_OP_deref at the *start* of the
+    // expression to first load the contents of the alloca before
+    // adjusting it with the expression.
+    Expr = DIExpression::prepend(Expr, DIExpression::DerefBefore);
+  }
 
   DVI->replaceVariableLocationOp(OriginalStorage, Storage);
   DVI->setExpression(Expr);

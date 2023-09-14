@@ -1,4 +1,4 @@
-//===---- RISCVISelDAGToDAG.h - A dag to dag inst selector for RISCV ------===//
+//===---- RISCVISelDAGToDAG.h - A dag to dag inst selector for RISC-V -----===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines an instruction selector for the RISCV target.
+// This file defines an instruction selector for the RISC-V target.
 //
 //===----------------------------------------------------------------------===//
 
@@ -18,7 +18,7 @@
 #include "llvm/CodeGen/SelectionDAGISel.h"
 #include "llvm/Support/KnownBits.h"
 
-// RISCV-specific code to select RISCV machine instructions for
+// RISC-V specific code to select RISC-V machine instructions for
 // SelectionDAG operations.
 namespace llvm {
 class RISCVDAGToDAGISel : public SelectionDAGISel {
@@ -43,12 +43,17 @@ public:
 
   void Select(SDNode *Node) override;
 
-  bool SelectInlineAsmMemoryOperand(const SDValue &Op, unsigned ConstraintID,
+  bool SelectInlineAsmMemoryOperand(const SDValue &Op,
+                                    InlineAsm::ConstraintCode ConstraintID,
                                     std::vector<SDValue> &OutOps) override;
 
   bool SelectAddrFrameIndex(SDValue Addr, SDValue &Base, SDValue &Offset);
   bool SelectFrameAddrRegImm(SDValue Addr, SDValue &Base, SDValue &Offset);
-  bool SelectAddrRegImm(SDValue Addr, SDValue &Base, SDValue &Offset);
+  bool SelectAddrRegImm(SDValue Addr, SDValue &Base, SDValue &Offset,
+                        bool IsINX = false);
+  bool SelectAddrRegImmINX(SDValue Addr, SDValue &Base, SDValue &Offset) {
+    return SelectAddrRegImm(Addr, Base, Offset, true);
+  }
 
   bool SelectAddrRegRegScale(SDValue Addr, unsigned MaxShiftAmount,
                              SDValue &Base, SDValue &Index, SDValue &Scale);
@@ -124,9 +129,15 @@ public:
 
   bool selectVSplat(SDValue N, SDValue &SplatVal);
   bool selectVSplatSimm5(SDValue N, SDValue &SplatVal);
-  bool selectVSplatUimm5(SDValue N, SDValue &SplatVal);
+  bool selectVSplatUimm(SDValue N, unsigned Bits, SDValue &SplatVal);
+  template <unsigned Bits> bool selectVSplatUimmBits(SDValue N, SDValue &Val) {
+    return selectVSplatUimm(N, Bits, Val);
+  }
   bool selectVSplatSimm5Plus1(SDValue N, SDValue &SplatVal);
   bool selectVSplatSimm5Plus1NonZero(SDValue N, SDValue &SplatVal);
+  // Matches the splat of a value which can be extended or truncated, such that
+  // only the bottom 8 bits are preserved.
+  bool selectLow8BitsVSplat(SDValue N, SDValue &SplatVal);
   bool selectFPImm(SDValue N, SDValue &Imm);
 
   bool selectRVVSimm5(SDValue N, unsigned Width, SDValue &Imm);
@@ -175,17 +186,17 @@ public:
 
 private:
   bool doPeepholeSExtW(SDNode *Node);
-  bool doPeepholeMaskedRVV(SDNode *Node);
+  bool doPeepholeMaskedRVV(MachineSDNode *Node);
   bool doPeepholeMergeVVMFold();
-  bool performVMergeToVAdd(SDNode *N);
-  bool performCombineVMergeAndVOps(SDNode *N, bool IsTA);
+  bool doPeepholeNoRegPassThru();
+  bool performVMergeToVMv(SDNode *N);
+  bool performCombineVMergeAndVOps(SDNode *N);
 };
 
 namespace RISCV {
 struct VLSEGPseudo {
   uint16_t NF : 4;
   uint16_t Masked : 1;
-  uint16_t IsTU : 1;
   uint16_t Strided : 1;
   uint16_t FF : 1;
   uint16_t Log2SEW : 3;
@@ -196,7 +207,6 @@ struct VLSEGPseudo {
 struct VLXSEGPseudo {
   uint16_t NF : 4;
   uint16_t Masked : 1;
-  uint16_t IsTU : 1;
   uint16_t Ordered : 1;
   uint16_t Log2SEW : 3;
   uint16_t LMUL : 3;
@@ -225,7 +235,6 @@ struct VSXSEGPseudo {
 
 struct VLEPseudo {
   uint16_t Masked : 1;
-  uint16_t IsTU : 1;
   uint16_t Strided : 1;
   uint16_t FF : 1;
   uint16_t Log2SEW : 3;
@@ -243,7 +252,6 @@ struct VSEPseudo {
 
 struct VLX_VSXPseudo {
   uint16_t Masked : 1;
-  uint16_t IsTU : 1;
   uint16_t Ordered : 1;
   uint16_t Log2SEW : 3;
   uint16_t LMUL : 3;
@@ -254,7 +262,6 @@ struct VLX_VSXPseudo {
 struct RISCVMaskedPseudoInfo {
   uint16_t MaskedPseudo;
   uint16_t UnmaskedPseudo;
-  uint16_t UnmaskedTUPseudo;
   uint8_t MaskOpIdx;
 };
 

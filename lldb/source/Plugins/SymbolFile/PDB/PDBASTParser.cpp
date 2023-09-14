@@ -407,8 +407,8 @@ lldb::TypeSP PDBASTParser::CreateLLDBTypeFromPDBType(const PDBSymbol &type) {
     // symbols in PDB for types with const or volatile modifiers, but we need
     // to create only one declaration for them all.
     Type::ResolveState type_resolve_state;
-    CompilerType clang_type = m_ast.GetTypeForIdentifier<clang::CXXRecordDecl>(
-        ConstString(name), decl_context);
+    CompilerType clang_type =
+        m_ast.GetTypeForIdentifier<clang::CXXRecordDecl>(name, decl_context);
     if (!clang_type.IsValid()) {
       auto access = GetAccessibilityForUdt(*udt);
 
@@ -479,8 +479,8 @@ lldb::TypeSP PDBASTParser::CreateLLDBTypeFromPDBType(const PDBSymbol &type) {
     uint64_t bytes = enum_type->getLength();
 
     // Check if such an enum already exists in the current context
-    CompilerType ast_enum = m_ast.GetTypeForIdentifier<clang::EnumDecl>(
-        ConstString(name), decl_context);
+    CompilerType ast_enum =
+        m_ast.GetTypeForIdentifier<clang::EnumDecl>(name, decl_context);
     if (!ast_enum.IsValid()) {
       auto underlying_type_up = enum_type->getUnderlyingType();
       if (!underlying_type_up)
@@ -557,8 +557,7 @@ lldb::TypeSP PDBASTParser::CreateLLDBTypeFromPDBType(const PDBSymbol &type) {
 
     // Check if such a typedef already exists in the current context
     CompilerType ast_typedef =
-        m_ast.GetTypeForIdentifier<clang::TypedefNameDecl>(ConstString(name),
-                                                           decl_ctx);
+        m_ast.GetTypeForIdentifier<clang::TypedefNameDecl>(name, decl_ctx);
     if (!ast_typedef.IsValid()) {
       CompilerType target_ast_type = target_type->GetFullCompilerType();
 
@@ -1299,6 +1298,15 @@ void PDBASTParser::AddRecordMembers(
       // Query the symbol's value as the variable initializer if valid.
       if (member_comp_type.IsConst()) {
         auto value = member->getValue();
+        if (value.Type == llvm::pdb::Empty) {
+          LLDB_LOG(GetLog(LLDBLog::AST),
+                   "Class '{0}' has member '{1}' of type '{2}' with an unknown "
+                   "constant size.",
+                   record_type.GetTypeName(), member_name,
+                   member_comp_type.GetTypeName());
+          continue;
+        }
+
         clang::QualType qual_type = decl->getType();
         unsigned type_width = m_ast.getASTContext().getIntWidth(qual_type);
         unsigned constant_width = value.getBitWidth();

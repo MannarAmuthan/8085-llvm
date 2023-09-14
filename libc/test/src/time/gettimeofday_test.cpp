@@ -10,7 +10,7 @@
 
 #include "src/time/gettimeofday.h"
 #include "src/time/nanosleep.h"
-#include "test/ErrnoSetterMatcher.h"
+#include "test/UnitTest/ErrnoSetterMatcher.h"
 #include "test/UnitTest/Test.h"
 
 namespace cpp = __llvm_libc::cpp;
@@ -25,7 +25,7 @@ TEST(LlvmLibcGettimeofday, SmokeTest) {
     int ret = __llvm_libc::gettimeofday(&tv, tz);
     ASSERT_EQ(ret, 0);
 
-    int sleep_time = -sleep_times[i];
+    int sleep_time = sleep_times[i];
     // Sleep for {sleep_time} microsceconds.
     struct timespec tim = {0, sleep_time * 1000};
     struct timespec tim2 = {0, 0};

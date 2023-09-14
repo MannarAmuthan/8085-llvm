@@ -26,27 +26,27 @@ DECLARE_SPECIAL_CONSTANTS(float)
 TEST(LlvmLibcAtanhfTest, SpecialNumbers) {
   libc_errno = 0;
   __llvm_libc::fputil::clear_except(FE_ALL_EXCEPT);
-  EXPECT_FP_EQ(aNaN, __llvm_libc::atanhf(aNaN));
+  EXPECT_FP_EQ_ALL_ROUNDING(aNaN, __llvm_libc::atanhf(aNaN));
   EXPECT_FP_EXCEPTION(0);
   EXPECT_MATH_ERRNO(0);
 
   __llvm_libc::fputil::clear_except(FE_ALL_EXCEPT);
-  EXPECT_FP_EQ(0.0f, __llvm_libc::atanhf(0.0f));
+  EXPECT_FP_EQ_ALL_ROUNDING(0.0f, __llvm_libc::atanhf(0.0f));
   EXPECT_FP_EXCEPTION(0);
   EXPECT_MATH_ERRNO(0);
 
   __llvm_libc::fputil::clear_except(FE_ALL_EXCEPT);
-  EXPECT_FP_EQ(-0.0f, __llvm_libc::atanhf(-0.0f));
+  EXPECT_FP_EQ_ALL_ROUNDING(-0.0f, __llvm_libc::atanhf(-0.0f));
   EXPECT_FP_EXCEPTION(0);
   EXPECT_MATH_ERRNO(0);
 
   __llvm_libc::fputil::clear_except(FE_ALL_EXCEPT);
-  EXPECT_FP_EQ(inf, __llvm_libc::atanhf(1.0f));
+  EXPECT_FP_EQ_ALL_ROUNDING(inf, __llvm_libc::atanhf(1.0f));
   EXPECT_FP_EXCEPTION(FE_DIVBYZERO);
   EXPECT_MATH_ERRNO(ERANGE);
 
   __llvm_libc::fputil::clear_except(FE_ALL_EXCEPT);
-  EXPECT_FP_EQ(neg_inf, __llvm_libc::atanhf(-1.0f));
+  EXPECT_FP_EQ_ALL_ROUNDING(neg_inf, __llvm_libc::atanhf(-1.0f));
   EXPECT_FP_EXCEPTION(FE_DIVBYZERO);
   EXPECT_MATH_ERRNO(ERANGE);
 
@@ -54,39 +54,39 @@ TEST(LlvmLibcAtanhfTest, SpecialNumbers) {
   bt.bits += 1;
 
   __llvm_libc::fputil::clear_except(FE_ALL_EXCEPT);
-  EXPECT_FP_EQ(aNaN, __llvm_libc::atanhf(bt.get_val()));
+  EXPECT_FP_EQ_ALL_ROUNDING(aNaN, __llvm_libc::atanhf(bt.get_val()));
   EXPECT_FP_EXCEPTION(FE_INVALID);
   EXPECT_MATH_ERRNO(EDOM);
 
   __llvm_libc::fputil::clear_except(FE_ALL_EXCEPT);
   bt.set_sign(true);
-  EXPECT_FP_EQ(aNaN, __llvm_libc::atanhf(bt.get_val()));
+  EXPECT_FP_EQ_ALL_ROUNDING(aNaN, __llvm_libc::atanhf(bt.get_val()));
   EXPECT_FP_EXCEPTION(FE_INVALID);
   EXPECT_MATH_ERRNO(EDOM);
 
   __llvm_libc::fputil::clear_except(FE_ALL_EXCEPT);
-  EXPECT_FP_EQ(aNaN, __llvm_libc::atanhf(2.0f));
+  EXPECT_FP_EQ_ALL_ROUNDING(aNaN, __llvm_libc::atanhf(2.0f));
   EXPECT_FP_EXCEPTION(FE_INVALID);
   EXPECT_MATH_ERRNO(EDOM);
 
   __llvm_libc::fputil::clear_except(FE_ALL_EXCEPT);
-  EXPECT_FP_EQ(aNaN, __llvm_libc::atanhf(-2.0f));
+  EXPECT_FP_EQ_ALL_ROUNDING(aNaN, __llvm_libc::atanhf(-2.0f));
   EXPECT_FP_EXCEPTION(FE_INVALID);
   EXPECT_MATH_ERRNO(EDOM);
 
   __llvm_libc::fputil::clear_except(FE_ALL_EXCEPT);
-  EXPECT_FP_EQ(aNaN, __llvm_libc::atanhf(inf));
+  EXPECT_FP_EQ_ALL_ROUNDING(aNaN, __llvm_libc::atanhf(inf));
   EXPECT_FP_EXCEPTION(FE_INVALID);
   EXPECT_MATH_ERRNO(EDOM);
 
   bt.set_sign(true);
-  EXPECT_FP_EQ(aNaN, __llvm_libc::atanhf(neg_inf));
+  EXPECT_FP_EQ_ALL_ROUNDING(aNaN, __llvm_libc::atanhf(neg_inf));
   EXPECT_FP_EXCEPTION(FE_INVALID);
   EXPECT_MATH_ERRNO(EDOM);
 }
 
 TEST(LlvmLibcAtanhfTest, InFloatRange) {
-  constexpr uint32_t COUNT = 1000000;
+  constexpr uint32_t COUNT = 100'000;
   const uint32_t STEP = FPBits(1.0f).uintval() / COUNT;
   for (uint32_t i = 0, v = 0; i <= COUNT; ++i, v += STEP) {
     float x = float(FPBits(v));

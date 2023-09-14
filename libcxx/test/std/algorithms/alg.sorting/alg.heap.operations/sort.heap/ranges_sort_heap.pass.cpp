@@ -59,14 +59,14 @@ static_assert(!HasSortHeapR<UncheckedRange<int*, SentinelForNotWeaklyEqualityCom
 static_assert(!HasSortHeapR<UncheckedRange<int*>, BadComparator>);
 static_assert(!HasSortHeapR<UncheckedRange<const int*>>); // Doesn't satisfy `sortable`.
 
-template <size_t N, class T, class Iter>
+template <std::size_t N, class T, class Iter>
 constexpr void verify_sorted(const std::array<T, N>& sorted, Iter last, std::array<T, N> expected) {
   assert(sorted == expected);
   assert(base(last) == sorted.data() + sorted.size());
   assert(std::is_sorted(sorted.begin(), sorted.end()));
 }
 
-template <class Iter, class Sent, size_t N>
+template <class Iter, class Sent, std::size_t N>
 constexpr void test_one(const std::array<int, N> input, std::array<int, N> expected) {
   assert(std::is_heap(input.begin(), input.end()));
 
@@ -207,7 +207,7 @@ constexpr bool test() {
 
   { // `std::ranges::dangling` is returned.
     [[maybe_unused]] std::same_as<std::ranges::dangling> decltype(auto) result =
-        std::ranges::sort_heap(std::array{2, 1, 3});
+        std::ranges::sort_heap(std::array{3, 1, 2});
   }
 
   return true;
@@ -252,6 +252,9 @@ void test_complexity() {
     const int n = (1 << logn);
     auto first  = v.begin();
     auto last   = v.begin() + n;
+    const int debug_elements = std::min(100, n);
+    // Multiplier 2 because of comp(a,b) comp(b, a) checks.
+    const int debug_comparisons = 2 * (debug_elements + 1) * debug_elements;
     std::shuffle(first, last, g);
     std::make_heap(first, last, &MyInt::Comp);
     // The exact stats of our current implementation are recorded here.
@@ -259,11 +262,13 @@ void test_complexity() {
     std::ranges::sort_heap(first, last, &MyInt::Comp);
     LIBCPP_ASSERT(stats.copied == 0);
     LIBCPP_ASSERT(stats.moved <= 2 * n + n * logn);
-#ifndef _LIBCPP_ENABLE_DEBUG_MODE
+#if !_LIBCPP_ENABLE_DEBUG_MODE
     LIBCPP_ASSERT(stats.compared <= n * logn);
+    (void)debug_comparisons;
+#else
+    LIBCPP_ASSERT(stats.compared <= 2 * n * logn + debug_comparisons);
 #endif
     LIBCPP_ASSERT(std::is_sorted(first, last, &MyInt::Comp));
-    LIBCPP_ASSERT(stats.compared <= 2 * n * logn);
   }
 }
 

@@ -89,9 +89,10 @@ public:
   /// not match or is not implemented, return true.  The resultant operands
   /// (which will appear in the machine instruction) should be added to the
   /// OutOps vector.
-  virtual bool SelectInlineAsmMemoryOperand(const SDValue &Op,
-                                            unsigned ConstraintID,
-                                            std::vector<SDValue> &OutOps) {
+  virtual bool
+  SelectInlineAsmMemoryOperand(const SDValue &Op,
+                               InlineAsm::ConstraintCode ConstraintID,
+                               std::vector<SDValue> &OutOps) {
     return true;
   }
 
@@ -128,6 +129,7 @@ public:
     OPC_CheckChild0Same, OPC_CheckChild1Same,
     OPC_CheckChild2Same, OPC_CheckChild3Same,
     OPC_CheckPatternPredicate,
+    OPC_CheckPatternPredicate2,
     OPC_CheckPredicate,
     OPC_CheckPredicateWithOperands,
     OPC_CheckOpcode,
@@ -327,6 +329,8 @@ private:
   void Select_STACKMAP(SDNode *N);
   void Select_PATCHPOINT(SDNode *N);
 
+  void Select_JUMP_TABLE_DEBUG_INFO(SDNode *N);
+
 private:
   void DoInstructionSelection();
   SDNode *MorphNode(SDNode *Node, unsigned TargetOpc, SDVTList VTList,
@@ -336,6 +340,9 @@ private:
   /// personality specific tasks. Returns true if the block should be
   /// instruction selected, false if no code should be emitted for it.
   bool PrepareEHLandingPad();
+
+  // Mark and Report IPToState for each Block under AsynchEH
+  void reportIPToStateForBlocks(MachineFunction *Fn);
 
   /// Perform instruction selection on all basic blocks in the function.
   void SelectAllBasicBlocks(const Function &Fn);

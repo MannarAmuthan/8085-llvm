@@ -25,7 +25,7 @@ enum NodeType : unsigned {
   FIRST_NUMBER = ISD::BUILTIN_OP_END,
   Wrapper,
   CALL,
-  RET_FLAG,
+  RET_GLUE,
   LOAD_PARAM,
   DeclareParam,
   DeclareScalarParam,
@@ -617,6 +617,7 @@ private:
   Align getArgumentAlignment(SDValue Callee, const CallBase *CB, Type *Ty,
                              unsigned Idx, const DataLayout &DL) const;
 };
+
 } // namespace llvm
 
 #endif

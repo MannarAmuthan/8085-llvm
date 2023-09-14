@@ -10,6 +10,7 @@
 #define LLDB_INTERPRETER_SCRIPTINTERPRETER_H
 
 #include "lldb/API/SBAttachInfo.h"
+#include "lldb/API/SBBreakpoint.h"
 #include "lldb/API/SBData.h"
 #include "lldb/API/SBError.h"
 #include "lldb/API/SBLaunchInfo.h"
@@ -17,9 +18,10 @@
 #include "lldb/Breakpoint/BreakpointOptions.h"
 #include "lldb/Core/PluginInterface.h"
 #include "lldb/Core/SearchFilter.h"
-#include "lldb/Core/StreamFile.h"
 #include "lldb/Core/ThreadedCommunication.h"
 #include "lldb/Host/PseudoTerminal.h"
+#include "lldb/Host/StreamFile.h"
+#include "lldb/Interpreter/ScriptObject.h"
 #include "lldb/Interpreter/ScriptedPlatformInterface.h"
 #include "lldb/Interpreter/ScriptedProcessInterface.h"
 #include "lldb/Utility/Broadcaster.h"
@@ -313,6 +315,14 @@ public:
     return lldb::eStateStepping;
   }
 
+  virtual bool
+  ScriptedThreadPlanGetStopDescription(StructuredData::ObjectSP implementor_sp,
+                                       lldb_private::Stream *stream,
+                                       bool &script_error) {
+    script_error = true;
+    return false;
+  }
+
   virtual StructuredData::GenericSP
   CreateScriptedBreakpointResolver(const char *class_name,
                                    const StructuredDataImpl &args_data,
@@ -582,10 +592,18 @@ public:
     return *m_scripted_platform_interface_up;
   }
 
+  virtual StructuredData::ObjectSP
+  CreateStructuredDataFromScriptObject(ScriptObject obj) {
+    return {};
+  }
+
   lldb::DataExtractorSP
   GetDataExtractorFromSBData(const lldb::SBData &data) const;
 
   Status GetStatusFromSBError(const lldb::SBError &error) const;
+
+  lldb::BreakpointSP
+  GetOpaqueTypeFromSBBreakpoint(const lldb::SBBreakpoint &breakpoint) const;
 
   lldb::ProcessAttachInfoSP
   GetOpaqueTypeFromSBAttachInfo(const lldb::SBAttachInfo &attach_info) const;

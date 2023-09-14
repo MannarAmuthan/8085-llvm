@@ -9,7 +9,7 @@
 #include "src/errno/libc_errno.h"
 #include "src/time/gmtime.h"
 #include "src/time/time_utils.h"
-#include "test/ErrnoSetterMatcher.h"
+#include "test/UnitTest/ErrnoSetterMatcher.h"
 #include "test/UnitTest/Test.h"
 #include "test/src/time/TmMatcher.h"
 
@@ -20,6 +20,8 @@ using __llvm_libc::testing::ErrnoSetterMatcher::Succeeds;
 using __llvm_libc::time_utils::TimeConstants;
 
 TEST(LlvmLibcGmTime, OutOfRange) {
+  if (sizeof(time_t) < sizeof(int64_t))
+    return;
   time_t seconds =
       1 + INT_MAX * static_cast<int64_t>(
                         TimeConstants::NUMBER_OF_SECONDS_IN_LEAP_YEAR);
