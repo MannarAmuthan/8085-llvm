@@ -64,7 +64,7 @@ const char *I8085InstPrinter::getPrettyRegisterName(unsigned RegNum,
 
 void I8085InstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
                                   raw_ostream &O) {
-  const MCOperandInfo &MOI = this->MII.get(MI->getOpcode()).OpInfo[OpNo];
+  const MCOperandInfo &MOI = this->MII.get(MI->getOpcode()).operands()[OpNo];
 
   if (OpNo >= MI->size()) {
     // Not all operands are correctly disassembled at the moment. This means

@@ -57,8 +57,9 @@ class I8085AsmParser : public MCTargetAsmParser {
                                bool MatchingInlineAsm) override;
 
   bool parseRegister(MCRegister &RegNo, SMLoc &StartLoc, SMLoc &EndLoc) override;
-  OperandMatchResultTy tryParseRegister(MCRegister &RegNo, SMLoc &StartLoc,
-                                        SMLoc &EndLoc) override;
+
+  ParseStatus tryParseRegister(MCRegister &Reg, SMLoc &StartLoc,
+                               SMLoc &EndLoc) override;
 
   bool ParseInstruction(ParseInstructionInfo &Info, StringRef Name,
                         SMLoc NameLoc, OperandVector &Operands) override;
@@ -583,7 +584,7 @@ bool I8085AsmParser::parseRegister(MCRegister &RegNo, SMLoc &StartLoc,
   return (RegNo == I8085::NoRegister);
 }
 
-OperandMatchResultTy I8085AsmParser::tryParseRegister(MCRegister &RegNo,
+ParseStatus I8085AsmParser::tryParseRegister(MCRegister &RegNo,
                                                     SMLoc &StartLoc,
                                                     SMLoc &EndLoc) {
   StartLoc = Parser.getTok().getLoc();

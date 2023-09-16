@@ -132,7 +132,9 @@ unsigned I8085MCCodeEmitter::getMachineOpValue(const MCInst &MI,
 
 void I8085MCCodeEmitter::emitInstruction(uint64_t Val, unsigned Size,
                                        const MCSubtargetInfo &STI,
-                                       raw_ostream &OS) const {
+                                       SmallVectorImpl<char> &CB) const {
+
+  llvm::raw_svector_ostream OS(CB);
 
   if(Size == 1){
     uint8_t val = Val & 0xff;
@@ -160,7 +162,8 @@ void I8085MCCodeEmitter::emitInstruction(uint64_t Val, unsigned Size,
   }
 }
 
-void I8085MCCodeEmitter::encodeInstruction(const MCInst &MI, raw_ostream &OS,
+void I8085MCCodeEmitter::encodeInstruction(const MCInst &MI,
+                                         SmallVectorImpl<char> &CB,
                                          SmallVectorImpl<MCFixup> &Fixups,
                                          const MCSubtargetInfo &STI) const {
   const MCInstrDesc &Desc = MCII.get(MI.getOpcode());
@@ -174,7 +177,7 @@ void I8085MCCodeEmitter::encodeInstruction(const MCInst &MI, raw_ostream &OS,
   assert(Size > 0 && "Instruction size cannot be zero");
 
   uint64_t BinaryOpCode = getBinaryCodeForInstr(MI, Fixups, STI);
-  emitInstruction(BinaryOpCode, Size, STI, OS);
+  emitInstruction(BinaryOpCode, Size, STI, CB);
 }
 
 MCCodeEmitter *createI8085MCCodeEmitter(const MCInstrInfo &MCII,
