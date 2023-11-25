@@ -17,6 +17,7 @@ set(core_files
   __stdarg_va_list.h
   stdatomic.h
   stdbool.h
+  stdckdint.h
   stddef.h
   __stddef_max_align_t.h
   __stddef_null.h
@@ -92,6 +93,8 @@ set(hlsl_files
 
 set(loongarch_files
   larchintrin.h
+  lasxintrin.h
+  lsxintrin.h
   )
 
 set(mips_msa_files
@@ -113,10 +116,9 @@ set(ppc_htm_files
   )
 
 set(riscv_files
+  riscv_bitmanip.h
+  riscv_crypto.h
   riscv_ntlh.h
-  )
-
-set(sifive_files
   sifive_vector.h
   )
 
@@ -227,6 +229,7 @@ set(x86_files
   tmmintrin.h
   tsxldtrkintrin.h
   uintrintrin.h
+  usermsrintrin.h
   vaesintrin.h
   vpclmulqdqintrin.h
   waitpkgintrin.h
@@ -271,7 +274,6 @@ set(files
   ${ppc_files}
   ${ppc_htm_files}
   ${riscv_files}
-  ${sifive_files}
   ${systemz_files}
   ${ve_files}
   ${x86_files}

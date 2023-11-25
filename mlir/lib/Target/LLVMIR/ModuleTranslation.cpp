@@ -31,6 +31,7 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Target/LLVMIR/LLVMTranslationInterface.h"
 #include "mlir/Target/LLVMIR/TypeToLLVM.h"
+#include "mlir/Transforms/RegionUtils.h"
 
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SetVector.h"
@@ -130,9 +131,9 @@ translateDataLayout(DataLayoutSpecInterface attribute,
               } else {
                 layoutStream << "f";
               }
-              unsigned size = dataLayout.getTypeSizeInBits(type);
-              unsigned abi = dataLayout.getTypeABIAlignment(type) * 8u;
-              unsigned preferred =
+              uint64_t size = dataLayout.getTypeSizeInBits(type);
+              uint64_t abi = dataLayout.getTypeABIAlignment(type) * 8u;
+              uint64_t preferred =
                   dataLayout.getTypePreferredAlignment(type) * 8u;
               layoutStream << size << ":" << abi;
               if (abi != preferred)
@@ -141,12 +142,12 @@ translateDataLayout(DataLayoutSpecInterface attribute,
             })
             .Case([&](LLVMPointerType ptrType) {
               layoutStream << "p" << ptrType.getAddressSpace() << ":";
-              unsigned size = dataLayout.getTypeSizeInBits(type);
-              unsigned abi = dataLayout.getTypeABIAlignment(type) * 8u;
-              unsigned preferred =
+              uint64_t size = dataLayout.getTypeSizeInBits(type);
+              uint64_t abi = dataLayout.getTypeABIAlignment(type) * 8u;
+              uint64_t preferred =
                   dataLayout.getTypePreferredAlignment(type) * 8u;
               layoutStream << size << ":" << abi << ":" << preferred;
-              if (std::optional<unsigned> index = extractPointerSpecValue(
+              if (std::optional<uint64_t> index = extractPointerSpecValue(
                       entry.getValue(), PtrDLEntryPos::Index))
                 layoutStream << ":" << *index;
               return success();
@@ -245,15 +246,15 @@ convertDenseElementsAttr(Location loc, DenseElementsAttr denseElementsAttr,
   // raw data.
   // TODO: we may also need to consider endianness when cross-compiling to an
   // architecture where it is different.
-  unsigned elementByteSize = denseElementsAttr.getRawData().size() /
-                             denseElementsAttr.getNumElements();
+  int64_t elementByteSize = denseElementsAttr.getRawData().size() /
+                            denseElementsAttr.getNumElements();
   if (8 * elementByteSize != innermostLLVMType->getScalarSizeInBits())
     return nullptr;
 
   // Compute the shape of all dimensions but the innermost. Note that the
   // innermost dimension may be that of the vector element type.
   bool hasVectorElementType = isa<VectorType>(type.getElementType());
-  unsigned numAggregates =
+  int64_t numAggregates =
       denseElementsAttr.getNumElements() /
       (hasVectorElementType ? 1
                             : denseElementsAttr.getType().getShape().back());
@@ -304,8 +305,8 @@ convertDenseElementsAttr(Location loc, DenseElementsAttr denseElementsAttr,
   // Create innermost constants and defer to the default constant creation
   // mechanism for other dimensions.
   SmallVector<llvm::Constant *> constants;
-  unsigned aggregateSize = denseElementsAttr.getType().getShape().back() *
-                           (innermostLLVMType->getScalarSizeInBits() / 8);
+  int64_t aggregateSize = denseElementsAttr.getType().getShape().back() *
+                          (innermostLLVMType->getScalarSizeInBits() / 8);
   constants.reserve(numAggregates);
   for (unsigned i = 0; i < numAggregates; ++i) {
     StringRef data(denseElementsAttr.getRawData().data() + i * aggregateSize,
@@ -343,16 +344,6 @@ llvm::Constant *mlir::LLVM::detail::getLLVMConstant(
     if (!imag)
       return nullptr;
     return llvm::ConstantStruct::get(structType, {real, imag});
-  }
-  if (auto *targetExtType = dyn_cast<::llvm::TargetExtType>(llvmType)) {
-    // TODO: Replace with 'zeroinitializer' once there is a dedicated
-    // zeroinitializer operation in the LLVM dialect.
-    auto intAttr = dyn_cast<IntegerAttr>(attr);
-    if (!intAttr || intAttr.getInt() != 0)
-      emitError(loc,
-                "Only zero-initialization allowed for target extension type");
-
-    return llvm::ConstantTargetNone::get(targetExtType);
   }
   // For integer types, we allow a mismatch in sizes as the index type in
   // MLIR might have a different size than the index type in the LLVM module.
@@ -581,30 +572,61 @@ void mlir::LLVM::detail::connectPHINodes(Region &region,
   }
 }
 
-/// Sort function blocks topologically.
-SetVector<Block *>
-mlir::LLVM::detail::getTopologicallySortedBlocks(Region &region) {
-  // For each block that has not been visited yet (i.e. that has no
-  // predecessors), add it to the list as well as its successors.
-  SetVector<Block *> blocks;
-  for (Block &b : region) {
-    if (blocks.count(&b) == 0) {
-      llvm::ReversePostOrderTraversal<Block *> traversal(&b);
-      blocks.insert(traversal.begin(), traversal.end());
-    }
-  }
-  assert(blocks.size() == region.getBlocks().size() &&
-         "some blocks are not sorted");
-
-  return blocks;
-}
-
 llvm::CallInst *mlir::LLVM::detail::createIntrinsicCall(
     llvm::IRBuilderBase &builder, llvm::Intrinsic::ID intrinsic,
     ArrayRef<llvm::Value *> args, ArrayRef<llvm::Type *> tys) {
   llvm::Module *module = builder.GetInsertBlock()->getModule();
   llvm::Function *fn = llvm::Intrinsic::getDeclaration(module, intrinsic, tys);
   return builder.CreateCall(fn, args);
+}
+
+llvm::CallInst *mlir::LLVM::detail::createIntrinsicCall(
+    llvm::IRBuilderBase &builder, ModuleTranslation &moduleTranslation,
+    Operation *intrOp, llvm::Intrinsic::ID intrinsic, unsigned numResults,
+    ArrayRef<unsigned> overloadedResults, ArrayRef<unsigned> overloadedOperands,
+    ArrayRef<unsigned> immArgPositions,
+    ArrayRef<StringLiteral> immArgAttrNames) {
+  assert(immArgPositions.size() == immArgAttrNames.size() &&
+         "LLVM `immArgPositions` and MLIR `immArgAttrNames` should have equal "
+         "length");
+
+  // Map operands and attributes to LLVM values.
+  auto operands = moduleTranslation.lookupValues(intrOp->getOperands());
+  SmallVector<llvm::Value *> args(immArgPositions.size() + operands.size());
+  for (auto [immArgPos, immArgName] :
+       llvm::zip(immArgPositions, immArgAttrNames)) {
+    auto attr = llvm::cast<TypedAttr>(intrOp->getAttr(immArgName));
+    assert(attr.getType().isIntOrFloat() && "expected int or float immarg");
+    auto *type = moduleTranslation.convertType(attr.getType());
+    args[immArgPos] = LLVM::detail::getLLVMConstant(
+        type, attr, intrOp->getLoc(), moduleTranslation);
+  }
+  unsigned opArg = 0;
+  for (auto &arg : args) {
+    if (!arg)
+      arg = operands[opArg++];
+  }
+
+  // Resolve overloaded intrinsic declaration.
+  SmallVector<llvm::Type *> overloadedTypes;
+  for (unsigned overloadedResultIdx : overloadedResults) {
+    if (numResults > 1) {
+      // More than one result is mapped to an LLVM struct.
+      overloadedTypes.push_back(moduleTranslation.convertType(
+          llvm::cast<LLVM::LLVMStructType>(intrOp->getResult(0).getType())
+              .getBody()[overloadedResultIdx]));
+    } else {
+      overloadedTypes.push_back(
+          moduleTranslation.convertType(intrOp->getResult(0).getType()));
+    }
+  }
+  for (unsigned overloadedOperandIdx : overloadedOperands)
+    overloadedTypes.push_back(args[overloadedOperandIdx]->getType());
+  llvm::Module *module = builder.GetInsertBlock()->getModule();
+  llvm::Function *llvmIntr =
+      llvm::Intrinsic::getDeclaration(module, intrinsic, overloadedTypes);
+
+  return builder.CreateCall(llvmIntr, args);
 }
 
 /// Given a single MLIR operation, create the corresponding LLVM IR operation
@@ -903,7 +925,7 @@ LogicalResult ModuleTranslation::convertOneFunction(LLVMFuncOp func) {
 
   // Check the personality and set it.
   if (func.getPersonality()) {
-    llvm::Type *ty = llvm::Type::getInt8PtrTy(llvmFunc->getContext());
+    llvm::Type *ty = llvm::PointerType::getUnqual(llvmFunc->getContext());
     if (llvm::Constant *pfunc = getLLVMConstant(ty, func.getPersonalityAttr(),
                                                 func.getLoc(), *this))
       llvmFunc->setPersonalityFn(pfunc);
@@ -917,6 +939,14 @@ LogicalResult ModuleTranslation::convertOneFunction(LLVMFuncOp func) {
   else if (func.getArmLocallyStreaming())
     llvmFunc->addFnAttr("aarch64_pstate_sm_body");
 
+  if (func.getArmNewZa())
+    llvmFunc->addFnAttr("aarch64_pstate_za_new");
+
+  if (auto attr = func.getVscaleRange())
+    llvmFunc->addFnAttr(llvm::Attribute::getWithVScaleRangeArgs(
+        getLLVMContext(), attr->getMinRange().getInt(),
+        attr->getMaxRange().getInt()));
+
   // First, create all blocks so we can jump to them.
   llvm::LLVMContext &llvmContext = llvmFunc->getContext();
   for (auto &bb : func) {
@@ -927,7 +957,7 @@ LogicalResult ModuleTranslation::convertOneFunction(LLVMFuncOp func) {
 
   // Then, convert blocks one by one in topological order to ensure defs are
   // converted before uses.
-  auto blocks = detail::getTopologicallySortedBlocks(func.getBody());
+  auto blocks = getTopologicallySortedBlocks(func.getBody());
   for (Block *bb : blocks) {
     llvm::IRBuilder<> builder(llvmContext);
     if (failed(convertBlock(*bb, bb->isEntryBlock(), builder)))
@@ -1338,14 +1368,6 @@ prepareLLVMModule(Operation *m, llvm::LLVMContext &llvmContext,
   if (auto targetTripleAttr =
           m->getDiscardableAttr(LLVM::LLVMDialect::getTargetTripleAttrName()))
     llvmModule->setTargetTriple(cast<StringAttr>(targetTripleAttr).getValue());
-
-  // Inject declarations for `malloc` and `free` functions that can be used in
-  // memref allocation/deallocation coming from standard ops lowering.
-  llvm::IRBuilder<> builder(llvmContext);
-  llvmModule->getOrInsertFunction("malloc", builder.getInt8PtrTy(),
-                                  builder.getInt64Ty());
-  llvmModule->getOrInsertFunction("free", builder.getVoidTy(),
-                                  builder.getInt8PtrTy());
 
   return llvmModule;
 }

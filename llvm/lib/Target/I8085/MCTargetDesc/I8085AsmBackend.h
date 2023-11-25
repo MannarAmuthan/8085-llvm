@@ -29,7 +29,7 @@ struct MCFixupKindInfo;
 class I8085AsmBackend : public MCAsmBackend {
 public:
   I8085AsmBackend(Triple::OSType OSType)
-      : MCAsmBackend(support::little), OSType(OSType) {}
+      : MCAsmBackend(llvm::endianness::little), OSType(OSType) {}
 
   void adjustFixupValue(const MCFixup &Fixup, const MCValue &Target,
                         uint64_t &Value, MCContext *Ctx = nullptr) const;

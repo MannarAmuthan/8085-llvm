@@ -30,7 +30,8 @@ std::unique_ptr<Pass> createBufferDeallocationPass();
 
 /// Creates an instance of the OwnershipBasedBufferDeallocation pass to free all
 /// allocated buffers.
-std::unique_ptr<Pass> createOwnershipBasedBufferDeallocationPass();
+std::unique_ptr<Pass> createOwnershipBasedBufferDeallocationPass(
+    bool privateFuncDynamicOwnership = false);
 
 /// Creates a pass that optimizes `bufferization.dealloc` operations. For
 /// example, it reduces the number of alias checks needed at runtime using
@@ -209,9 +210,6 @@ std::unique_ptr<Pass> createBufferizationBufferizePass();
 //===----------------------------------------------------------------------===//
 // Registration
 //===----------------------------------------------------------------------===//
-
-/// Register external models for AllocationOpInterface.
-void registerAllocationOpInterfaceExternalModels(DialectRegistry &registry);
 
 /// Generate the code for registering passes.
 #define GEN_PASS_REGISTRATION

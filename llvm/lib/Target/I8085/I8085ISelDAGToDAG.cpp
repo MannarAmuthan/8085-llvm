@@ -30,7 +30,7 @@ class I8085DAGToDAGISel : public SelectionDAGISel {
 public:
   static char ID;
 
-  I8085DAGToDAGISel(I8085TargetMachine &TM, CodeGenOpt::Level OptLevel)
+  I8085DAGToDAGISel(I8085TargetMachine &TM, CodeGenOptLevel OptLevel)
       : SelectionDAGISel(ID, TM, OptLevel), Subtarget(nullptr) {}
 
   StringRef getPassName() const override {
@@ -406,7 +406,7 @@ bool I8085DAGToDAGISel::trySelect(SDNode *N) {
 }
 
 FunctionPass *createI8085ISelDag(I8085TargetMachine &TM,
-                               CodeGenOpt::Level OptLevel) {
+                               CodeGenOptLevel OptLevel) {
   return new I8085DAGToDAGISel(TM, OptLevel);
 }
 

@@ -5,10 +5,10 @@
 // config could be moved to lit.local.cfg. However, there are downstream users that
 //  do not use these LIT config files. Hence why this is kept inline.
 //
-// DEFINE: %{sparse_compiler_opts} = enable-runtime-library=true
-// DEFINE: %{sparse_compiler_opts_sve} = enable-arm-sve=true %{sparse_compiler_opts}
-// DEFINE: %{compile} = mlir-opt %s --sparse-compiler="%{sparse_compiler_opts}"
-// DEFINE: %{compile_sve} = mlir-opt %s --sparse-compiler="%{sparse_compiler_opts_sve}"
+// DEFINE: %{sparsifier_opts} = enable-runtime-library=true
+// DEFINE: %{sparsifier_opts_sve} = enable-arm-sve=true %{sparsifier_opts}
+// DEFINE: %{compile} = mlir-opt %s --sparsifier="%{sparsifier_opts}"
+// DEFINE: %{compile_sve} = mlir-opt %s --sparsifier="%{sparsifier_opts_sve}"
 // DEFINE: %{run_libs} = -shared-libs=%mlir_c_runner_utils,%mlir_runner_utils
 // DEFINE: %{run_opts} = -e entry -entry-point-result=void
 // DEFINE: %{run} = mlir-cpu-runner %{run_opts} %{run_libs}
@@ -20,11 +20,11 @@
 // RUN: %{compile} | %{run} | FileCheck %s
 //
 // Do the same run, but now with direct IR generation.
-// REDEFINE: %{sparse_compiler_opts} = enable-runtime-library=false enable-buffer-initialization=true
+// REDEFINE: %{sparsifier_opts} = enable-runtime-library=false enable-buffer-initialization=true
 // RUN: %{compile} | %{run} | FileCheck %s
 //
 // Do the same run, but now with vectorization.
-// REDEFINE: %{sparse_compiler_opts} = enable-runtime-library=false vl=4 enable-buffer-initialization=true
+// REDEFINE: %{sparsifier_opts} = enable-runtime-library=false vl=4 enable-buffer-initialization=true
 // RUN: %{compile} | %{run} | FileCheck %s
 //
 // Do the same run, but now with  VLA vectorization.
@@ -60,7 +60,7 @@ module {
     %c0 = arith.constant 0 : index
     %cf1 = arith.constant 1.0 : f64
     %d0 = tensor.dim %arga, %c0 : tensor<?xf64, #SparseVector>
-    %xv = bufferization.alloc_tensor(%d0): tensor<?xf64, #SparseVector>
+    %xv = tensor.empty(%d0): tensor<?xf64, #SparseVector>
     %0 = linalg.generic #trait_vec_select
       ins(%arga: tensor<?xf64, #SparseVector>)
       outs(%xv: tensor<?xf64, #SparseVector>) {
@@ -80,7 +80,7 @@ module {
     %c1 = arith.constant 1 : index
     %d0 = tensor.dim %arga, %c0 : tensor<?x?xf64, #CSR>
     %d1 = tensor.dim %arga, %c1 : tensor<?x?xf64, #CSR>
-    %xv = bufferization.alloc_tensor(%d0, %d1): tensor<?x?xf64, #CSR>
+    %xv = tensor.empty(%d0, %d1): tensor<?x?xf64, #CSR>
     %0 = linalg.generic #trait_mat_select
       ins(%arga: tensor<?x?xf64, #CSR>)
       outs(%xv: tensor<?x?xf64, #CSR>) {

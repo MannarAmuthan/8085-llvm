@@ -25,7 +25,7 @@ class I8085TargetMachine;
 class FunctionPass;
 
 FunctionPass *createI8085ISelDag(I8085TargetMachine &TM,
-                               CodeGenOpt::Level OptLevel);
+                               CodeGenOptLevel OptLevel);
                                
 FunctionPass *createI8085ExpandPseudoPass();
 FunctionPass *createI8085ExpandPseudo32Pass();

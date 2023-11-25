@@ -40,8 +40,7 @@ using namespace llvm;
 /// may also have invalid operands or may have other results that need
 /// expansion, we just know that (at least) one result needs promotion.
 void DAGTypeLegalizer::PromoteIntegerResult(SDNode *N, unsigned ResNo) {
-  LLVM_DEBUG(dbgs() << "Promote integer result: "; N->dump(&DAG);
-             dbgs() << "\n");
+  LLVM_DEBUG(dbgs() << "Promote integer result: "; N->dump(&DAG));
   SDValue Res = SDValue();
 
   // See if the target wants to custom expand this node.
@@ -302,6 +301,11 @@ void DAGTypeLegalizer::PromoteIntegerResult(SDNode *N, unsigned ResNo) {
   case ISD::FFREXP:
     Res = PromoteIntRes_FFREXP(N);
     break;
+
+  case ISD::LRINT:
+  case ISD::LLRINT:
+    Res = PromoteIntRes_XRINT(N);
+    break;
   }
 
   // If the result is null then the sub-method took care of registering it.
@@ -372,7 +376,7 @@ SDValue DAGTypeLegalizer::PromoteIntRes_AtomicCmpSwap(AtomicSDNode *N,
         N->getMemOperand());
     ReplaceValueWith(SDValue(N, 0), Res.getValue(0));
     ReplaceValueWith(SDValue(N, 2), Res.getValue(2));
-    return Res.getValue(1);
+    return DAG.getSExtOrTrunc(Res.getValue(1), SDLoc(N), NVT);
   }
 
   // Op2 is used for the comparison and thus must be extended according to the
@@ -781,6 +785,12 @@ SDValue DAGTypeLegalizer::PromoteIntRes_FP_TO_FP16_BF16(SDNode *N) {
   EVT NVT = TLI.getTypeToTransformTo(*DAG.getContext(), N->getValueType(0));
   SDLoc dl(N);
 
+  return DAG.getNode(N->getOpcode(), dl, NVT, N->getOperand(0));
+}
+
+SDValue DAGTypeLegalizer::PromoteIntRes_XRINT(SDNode *N) {
+  EVT NVT = TLI.getTypeToTransformTo(*DAG.getContext(), N->getValueType(0));
+  SDLoc dl(N);
   return DAG.getNode(N->getOpcode(), dl, NVT, N->getOperand(0));
 }
 
@@ -1736,8 +1746,7 @@ SDValue DAGTypeLegalizer::PromoteIntRes_VAARG(SDNode *N) {
 /// result types of the node are known to be legal, but other operands of the
 /// node may need promotion or expansion as well as the specified one.
 bool DAGTypeLegalizer::PromoteIntegerOperand(SDNode *N, unsigned OpNo) {
-  LLVM_DEBUG(dbgs() << "Promote integer operand: "; N->dump(&DAG);
-             dbgs() << "\n");
+  LLVM_DEBUG(dbgs() << "Promote integer operand: "; N->dump(&DAG));
   SDValue Res = SDValue();
   if (CustomLowerNode(N, N->getOperand(OpNo).getValueType(), false)) {
     LLVM_DEBUG(dbgs() << "Node has been custom lowered, done\n");
@@ -1818,8 +1827,6 @@ bool DAGTypeLegalizer::PromoteIntegerOperand(SDNode *N, unsigned OpNo) {
 
   case ISD::FRAMEADDR:
   case ISD::RETURNADDR: Res = PromoteIntOp_FRAMERETURNADDR(N); break;
-
-  case ISD::PREFETCH: Res = PromoteIntOp_PREFETCH(N, OpNo); break;
 
   case ISD::SMULFIX:
   case ISD::SMULFIXSAT:
@@ -2334,18 +2341,6 @@ SDValue DAGTypeLegalizer::PromoteIntOp_FRAMERETURNADDR(SDNode *N) {
   return SDValue(DAG.UpdateNodeOperands(N, Op), 0);
 }
 
-SDValue DAGTypeLegalizer::PromoteIntOp_PREFETCH(SDNode *N, unsigned OpNo) {
-  assert(OpNo > 1 && "Don't know how to promote this operand!");
-  // Promote the rw, locality, and cache type arguments to a supported integer
-  // width.
-  SDValue Op2 = ZExtPromotedInteger(N->getOperand(2));
-  SDValue Op3 = ZExtPromotedInteger(N->getOperand(3));
-  SDValue Op4 = ZExtPromotedInteger(N->getOperand(4));
-  return SDValue(DAG.UpdateNodeOperands(N, N->getOperand(0), N->getOperand(1),
-                                        Op2, Op3, Op4),
-                 0);
-}
-
 SDValue DAGTypeLegalizer::PromoteIntOp_ExpOp(SDNode *N) {
   bool IsStrict = N->isStrictFPOpcode();
   SDValue Chain = IsStrict ? N->getOperand(0) : SDValue();
@@ -2564,8 +2559,7 @@ SDValue DAGTypeLegalizer::PromoteIntOp_VP_STRIDED(SDNode *N, unsigned OpNo) {
 /// have invalid operands or may have other results that need promotion, we just
 /// know that (at least) one result needs expansion.
 void DAGTypeLegalizer::ExpandIntegerResult(SDNode *N, unsigned ResNo) {
-  LLVM_DEBUG(dbgs() << "Expand integer result: "; N->dump(&DAG);
-             dbgs() << "\n");
+  LLVM_DEBUG(dbgs() << "Expand integer result: "; N->dump(&DAG));
   SDValue Lo, Hi;
   Lo = Hi = SDValue();
 
@@ -3905,7 +3899,7 @@ void DAGTypeLegalizer::ExpandIntRes_LOAD(LoadSDNode *N,
 
     // Increment the pointer to the other half.
     unsigned IncrementSize = NVT.getSizeInBits()/8;
-    Ptr = DAG.getMemBasePlusOffset(Ptr, TypeSize::Fixed(IncrementSize), dl);
+    Ptr = DAG.getMemBasePlusOffset(Ptr, TypeSize::getFixed(IncrementSize), dl);
     Hi = DAG.getExtLoad(ExtType, dl, NVT, Ch, Ptr,
                         N->getPointerInfo().getWithOffset(IncrementSize), NEVT,
                         N->getOriginalAlign(), MMOFlags, AAInfo);
@@ -3929,7 +3923,7 @@ void DAGTypeLegalizer::ExpandIntRes_LOAD(LoadSDNode *N,
                         N->getOriginalAlign(), MMOFlags, AAInfo);
 
     // Increment the pointer to the other half.
-    Ptr = DAG.getMemBasePlusOffset(Ptr, TypeSize::Fixed(IncrementSize), dl);
+    Ptr = DAG.getMemBasePlusOffset(Ptr, TypeSize::getFixed(IncrementSize), dl);
     // Load the rest of the low bits.
     Lo = DAG.getExtLoad(ISD::ZEXTLOAD, dl, NVT, Ch, Ptr,
                         N->getPointerInfo().getWithOffset(IncrementSize),
@@ -5071,8 +5065,7 @@ void DAGTypeLegalizer::ExpandIntRes_VSCALE(SDNode *N, SDValue &Lo,
 /// result types of the node are known to be legal, but other operands of the
 /// node may need promotion or expansion as well as the specified one.
 bool DAGTypeLegalizer::ExpandIntegerOperand(SDNode *N, unsigned OpNo) {
-  LLVM_DEBUG(dbgs() << "Expand integer operand: "; N->dump(&DAG);
-             dbgs() << "\n");
+  LLVM_DEBUG(dbgs() << "Expand integer operand: "; N->dump(&DAG));
   SDValue Res = SDValue();
 
   if (CustomLowerNode(N, N->getOperand(OpNo).getValueType(), false))
@@ -5453,7 +5446,7 @@ SDValue DAGTypeLegalizer::ExpandIntOp_STORE(StoreSDNode *N, unsigned OpNo) {
 
     // Increment the pointer to the other half.
     unsigned IncrementSize = NVT.getSizeInBits()/8;
-    Ptr = DAG.getObjectPtrOffset(dl, Ptr, TypeSize::Fixed(IncrementSize));
+    Ptr = DAG.getObjectPtrOffset(dl, Ptr, TypeSize::getFixed(IncrementSize));
     Hi = DAG.getTruncStore(Ch, dl, Hi, Ptr,
                            N->getPointerInfo().getWithOffset(IncrementSize),
                            NEVT, N->getOriginalAlign(), MMOFlags, AAInfo);
@@ -5488,7 +5481,7 @@ SDValue DAGTypeLegalizer::ExpandIntOp_STORE(StoreSDNode *N, unsigned OpNo) {
                          N->getOriginalAlign(), MMOFlags, AAInfo);
 
   // Increment the pointer to the other half.
-  Ptr = DAG.getObjectPtrOffset(dl, Ptr, TypeSize::Fixed(IncrementSize));
+  Ptr = DAG.getObjectPtrOffset(dl, Ptr, TypeSize::getFixed(IncrementSize));
   // Store the lowest ExcessBits bits in the second half.
   Lo = DAG.getTruncStore(Ch, dl, Lo, Ptr,
                          N->getPointerInfo().getWithOffset(IncrementSize),

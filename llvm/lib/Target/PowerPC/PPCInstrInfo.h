@@ -15,6 +15,7 @@
 
 #include "MCTargetDesc/PPCMCTargetDesc.h"
 #include "PPCRegisterInfo.h"
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 
 #define GET_INSTRINFO_HEADER
@@ -366,12 +367,9 @@ public:
   /// perserved for more FMA chain reassociations on PowerPC.
   int getExtendResourceLenLimit() const override { return 1; }
 
-  void setSpecialOperandAttr(MachineInstr &OldMI1, MachineInstr &OldMI2,
-                             MachineInstr &NewMI1,
-                             MachineInstr &NewMI2) const override;
-
   // PowerPC specific version of setSpecialOperandAttr that copies Flags to MI
   // and clears nuw, nsw, and exact flags.
+  using TargetInstrInfo::setSpecialOperandAttr;
   void setSpecialOperandAttr(MachineInstr &MI, uint32_t Flags) const;
 
   bool isCoalescableExtInstr(const MachineInstr &MI,
@@ -585,6 +583,7 @@ public:
   }
 
   bool convertToImmediateForm(MachineInstr &MI,
+                              SmallSet<Register, 4> &RegsToUpdate,
                               MachineInstr **KilledDef = nullptr) const;
   bool foldFrameOffset(MachineInstr &MI) const;
   bool combineRLWINM(MachineInstr &MI, MachineInstr **ToErase = nullptr) const;
@@ -598,23 +597,6 @@ public:
                              MachineInstr *&ADDIMI, int64_t &OffsetAddi,
                              int64_t OffsetImm) const;
 
-  /// Fixup killed/dead flag for register \p RegNo between instructions [\p
-  /// StartMI, \p EndMI]. Some pre-RA or post-RA transformations may violate
-  /// register killed/dead flags semantics, this function can be called to fix
-  /// up. Before calling this function,
-  /// 1. Ensure that \p RegNo liveness is killed after instruction \p EndMI.
-  /// 2. Ensure that there is no new definition between (\p StartMI, \p EndMI)
-  ///    and possible definition for \p RegNo is \p StartMI or \p EndMI. For
-  ///    pre-RA cases, definition may be \p StartMI through COPY, \p StartMI
-  ///    will be adjust to true definition.
-  /// 3. We can do accurate fixup for the case when all instructions between
-  ///    [\p StartMI, \p EndMI] are in same basic block.
-  /// 4. For the case when \p StartMI and \p EndMI are not in same basic block,
-  ///    we conservatively clear kill flag for all uses of \p RegNo for pre-RA
-  ///    and for post-RA, we give an assertion as without reaching definition
-  ///    analysis post-RA, \p StartMI and \p EndMI are hard to keep right.
-  void fixupIsDeadOrKill(MachineInstr *StartMI, MachineInstr *EndMI,
-                         unsigned RegNo) const;
   void replaceInstrWithLI(MachineInstr &MI, const LoadImmediateInfo &LII) const;
   void replaceInstrOperandWithImm(MachineInstr &MI, unsigned OpNo,
                                   int64_t Imm) const;

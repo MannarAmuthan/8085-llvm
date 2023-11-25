@@ -3212,13 +3212,13 @@ let Predicates = [UseSSE2] in {
 // Prefetch intrinsic.
 let Predicates = [HasSSEPrefetch], SchedRW = [WriteLoad] in {
 def PREFETCHT0   : I<0x18, MRM1m, (outs), (ins i8mem:$src),
-    "prefetcht0\t$src", [(prefetch addr:$src, imm, (i32 3), (i32 1))]>, TB;
+    "prefetcht0\t$src", [(prefetch addr:$src, timm, (i32 3), (i32 1))]>, TB;
 def PREFETCHT1   : I<0x18, MRM2m, (outs), (ins i8mem:$src),
-    "prefetcht1\t$src", [(prefetch addr:$src, imm, (i32 2), (i32 1))]>, TB;
+    "prefetcht1\t$src", [(prefetch addr:$src, timm, (i32 2), (i32 1))]>, TB;
 def PREFETCHT2   : I<0x18, MRM3m, (outs), (ins i8mem:$src),
-    "prefetcht2\t$src", [(prefetch addr:$src, imm, (i32 1), (i32 1))]>, TB;
+    "prefetcht2\t$src", [(prefetch addr:$src, timm, (i32 1), (i32 1))]>, TB;
 def PREFETCHNTA  : I<0x18, MRM0m, (outs), (ins i8mem:$src),
-    "prefetchnta\t$src", [(prefetch addr:$src, imm, (i32 0), (i32 1))]>, TB;
+    "prefetchnta\t$src", [(prefetch addr:$src, timm, (i32 0), (i32 1))]>, TB;
 }
 
 // FIXME: How should flush instruction be modeled?
@@ -7316,7 +7316,7 @@ defm VMASKMOVPD : avx_movmask_rm<0x2D, 0x2F, "vmaskmovpd",
 // AVX_VNNI
 //===----------------------------------------------------------------------===//
 let Predicates = [HasAVXVNNI, NoVLX_Or_NoVNNI], Constraints = "$src1 = $dst",
-    ExplicitVEXPrefix = 1, checkVEXPredicate = 1 in
+    explicitOpPrefix = ExplicitVEX, checkVEXPredicate = 1 in
 multiclass avx_vnni_rm<bits<8> opc, string OpcodeStr, SDNode OpNode,
                        bit IsCommutable> {
   let isCommutable = IsCommutable in

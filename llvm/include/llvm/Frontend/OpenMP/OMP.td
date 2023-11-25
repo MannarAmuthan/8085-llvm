@@ -67,17 +67,17 @@ def OMPC_Private : Clause<"private"> {
   let clangClass = "OMPPrivateClause";
   let flangClass = "OmpObjectList";
 }
-def OMPC_Sizes: Clause<"sizes"> { 
-  let clangClass = "OMPSizesClause"; 
+def OMPC_Sizes: Clause<"sizes"> {
+  let clangClass = "OMPSizesClause";
   let flangClass = "ScalarIntExpr";
   let isValueList = true;
   }
-def OMPC_Full: Clause<"full"> { 
-  let clangClass = "OMPFullClause"; 
+def OMPC_Full: Clause<"full"> {
+  let clangClass = "OMPFullClause";
 }
-def OMPC_Partial: Clause<"partial"> { 
+def OMPC_Partial: Clause<"partial"> {
   let clangClass = "OMPPartialClause";
-  let flangClass = "ScalarIntConstantExpr"; 
+  let flangClass = "ScalarIntConstantExpr";
   let isValueOptional = true;
  }
 def OMPC_FirstPrivate : Clause<"firstprivate"> {
@@ -289,6 +289,9 @@ def OMPC_To : Clause<"to"> {
   let clangClass = "OMPToClause";
   let flangClass = "OmpObjectList";
 }
+def OMPC_Enter : Clause<"enter"> {
+  let flangClass = "OmpObjectList";
+}
 def OMPC_From : Clause<"from"> {
   let clangClass = "OMPFromClause";
   let flangClass = "OmpObjectList";
@@ -299,13 +302,11 @@ def OMPC_UseDevicePtr : Clause<"use_device_ptr"> {
 }
 def OMPC_IsDevicePtr : Clause<"is_device_ptr"> {
   let clangClass = "OMPIsDevicePtrClause";
-  let flangClass = "Name";
-  let isValueList = true;
+  let flangClass = "OmpObjectList";
 }
 def OMPC_HasDeviceAddr : Clause<"has_device_addr"> {
   let clangClass = "OMPHasDeviceAddrClause";
-  let flangClass = "Name";
-  let isValueList = true;
+  let flangClass = "OmpObjectList";
 }
 def OMPC_TaskReduction : Clause<"task_reduction"> {
   let clangClass = "OMPTaskReductionClause";
@@ -450,6 +451,10 @@ def OMPC_Doacross : Clause<"doacross"> {
 
 def OMPC_OMPX_Attribute : Clause<"ompx_attribute"> {
   let clangClass = "OMPXAttributeClause";
+}
+
+def OMPC_OMX_Bare : Clause<"ompx_bare"> {
+  let clangClass = "OMPXBareClause";
 }
 
 //===----------------------------------------------------------------------===//
@@ -1122,7 +1127,8 @@ def OMP_DeclareTarget : Directive<"declare target"> {
   let allowedClauses = [
     VersionedClause<OMPC_To>,
     VersionedClause<OMPC_Link>,
-    VersionedClause<OMPC_Indirect>
+    VersionedClause<OMPC_Indirect>,
+    VersionedClause<OMPC_Enter, 52>
   ];
   let allowedOnceClauses = [
     VersionedClause<OMPC_DeviceType, 50>
@@ -1522,6 +1528,7 @@ def OMP_TargetTeams : Directive<"target teams"> {
     VersionedClause<OMPC_NumTeams>,
     VersionedClause<OMPC_ThreadLimit>,
     VersionedClause<OMPC_OMPX_DynCGroupMem>,
+    VersionedClause<OMPC_OMX_Bare>,
   ];
 }
 def OMP_TargetTeamsDistribute : Directive<"target teams distribute"> {

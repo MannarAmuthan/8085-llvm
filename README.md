@@ -12,6 +12,12 @@ cmake -G "Ninja" -DLLVM_TARGETS_TO_BUILD="I8085" -DCMAKE_BUILD_TYPE="Debug" -DLL
 ninja
 ```
 
+## Running tests
+
+```shell
+llvm/build/bin/llvm-lit llvm/test/CodeGen/I8085
+```
+
 ## Compile LLVM IR file
 Make sure that there are no attributes, metadata related to other architecture in the .ll file.
 

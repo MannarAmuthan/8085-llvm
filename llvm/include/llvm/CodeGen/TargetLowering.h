@@ -27,7 +27,6 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/CodeGen/ComplexDeinterleavingPass.h"
 #include "llvm/CodeGen/DAGCombine.h"
 #include "llvm/CodeGen/ISDOpcodes.h"
 #include "llvm/CodeGen/LowLevelTypeUtils.h"
@@ -66,6 +65,8 @@ namespace llvm {
 class AssumptionCache;
 class CCState;
 class CCValAssign;
+enum class ComplexDeinterleavingOperation;
+enum class ComplexDeinterleavingRotation;
 class Constant;
 class FastISel;
 class FunctionLoweringInfo;
@@ -368,8 +369,8 @@ public:
   }
 
   /// Return the in-memory pointer type for the given address space, defaults to
-  /// the pointer type from the data layout.  FIXME: The default needs to be
-  /// removed once all the code is updated.
+  /// the pointer type from the data layout.
+  /// FIXME: The default needs to be removed once all the code is updated.
   virtual MVT getPointerMemTy(const DataLayout &DL, uint32_t AS = 0) const {
     return MVT::getIntegerVT(DL.getPointerSizeInBits(AS));
   }
@@ -464,6 +465,10 @@ public:
                                            bool IsScalable) const {
     return true;
   }
+
+  /// Return true if the @llvm.experimental.cttz.elts intrinsic should be
+  /// expanded using generic code in SelectionDAGBuilder.
+  virtual bool shouldExpandCttzElements(EVT VT) const { return true; }
 
   // Return true if op(vecreduce(x), vecreduce(y)) should be reassociated to
   // vecreduce(op(x, y)) for the reduction opcode RedOpc.
@@ -651,6 +656,11 @@ public:
     return false;
   }
 
+  /// Return true if ctpop instruction is fast.
+  virtual bool isCtpopFast(EVT VT) const {
+    return isOperationLegal(ISD::CTPOP, VT);
+  }
+
   /// Return the maximum number of "x & (x - 1)" operations that can be done
   /// instead of deferring to a custom CTPOP.
   virtual unsigned getCustomCtpopCost(EVT VT, ISD::CondCode Cond) const {
@@ -803,6 +813,42 @@ public:
     // So by default, let's assume everyone prefers the fold
     // iff 'X' is not a constant.
     return !XC;
+  }
+
+  // Return true if its desirable to perform the following transform:
+  // (fmul C, (uitofp Pow2))
+  //     -> (bitcast_to_FP (add (bitcast_to_INT C), Log2(Pow2) << mantissa))
+  // (fdiv C, (uitofp Pow2))
+  //     -> (bitcast_to_FP (sub (bitcast_to_INT C), Log2(Pow2) << mantissa))
+  //
+  // This is only queried after we have verified the transform will be bitwise
+  // equals.
+  //
+  // SDNode *N      : The FDiv/FMul node we want to transform.
+  // SDValue FPConst: The Float constant operand in `N`.
+  // SDValue IntPow2: The Integer power of 2 operand in `N`.
+  virtual bool optimizeFMulOrFDivAsShiftAddBitcast(SDNode *N, SDValue FPConst,
+                                                   SDValue IntPow2) const {
+    // Default to avoiding fdiv which is often very expensive.
+    return N->getOpcode() == ISD::FDIV;
+  }
+
+  // Given:
+  //    (icmp eq/ne (and X, C0), (shift X, C1))
+  // or
+  //    (icmp eq/ne X, (rotate X, CPow2))
+
+  // If C0 is a mask or shifted mask and the shift amt (C1) isolates the
+  // remaining bits (i.e something like `(x64 & UINT32_MAX) == (x64 >> 32)`)
+  // Do we prefer the shift to be shift-right, shift-left, or rotate.
+  // Note: Its only valid to convert the rotate version to the shift version iff
+  // the shift-amt (`C1`) is a power of 2 (including 0).
+  // If ShiftOpc (current Opcode) is returned, do nothing.
+  virtual unsigned preferedOpcodeForCmpEqPiecesOfOperand(
+      EVT VT, unsigned ShiftOpc, bool MayTransformRotate,
+      const APInt &ShiftOrRotateAmt,
+      const std::optional<APInt> &AndMask) const {
+    return ShiftOpc;
   }
 
   /// These two forms are equivalent:
@@ -1460,9 +1506,9 @@ public:
   /// extending
   virtual bool shouldExtendGSIndex(EVT VT, EVT &EltTy) const { return false; }
 
-  // Returns true if VT is a legal index type for masked gathers/scatters
-  // on this target
-  virtual bool shouldRemoveExtendFromGSIndex(EVT IndexVT, EVT DataVT) const {
+  // Returns true if Extend can be folded into the index of a masked gathers/scatters
+  // on this target.
+  virtual bool shouldRemoveExtendFromGSIndex(SDValue Extend, EVT DataVT) const {
     return false;
   }
 
@@ -1943,12 +1989,6 @@ public:
   /// returns nullptr. Must be previously inserted by insertSSPDeclarations.
   /// Should be used only when getIRStackGuard returns nullptr.
   virtual Function *getSSPStackGuardCheck(const Module &M) const;
-
-  /// \returns true if a constant G_UBFX is legal on the target.
-  virtual bool isConstantUnsignedBitfieldExtractLegal(unsigned Opc, LLT Ty1,
-                                                      LLT Ty2) const {
-    return false;
-  }
 
 protected:
   Value *getDefaultSafeStackPointerLocation(IRBuilderBase &IRB,
@@ -3130,7 +3170,7 @@ public:
   // Return true when the decision to generate FMA's (or FMS, FMLA etc) rather
   // than FMUL and ADD is delegated to the machine combiner.
   virtual bool generateFMAsInMachineCombiner(EVT VT,
-                                             CodeGenOpt::Level OptLevel) const {
+                                             CodeGenOptLevel OptLevel) const {
     return false;
   }
 
@@ -3218,6 +3258,14 @@ public:
   /// amount is not profitable.
   virtual bool shouldAvoidTransformToShift(EVT VT, unsigned Amount) const {
     return false;
+  }
+
+  // Should we fold (select_cc seteq (and x, y), 0, 0, A) -> (and (sra (shl x))
+  // A) where y has a single bit set?
+  virtual bool shouldFoldSelectWithSingleBitTest(EVT VT,
+                                                 const APInt &AndMask) const {
+    unsigned ShCt = AndMask.getBitWidth() - 1;
+    return !shouldAvoidTransformToShift(VT, ShCt);
   }
 
   /// Does this target require the clearing of high-order bits in a register
@@ -3803,9 +3851,10 @@ public:
     return false;
   }
 
-  /// Convert x+y to (VT)((SmallVT)x+(SmallVT)y) if the casts are free.  This
-  /// uses isZExtFree and ZERO_EXTEND for the widening cast, but it could be
-  /// generalized for targets with other types of implicit widening casts.
+  /// Convert x+y to (VT)((SmallVT)x+(SmallVT)y) if the casts are free.
+  /// This uses isTruncateFree/isZExtFree and ANY_EXTEND for the widening cast,
+  /// but it could be generalized for targets with other types of implicit
+  /// widening casts.
   bool ShrinkDemandedOp(SDValue Op, unsigned BitWidth,
                         const APInt &DemandedBits,
                         TargetLoweringOpt &TLO) const;
@@ -4124,6 +4173,12 @@ public:
     return true;
   }
 
+  /// GlobalISel - return true if it's profitable to perform the combine:
+  /// shl ([sza]ext x), y => zext (shl x, y)
+  virtual bool isDesirableToPullExtFromShl(const MachineInstr &MI) const {
+    return true;
+  }
+
   // Return AndOrSETCCFoldKind::{AddAnd, ABS} if its desirable to try and
   // optimize LogicOp(SETCC0, SETCC1). An example (what is implemented as of
   // writing this) is:
@@ -4374,8 +4429,14 @@ public:
     }
 
     CallLoweringInfo &setCallee(CallingConv::ID CC, Type *ResultType,
-                                SDValue Target, ArgListTy &&ArgsList) {
+                                SDValue Target, ArgListTy &&ArgsList,
+                                AttributeSet ResultAttrs = {}) {
       RetTy = ResultType;
+      IsInReg = ResultAttrs.hasAttribute(Attribute::InReg);
+      RetSExt = ResultAttrs.hasAttribute(Attribute::SExt);
+      RetZExt = ResultAttrs.hasAttribute(Attribute::ZExt);
+      NoMerge = ResultAttrs.hasAttribute(Attribute::NoMerge);
+
       Callee = Target;
       CallConv = CC;
       NumFixedArgs = ArgsList.size();
@@ -4820,6 +4881,15 @@ public:
   /// Given a constraint, return the type of constraint it is for this target.
   virtual ConstraintType getConstraintType(StringRef Constraint) const;
 
+  using ConstraintPair = std::pair<StringRef, TargetLowering::ConstraintType>;
+  using ConstraintGroup = SmallVector<ConstraintPair>;
+  /// Given an OpInfo with list of constraints codes as strings, return a
+  /// sorted Vector of pairs of constraint codes and their types in priority of
+  /// what we'd prefer to lower them as. This may contain immediates that
+  /// cannot be lowered, but it is meant to be a machine agnostic order of
+  /// preferences.
+  ConstraintGroup getConstraintPreferences(AsmOperandInfo &OpInfo) const;
+
   /// Given a physical register constraint (e.g.  {edx}), return the register
   /// number and the register class for the register.
   ///
@@ -4853,7 +4923,7 @@ public:
 
   /// Lower the specified operand into the Ops vector.  If it is invalid, don't
   /// add anything to Ops.
-  virtual void LowerAsmOperandForConstraint(SDValue Op, std::string &Constraint,
+  virtual void LowerAsmOperandForConstraint(SDValue Op, StringRef Constraint,
                                             std::vector<SDValue> &Ops,
                                             SelectionDAG &DAG) const;
 
@@ -4877,6 +4947,10 @@ public:
                     SmallVectorImpl<SDNode *> &Created) const;
   SDValue BuildUDIV(SDNode *N, SelectionDAG &DAG, bool IsAfterLegalization,
                     SmallVectorImpl<SDNode *> &Created) const;
+  // Build sdiv by power-of-2 with conditional move instructions
+  SDValue buildSDIVPow2WithCMov(SDNode *N, const APInt &Divisor,
+                                SelectionDAG &DAG,
+                                SmallVectorImpl<SDNode *> &Created) const;
 
   /// Targets may override this function to provide custom SDIV lowering for
   /// power-of-2 denominators.  If the target returns an empty SDValue, LLVM
