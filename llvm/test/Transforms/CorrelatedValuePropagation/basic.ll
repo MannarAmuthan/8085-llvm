@@ -63,7 +63,7 @@ define i8 @test3(ptr %a) nounwind {
 ; CHECK:       bb:
 ; CHECK-NEXT:    ret i8 0
 ; CHECK:       bb2:
-; CHECK-NEXT:    [[SHOULD_BE_CONST:%.*]] = load i8, ptr @gv, align 1
+; CHECK-NEXT:    [[SHOULD_BE_CONST:%.*]] = load i8, ptr [[A]], align 1
 ; CHECK-NEXT:    ret i8 [[SHOULD_BE_CONST]]
 ;
 entry:
@@ -1908,6 +1908,20 @@ guard:
 
 exit:
   ret i1 false
+}
+
+define i1 @binop_eval_order(i32 %x) {
+; CHECK-LABEL: @binop_eval_order(
+; CHECK-NEXT:    [[A:%.*]] = add nuw nsw i32 [[X:%.*]], 1
+; CHECK-NEXT:    [[B:%.*]] = add nuw nsw i32 [[A]], 1
+; CHECK-NEXT:    [[C:%.*]] = add nuw nsw i32 [[A]], [[B]]
+; CHECK-NEXT:    ret i1 true
+;
+  %a = add nuw nsw i32 %x, 1
+  %b = add nuw nsw i32 %a, 1
+  %c = add nuw nsw i32 %a, %b
+  %d = icmp ugt i32 %c, 2
+  ret i1 %d
 }
 
 declare i32 @llvm.uadd.sat.i32(i32, i32)

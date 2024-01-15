@@ -8,7 +8,7 @@ For more details, current status of this backend, Please refer this [target's re
 cd llvm 
 mkdir build
 cd build
-cmake -G "Ninja" -DLLVM_TARGETS_TO_BUILD="I8085" -DCMAKE_BUILD_TYPE="Debug" -DLLVM_ENABLE_ASSERTIONS=On ../
+cmake -G "Ninja" -DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD="I8085" -DCMAKE_BUILD_TYPE="Debug" -DLLVM_ENABLE_ASSERTIONS=On ../
 ninja
 ```
 

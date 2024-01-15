@@ -122,7 +122,8 @@ bool I8085AsmBackend::writeNopData(raw_ostream &OS, uint64_t Count,
 
 bool I8085AsmBackend::shouldForceRelocation(const MCAssembler &Asm,
                                           const MCFixup &Fixup,
-                                          const MCValue &Target) {
+                                          const MCValue &Target,
+                                          const MCSubtargetInfo *STI) {
   switch ((unsigned)Fixup.getKind()) {
   default:
     return false;
