@@ -364,6 +364,21 @@ ExprDependence clang::computeDependence(PackExpansionExpr *E) {
          ExprDependence::TypeValueInstantiation;
 }
 
+ExprDependence clang::computeDependence(PackIndexingExpr *E) {
+  ExprDependence D = E->getIndexExpr()->getDependence();
+  ArrayRef<Expr *> Exprs = E->getExpressions();
+  if (Exprs.empty())
+    D |= (E->getPackIdExpression()->getDependence() |
+          ExprDependence::TypeValueInstantiation) &
+         ~ExprDependence::UnexpandedPack;
+  else if (!E->getIndexExpr()->isInstantiationDependent()) {
+    std::optional<unsigned> Index = E->getSelectedIndex();
+    assert(Index && *Index < Exprs.size() && "pack index out of bound");
+    D |= Exprs[*Index]->getDependence();
+  }
+  return D;
+}
+
 ExprDependence clang::computeDependence(SubstNonTypeTemplateParmExpr *E) {
   return E->getReplacement()->getDependence();
 }
@@ -639,6 +654,9 @@ ExprDependence clang::computeDependence(MemberExpr *E) {
     D |= toExprDependence(NNS->getDependence() &
                           ~NestedNameSpecifierDependence::Dependent);
 
+  for (const auto &A : E->template_arguments())
+    D |= toExprDependence(A.getArgument().getDependence());
+
   auto *MemberDecl = E->getMemberDecl();
   if (FieldDecl *FD = dyn_cast<FieldDecl>(MemberDecl)) {
     DeclContext *DC = MemberDecl->getDeclContext();
@@ -655,7 +673,6 @@ ExprDependence clang::computeDependence(MemberExpr *E) {
       D |= ExprDependence::Type;
     }
   }
-  // FIXME: move remaining dependence computation from MemberExpr::Create()
   return D;
 }
 

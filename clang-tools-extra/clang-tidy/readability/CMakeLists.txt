@@ -5,6 +5,7 @@ set(LLVM_LINK_COMPONENTS
 
 add_clang_library(clangTidyReadabilityModule
   AvoidConstParamsInDecls.cpp
+  AvoidNestedConditionalOperatorCheck.cpp
   AvoidReturnWithVoidValueCheck.cpp
   AvoidUnconditionalPreprocessorIfCheck.cpp
   BracesAroundStatementsCheck.cpp
@@ -16,11 +17,13 @@ add_clang_library(clangTidyReadabilityModule
   DeleteNullPointerCheck.cpp
   DuplicateIncludeCheck.cpp
   ElseAfterReturnCheck.cpp
+  EnumInitialValueCheck.cpp
   FunctionCognitiveComplexityCheck.cpp
   FunctionSizeCheck.cpp
   IdentifierLengthCheck.cpp
   IdentifierNamingCheck.cpp
   ImplicitBoolConversionCheck.cpp
+  RedundantInlineSpecifierCheck.cpp
   InconsistentDeclarationParameterNameCheck.cpp
   IsolateDeclarationCheck.cpp
   MagicNumbersCheck.cpp
@@ -34,6 +37,7 @@ add_clang_library(clangTidyReadabilityModule
   QualifiedAutoCheck.cpp
   ReadabilityTidyModule.cpp
   RedundantAccessSpecifiersCheck.cpp
+  RedundantCastingCheck.cpp
   RedundantControlFlowCheck.cpp
   RedundantDeclarationCheck.cpp
   RedundantFunctionPtrDereferenceCheck.cpp
@@ -52,6 +56,7 @@ add_clang_library(clangTidyReadabilityModule
   UniqueptrDeleteReleaseCheck.cpp
   UppercaseLiteralSuffixCheck.cpp
   UseAnyOfAllOfCheck.cpp
+  UseStdMinMaxCheck.cpp
 
   LINK_LIBS
   clangTidy

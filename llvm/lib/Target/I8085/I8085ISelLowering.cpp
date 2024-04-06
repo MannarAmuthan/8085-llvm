@@ -413,8 +413,8 @@ static void analyzeArguments(TargetLowering::CallLoweringInfo *CLI,
   ArrayRef<MCPhysReg> RegList8;
   ArrayRef<MCPhysReg> RegList16;
 
-    RegList8 = makeArrayRef(RegList8I8085, std::size(RegList8I8085));
-    RegList16 = makeArrayRef(RegList16I8085, std::size(RegList16I8085));
+    RegList8 = ArrayRef(RegList8I8085, std::size(RegList8I8085));
+    RegList16 = ArrayRef(RegList16I8085, std::size(RegList16I8085));
 
 
   unsigned NumArgs = Args.size();
@@ -506,8 +506,8 @@ static void analyzeReturnValues(const SmallVectorImpl<ArgT> &Args,
   ArrayRef<MCPhysReg> RegList8;
   ArrayRef<MCPhysReg> RegList16;
 
-    RegList8 = makeArrayRef(RegList8I8085, std::size(RegList8I8085));
-    RegList16 = makeArrayRef(RegList16I8085, std::size(RegList16I8085));
+    RegList8 = ArrayRef(RegList8I8085, std::size(RegList8I8085));
+    RegList16 = ArrayRef(RegList16I8085, std::size(RegList16I8085));
 
 
   // GCC-ABI says that the size is rounded up to the next even number,

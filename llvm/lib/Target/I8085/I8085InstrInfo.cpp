@@ -76,7 +76,7 @@ void I8085InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
   }
 }
 
-unsigned I8085InstrInfo::isLoadFromStackSlot(const MachineInstr &MI,
+Register I8085InstrInfo::isLoadFromStackSlot(const MachineInstr &MI,
                                            int &FrameIndex) const {
   switch (MI.getOpcode()) {
   case I8085::LOAD_8_WITH_ADDR:
@@ -96,7 +96,7 @@ unsigned I8085InstrInfo::isLoadFromStackSlot(const MachineInstr &MI,
   return 0;
 }
 
-unsigned I8085InstrInfo::isStoreToStackSlot(const MachineInstr &MI,
+Register I8085InstrInfo::isStoreToStackSlot(const MachineInstr &MI,
                                           int &FrameIndex) const {
   switch (MI.getOpcode()) {
   case I8085::STORE_8:

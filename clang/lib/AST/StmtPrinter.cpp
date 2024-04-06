@@ -1138,6 +1138,21 @@ void StmtPrinter::VisitOMPTargetParallelGenericLoopDirective(
 }
 
 //===----------------------------------------------------------------------===//
+//  OpenACC construct printing methods
+//===----------------------------------------------------------------------===//
+void StmtPrinter::VisitOpenACCComputeConstruct(OpenACCComputeConstruct *S) {
+  Indent() << "#pragma acc " << S->getDirectiveKind();
+
+  if (!S->clauses().empty()) {
+    OS << ' ';
+    OpenACCClausePrinter Printer(OS);
+    Printer.VisitClauseList(S->clauses());
+  }
+
+  PrintStmt(S->getStructuredBlock());
+}
+
+//===----------------------------------------------------------------------===//
 //  Expr printing methods.
 //===----------------------------------------------------------------------===//
 
@@ -1833,7 +1848,7 @@ void StmtPrinter::VisitAtomicExpr(AtomicExpr *Node) {
   case AtomicExpr::AO ## ID: \
     Name = #ID "("; \
     break;
-#include "clang/Basic/Builtins.def"
+#include "clang/Basic/Builtins.inc"
   }
   OS << Name;
 
@@ -2300,9 +2315,8 @@ void StmtPrinter::VisitCXXNewExpr(CXXNewExpr *E) {
     OS << ")";
 
   CXXNewInitializationStyle InitStyle = E->getInitializationStyle();
-  if (InitStyle != CXXNewInitializationStyle::None &&
-      InitStyle != CXXNewInitializationStyle::Implicit) {
-    bool Bare = InitStyle == CXXNewInitializationStyle::Call &&
+  if (InitStyle != CXXNewInitializationStyle::None) {
+    bool Bare = InitStyle == CXXNewInitializationStyle::Parens &&
                 !isa<ParenListExpr>(E->getInitializer());
     if (Bare)
       OS << "(";
@@ -2448,6 +2462,10 @@ void StmtPrinter::VisitPackExpansionExpr(PackExpansionExpr *E) {
 
 void StmtPrinter::VisitSizeOfPackExpr(SizeOfPackExpr *E) {
   OS << "sizeof...(" << *E->getPack() << ")";
+}
+
+void StmtPrinter::VisitPackIndexingExpr(PackIndexingExpr *E) {
+  OS << E->getPackIdExpression() << "...[" << E->getIndexExpr() << "]";
 }
 
 void StmtPrinter::VisitSubstNonTypeTemplateParmPackExpr(
