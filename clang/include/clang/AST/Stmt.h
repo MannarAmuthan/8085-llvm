@@ -460,10 +460,10 @@ protected:
     unsigned : NumExprBits;
 
     static_assert(
-        llvm::APFloat::S_MaxSemantics < 16,
-        "Too many Semantics enum values to fit in bitfield of size 4");
+        llvm::APFloat::S_MaxSemantics < 32,
+        "Too many Semantics enum values to fit in bitfield of size 5");
     LLVM_PREFERRED_TYPE(llvm::APFloat::Semantics)
-    unsigned Semantics : 4; // Provides semantics for APFloat construction
+    unsigned Semantics : 5; // Provides semantics for APFloat construction
     LLVM_PREFERRED_TYPE(bool)
     unsigned IsExact : 1;
   };
@@ -784,6 +784,11 @@ protected:
     LLVM_PREFERRED_TYPE(bool)
     unsigned IsImplicit : 1;
 
+    /// Whether there is a lambda with an explicit object parameter that
+    /// captures this "this" by copy.
+    LLVM_PREFERRED_TYPE(bool)
+    unsigned CapturedByCopyInLambdaWithExplicitObjectParameter : 1;
+
     /// The location of the "this".
     SourceLocation Loc;
   };
@@ -1062,11 +1067,6 @@ protected:
     /// argument-dependent lookup if this is the operand of a function call.
     LLVM_PREFERRED_TYPE(bool)
     unsigned RequiresADL : 1;
-
-    /// True if these lookup results are overloaded.  This is pretty trivially
-    /// rederivable if we urgently need to kill this field.
-    LLVM_PREFERRED_TYPE(bool)
-    unsigned Overloaded : 1;
   };
   static_assert(sizeof(UnresolvedLookupExprBitfields) <= 4,
                 "UnresolvedLookupExprBitfields must be <= than 4 bytes to"
@@ -1656,6 +1656,11 @@ public:
   FPOptionsOverride getStoredFPFeatures() const {
     assert(hasStoredFPFeatures());
     return *getTrailingObjects<FPOptionsOverride>();
+  }
+
+  /// Get the store FPOptionsOverride or default if not stored.
+  FPOptionsOverride getStoredFPFeaturesOrDefault() const {
+    return hasStoredFPFeatures() ? getStoredFPFeatures() : FPOptionsOverride();
   }
 
   using body_iterator = Stmt **;

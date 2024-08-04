@@ -22,20 +22,18 @@
 #include <iostream>
 
 #define DEBUG_TYPE "i8085-isel"
+#define PASS_NAME "I8085 DAG->DAG Instruction Selection"
 
-namespace llvm {
+using namespace llvm;
 
-/// Lowers LLVM IR (in DAG form) to I8085 MC instructions (in DAG form).
+namespace {
+
 class I8085DAGToDAGISel : public SelectionDAGISel {
 public:
-  static char ID;
+  I8085DAGToDAGISel() = delete;
 
   I8085DAGToDAGISel(I8085TargetMachine &TM, CodeGenOptLevel OptLevel)
-      : SelectionDAGISel(ID, TM, OptLevel), Subtarget(nullptr) {}
-
-  StringRef getPassName() const override {
-    return "I8085 DAG->DAG Instruction Selection";
-  }
+      : SelectionDAGISel(TM, OptLevel), Subtarget(nullptr) {}
 
   bool runOnMachineFunction(MachineFunction &MF) override;
 
@@ -54,7 +52,22 @@ private:
   const I8085Subtarget *Subtarget;
 };
 
-char I8085DAGToDAGISel::ID = 0;
+
+
+/// Lowers LLVM IR (in DAG form) to I8085 MC instructions (in DAG form).
+class I8085DAGToDAGISelLegacy : public SelectionDAGISelLegacy {
+public:
+  static char ID;
+
+  I8085DAGToDAGISelLegacy(I8085TargetMachine &TM, CodeGenOptLevel OptLevel)
+      : SelectionDAGISelLegacy(ID, std::make_unique<I8085DAGToDAGISel>(TM, OptLevel)) {}
+};
+
+} //namespace
+
+char I8085DAGToDAGISelLegacy::ID = 0;
+
+INITIALIZE_PASS(I8085DAGToDAGISelLegacy, DEBUG_TYPE, PASS_NAME, false, false)
 
 bool I8085DAGToDAGISel::runOnMachineFunction(MachineFunction &MF) {
   Subtarget = &MF.getSubtarget<I8085Subtarget>();
@@ -405,9 +418,8 @@ bool I8085DAGToDAGISel::trySelect(SDNode *N) {
   }
 }
 
-FunctionPass *createI8085ISelDag(I8085TargetMachine &TM,
+FunctionPass *llvm::createI8085ISelDag(I8085TargetMachine &TM,
                                CodeGenOptLevel OptLevel) {
-  return new I8085DAGToDAGISel(TM, OptLevel);
+  return new I8085DAGToDAGISelLegacy(TM, OptLevel);
 }
 
-} 

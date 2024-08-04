@@ -22,6 +22,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/LazyCallGraph.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/Analysis/PostDominators.h"
@@ -86,12 +87,9 @@ template <> struct IRTraits<BasicBlock> {
 // SampleProfileProber.
 class PseudoProbeManager {
   DenseMap<uint64_t, PseudoProbeDescriptor> GUIDToProbeDescMap;
-  const ThinOrFullLTOPhase LTOPhase;
 
 public:
-  PseudoProbeManager(const Module &M,
-                     ThinOrFullLTOPhase LTOPhase = ThinOrFullLTOPhase::None)
-      : LTOPhase(LTOPhase) {
+  PseudoProbeManager(const Module &M) {
     if (NamedMDNode *FuncInfo =
             M.getNamedMetadata(PseudoProbeDescMetadataName)) {
       for (const auto *Operand : FuncInfo->operands()) {
@@ -140,13 +138,9 @@ public:
     // be different and result in different checksums. So we should use the
     // state from the new (available_externally) function, which is saved in its
     // attribute.
-    assert((LTOPhase != ThinOrFullLTOPhase::ThinLTOPostLink ||
-            IsAvailableExternallyLinkage || !Desc ||
-            profileIsHashMismatched(*Desc, Samples) ==
-                F.hasFnAttribute("profile-checksum-mismatch")) &&
-           "In post-link, profile checksum matching state doesn't match the "
-           "internal function's 'profile-checksum-mismatch' attribute.");
-    (void)LTOPhase;
+    // TODO: If the function's profile only exists as nested inlinee profile in
+    // a different module, we don't have the attr mismatch state(unknown), we
+    // need to fix it later.
     if (IsAvailableExternallyLinkage || !Desc)
       return !F.hasFnAttribute("profile-checksum-mismatch");
 
@@ -160,6 +154,22 @@ extern cl::opt<bool> SampleProfileUseProfi;
 
 static inline bool skipProfileForFunction(const Function &F) {
   return F.isDeclaration() || !F.hasFnAttribute("use-sample-profile");
+}
+
+static inline void
+buildTopDownFuncOrder(LazyCallGraph &CG,
+                      std::vector<Function *> &FunctionOrderList) {
+  CG.buildRefSCCs();
+  for (LazyCallGraph::RefSCC &RC : CG.postorder_ref_sccs()) {
+    for (LazyCallGraph::SCC &C : RC) {
+      for (LazyCallGraph::Node &N : C) {
+        Function &F = N.getFunction();
+        if (!skipProfileForFunction(F))
+          FunctionOrderList.push_back(&F);
+      }
+    }
+  }
+  std::reverse(FunctionOrderList.begin(), FunctionOrderList.end());
 }
 
 template <typename FT> class SampleProfileLoaderBaseImpl {

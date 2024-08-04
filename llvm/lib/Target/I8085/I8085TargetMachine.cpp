@@ -14,7 +14,6 @@
 
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
-#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/MC/TargetRegistry.h"
 
@@ -93,6 +92,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeI8085Target() {
   auto &PR = *PassRegistry::getPassRegistry();
   initializeI8085ExpandPseudoPass(PR);
   initializeI8085ExpandPseudo32Pass(PR);
+  initializeI8085DAGToDAGISelLegacyPass(PR);
 }
 
 const I8085Subtarget *I8085TargetMachine::getSubtargetImpl() const {

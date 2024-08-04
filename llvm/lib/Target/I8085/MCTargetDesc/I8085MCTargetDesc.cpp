@@ -69,10 +69,9 @@ static MCInstPrinter *createI8085MCInstPrinter(const Triple &T,
 static MCStreamer *createMCStreamer(const Triple &T, MCContext &Context,
                                     std::unique_ptr<MCAsmBackend> &&MAB,
                                     std::unique_ptr<MCObjectWriter> &&OW,
-                                    std::unique_ptr<MCCodeEmitter> &&Emitter,
-                                    bool RelaxAll) {
+                                    std::unique_ptr<MCCodeEmitter> &&Emitter) {
   return createELFStreamer(Context, std::move(MAB), std::move(OW),
-                           std::move(Emitter), RelaxAll);
+                           std::move(Emitter));
 }
 
 static MCTargetStreamer *
@@ -82,8 +81,7 @@ createI8085ObjectTargetStreamer(MCStreamer &S, const MCSubtargetInfo &STI) {
 
 static MCTargetStreamer *createMCAsmTargetStreamer(MCStreamer &S,
                                                    formatted_raw_ostream &OS,
-                                                   MCInstPrinter *InstPrint,
-                                                   bool isVerboseAsm) {
+                                                   MCInstPrinter *InstPrint) {
   return new I8085TargetAsmStreamer(S);
 }
 

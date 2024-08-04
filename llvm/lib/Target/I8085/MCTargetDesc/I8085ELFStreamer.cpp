@@ -19,12 +19,12 @@ static unsigned getEFlagsForFeatureSet(const FeatureBitset &Features) {
 I8085ELFStreamer::I8085ELFStreamer(MCStreamer &S, const MCSubtargetInfo &STI)
     : I8085TargetStreamer(S) {
 
-  MCAssembler &MCA = getStreamer().getAssembler();
-  unsigned EFlags = MCA.getELFHeaderEFlags();
+  ELFObjectWriter &W = getStreamer().getWriter();
+  unsigned EFlags = W.getELFHeaderEFlags();
 
   EFlags |= getEFlagsForFeatureSet(STI.getFeatureBits());
 
-  MCA.setELFHeaderEFlags(EFlags);
+  W.setELFHeaderEFlags(EFlags);
 }
 
 } // end namespace llvm

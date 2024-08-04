@@ -34,6 +34,7 @@ FunctionPass *createI8085BranchSelectionPass();
 
 void initializeI8085ExpandPseudoPass(PassRegistry &);
 void initializeI8085ExpandPseudo32Pass(PassRegistry &);
+void initializeI8085DAGToDAGISelLegacyPass(PassRegistry &);
 
 /// Contains the I8085 backend.
 namespace I8085 {
